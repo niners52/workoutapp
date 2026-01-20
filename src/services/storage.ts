@@ -1,0 +1,460 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  Exercise,
+  Template,
+  Workout,
+  WorkoutSet,
+  UserSettings,
+  WorkoutLocation,
+  DEFAULT_USER_SETTINGS,
+  DEFAULT_LOCATIONS,
+} from '../types';
+import { SEED_EXERCISES } from '../data/exercises';
+import { SEED_TEMPLATES } from '../data/templates';
+
+// Storage keys
+const STORAGE_KEYS = {
+  EXERCISES: '@workout_tracker/exercises',
+  TEMPLATES: '@workout_tracker/templates',
+  WORKOUTS: '@workout_tracker/workouts',
+  SETS: '@workout_tracker/sets',
+  USER_SETTINGS: '@workout_tracker/user_settings',
+  LOCATIONS: '@workout_tracker/locations',
+  INITIALIZED: '@workout_tracker/initialized',
+  MIGRATION_VERSION: '@workout_tracker/migration_version',
+  SETGRAPH_MAPPINGS: '@workout_tracker/setgraph_mappings',
+} as const;
+
+// Current migration version
+const CURRENT_MIGRATION_VERSION = 2;
+
+// Generic storage helpers
+async function getItem<T>(key: string, defaultValue: T): Promise<T> {
+  try {
+    const value = await AsyncStorage.getItem(key);
+    return value ? JSON.parse(value) : defaultValue;
+  } catch (error) {
+    console.error(`Error reading ${key}:`, error);
+    return defaultValue;
+  }
+}
+
+async function setItem<T>(key: string, value: T): Promise<void> {
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`Error writing ${key}:`, error);
+    throw error;
+  }
+}
+
+// Initialize storage with seed data if not already done
+export async function initializeStorage(): Promise<void> {
+  const initialized = await AsyncStorage.getItem(STORAGE_KEYS.INITIALIZED);
+
+  if (!initialized) {
+    // Seed exercises
+    await setItem(STORAGE_KEYS.EXERCISES, SEED_EXERCISES);
+
+    // Seed templates
+    await setItem(STORAGE_KEYS.TEMPLATES, SEED_TEMPLATES);
+
+    // Seed locations
+    await setItem(STORAGE_KEYS.LOCATIONS, DEFAULT_LOCATIONS);
+
+    // Initialize empty workouts and sets
+    await setItem(STORAGE_KEYS.WORKOUTS, []);
+    await setItem(STORAGE_KEYS.SETS, []);
+
+    // Set default user settings
+    await setItem(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
+
+    // Mark as initialized with current migration version
+    await AsyncStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+    await AsyncStorage.setItem(STORAGE_KEYS.MIGRATION_VERSION, String(CURRENT_MIGRATION_VERSION));
+
+    console.log('Storage initialized with seed data');
+  } else {
+    // Run migrations if needed
+    await runMigrations();
+  }
+}
+
+// Migration system
+async function runMigrations(): Promise<void> {
+  const versionStr = await AsyncStorage.getItem(STORAGE_KEYS.MIGRATION_VERSION);
+  const currentVersion = versionStr ? parseInt(versionStr, 10) : 1;
+
+  if (currentVersion < 2) {
+    await migrateToV2();
+  }
+
+  // Update migration version
+  await AsyncStorage.setItem(STORAGE_KEYS.MIGRATION_VERSION, String(CURRENT_MIGRATION_VERSION));
+}
+
+// Migration V2: Add locations and update templates with type/locationId
+async function migrateToV2(): Promise<void> {
+  console.log('Running migration to V2...');
+
+  // Add default locations if not present
+  const existingLocations = await getItem<WorkoutLocation[]>(STORAGE_KEYS.LOCATIONS, []);
+  if (existingLocations.length === 0) {
+    await setItem(STORAGE_KEYS.LOCATIONS, DEFAULT_LOCATIONS);
+  }
+
+  // Migrate templates: add type and convert location to locationId
+  const templates = await getItem<any[]>(STORAGE_KEYS.TEMPLATES, []);
+  const migratedTemplates = templates.map(template => {
+    // If template already has type, it's already migrated
+    if (template.type) {
+      return template;
+    }
+
+    // Infer type from template name
+    let type: 'push' | 'pull' | 'lower' = 'push';
+    const nameLower = template.name.toLowerCase();
+    if (nameLower.includes('pull')) {
+      type = 'pull';
+    } else if (nameLower.includes('leg') || nameLower.includes('lower')) {
+      type = 'lower';
+    }
+
+    // Convert location to locationId
+    const locationId = template.location || 'gym';
+
+    return {
+      ...template,
+      type,
+      locationId,
+      location: undefined, // Remove old field
+    };
+  });
+
+  await setItem(STORAGE_KEYS.TEMPLATES, migratedTemplates);
+  console.log('Migration to V2 complete');
+}
+
+// Reset storage (for debugging/testing)
+export async function resetStorage(): Promise<void> {
+  await AsyncStorage.clear();
+  await initializeStorage();
+}
+
+// ==================== EXERCISES ====================
+
+export async function getExercises(): Promise<Exercise[]> {
+  return getItem(STORAGE_KEYS.EXERCISES, SEED_EXERCISES);
+}
+
+export async function getExerciseById(id: string): Promise<Exercise | undefined> {
+  const exercises = await getExercises();
+  return exercises.find(e => e.id === id);
+}
+
+export async function addExercise(exercise: Exercise): Promise<void> {
+  const exercises = await getExercises();
+  exercises.push({ ...exercise, isCustom: true });
+  await setItem(STORAGE_KEYS.EXERCISES, exercises);
+}
+
+export async function updateExercise(exercise: Exercise): Promise<void> {
+  const exercises = await getExercises();
+  const index = exercises.findIndex(e => e.id === exercise.id);
+  if (index !== -1) {
+    exercises[index] = exercise;
+    await setItem(STORAGE_KEYS.EXERCISES, exercises);
+  }
+}
+
+export async function deleteExercise(id: string): Promise<void> {
+  const exercises = await getExercises();
+  const filtered = exercises.filter(e => e.id !== id);
+  await setItem(STORAGE_KEYS.EXERCISES, filtered);
+}
+
+// ==================== TEMPLATES ====================
+
+export async function getTemplates(): Promise<Template[]> {
+  return getItem(STORAGE_KEYS.TEMPLATES, SEED_TEMPLATES);
+}
+
+export async function getTemplateById(id: string): Promise<Template | undefined> {
+  const templates = await getTemplates();
+  return templates.find(t => t.id === id);
+}
+
+export async function addTemplate(template: Template): Promise<void> {
+  const templates = await getTemplates();
+  templates.push(template);
+  await setItem(STORAGE_KEYS.TEMPLATES, templates);
+}
+
+export async function updateTemplate(template: Template): Promise<void> {
+  const templates = await getTemplates();
+  const index = templates.findIndex(t => t.id === template.id);
+  if (index !== -1) {
+    templates[index] = template;
+    await setItem(STORAGE_KEYS.TEMPLATES, templates);
+  }
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  const templates = await getTemplates();
+  const filtered = templates.filter(t => t.id !== id);
+  await setItem(STORAGE_KEYS.TEMPLATES, filtered);
+}
+
+// ==================== LOCATIONS ====================
+
+export async function getLocations(): Promise<WorkoutLocation[]> {
+  return getItem(STORAGE_KEYS.LOCATIONS, DEFAULT_LOCATIONS);
+}
+
+export async function getLocationById(id: string): Promise<WorkoutLocation | undefined> {
+  const locations = await getLocations();
+  return locations.find(l => l.id === id);
+}
+
+export async function addLocation(location: WorkoutLocation): Promise<void> {
+  const locations = await getLocations();
+  // Set sortOrder to be at the end
+  const maxSortOrder = locations.reduce((max, l) => Math.max(max, l.sortOrder), -1);
+  locations.push({ ...location, sortOrder: maxSortOrder + 1 });
+  await setItem(STORAGE_KEYS.LOCATIONS, locations);
+}
+
+export async function updateLocation(location: WorkoutLocation): Promise<void> {
+  const locations = await getLocations();
+  const index = locations.findIndex(l => l.id === location.id);
+  if (index !== -1) {
+    locations[index] = location;
+    await setItem(STORAGE_KEYS.LOCATIONS, locations);
+  }
+}
+
+export async function deleteLocation(id: string): Promise<void> {
+  const locations = await getLocations();
+  const filtered = locations.filter(l => l.id !== id);
+  await setItem(STORAGE_KEYS.LOCATIONS, filtered);
+}
+
+export async function reorderLocations(locationIds: string[]): Promise<void> {
+  const locations = await getLocations();
+  const reordered = locationIds
+    .map((id, index) => {
+      const location = locations.find(l => l.id === id);
+      if (location) {
+        return { ...location, sortOrder: index };
+      }
+      return null;
+    })
+    .filter((l): l is WorkoutLocation => l !== null);
+  await setItem(STORAGE_KEYS.LOCATIONS, reordered);
+}
+
+// ==================== WORKOUTS ====================
+
+export async function getWorkouts(): Promise<Workout[]> {
+  return getItem(STORAGE_KEYS.WORKOUTS, []);
+}
+
+export async function getWorkoutById(id: string): Promise<Workout | undefined> {
+  const workouts = await getWorkouts();
+  return workouts.find(w => w.id === id);
+}
+
+export async function addWorkout(workout: Workout): Promise<void> {
+  const workouts = await getWorkouts();
+  workouts.push(workout);
+  await setItem(STORAGE_KEYS.WORKOUTS, workouts);
+}
+
+export async function updateWorkout(workout: Workout): Promise<void> {
+  const workouts = await getWorkouts();
+  const index = workouts.findIndex(w => w.id === workout.id);
+  if (index !== -1) {
+    workouts[index] = workout;
+    await setItem(STORAGE_KEYS.WORKOUTS, workouts);
+  }
+}
+
+export async function deleteWorkout(id: string): Promise<void> {
+  const workouts = await getWorkouts();
+  const filtered = workouts.filter(w => w.id !== id);
+  await setItem(STORAGE_KEYS.WORKOUTS, filtered);
+
+  // Also delete associated sets
+  const sets = await getSets();
+  const filteredSets = sets.filter(s => s.workoutId !== id);
+  await setItem(STORAGE_KEYS.SETS, filteredSets);
+}
+
+export async function getWorkoutsInDateRange(start: Date, end: Date): Promise<Workout[]> {
+  const workouts = await getWorkouts();
+  return workouts.filter(w => {
+    const workoutDate = new Date(w.startedAt);
+    return workoutDate >= start && workoutDate <= end;
+  });
+}
+
+// ==================== SETS ====================
+
+export async function getSets(): Promise<WorkoutSet[]> {
+  return getItem(STORAGE_KEYS.SETS, []);
+}
+
+export async function getSetsByWorkoutId(workoutId: string): Promise<WorkoutSet[]> {
+  const sets = await getSets();
+  return sets.filter(s => s.workoutId === workoutId);
+}
+
+export async function getSetsByExerciseId(exerciseId: string): Promise<WorkoutSet[]> {
+  const sets = await getSets();
+  return sets.filter(s => s.exerciseId === exerciseId);
+}
+
+export async function addSet(set: WorkoutSet): Promise<void> {
+  const sets = await getSets();
+  sets.push(set);
+  await setItem(STORAGE_KEYS.SETS, sets);
+}
+
+export async function updateSet(set: WorkoutSet): Promise<void> {
+  const sets = await getSets();
+  const index = sets.findIndex(s => s.id === set.id);
+  if (index !== -1) {
+    sets[index] = set;
+    await setItem(STORAGE_KEYS.SETS, sets);
+  }
+}
+
+export async function deleteSet(id: string): Promise<void> {
+  const sets = await getSets();
+  const filtered = sets.filter(s => s.id !== id);
+  await setItem(STORAGE_KEYS.SETS, filtered);
+}
+
+export async function getSetsInDateRange(start: Date, end: Date): Promise<WorkoutSet[]> {
+  const sets = await getSets();
+  return sets.filter(s => {
+    const setDate = new Date(s.loggedAt);
+    return setDate >= start && setDate <= end;
+  });
+}
+
+// Get last sets for an exercise (for showing "last time" info)
+export async function getLastSetsForExercise(exerciseId: string, limit: number = 5): Promise<WorkoutSet[]> {
+  const sets = await getSetsByExerciseId(exerciseId);
+
+  // Sort by loggedAt descending and get unique workout sessions
+  const sortedSets = sets.sort(
+    (a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()
+  );
+
+  // Find the last workout that included this exercise
+  if (sortedSets.length === 0) return [];
+
+  const lastWorkoutId = sortedSets[0].workoutId;
+  const lastWorkoutSets = sortedSets.filter(s => s.workoutId === lastWorkoutId);
+
+  return lastWorkoutSets.slice(0, limit);
+}
+
+// ==================== USER SETTINGS ====================
+
+export async function getUserSettings(): Promise<UserSettings> {
+  return getItem(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
+}
+
+export async function updateUserSettings(settings: Partial<UserSettings>): Promise<void> {
+  const current = await getUserSettings();
+  const updated = { ...current, ...settings };
+  await setItem(STORAGE_KEYS.USER_SETTINGS, updated);
+}
+
+// ==================== DATA EXPORT ====================
+
+export interface ExportData {
+  exercises: Exercise[];
+  templates: Template[];
+  locations: WorkoutLocation[];
+  workouts: Workout[];
+  sets: WorkoutSet[];
+  userSettings: UserSettings;
+  exportedAt: string;
+  version: string;
+}
+
+export async function exportAllData(): Promise<ExportData> {
+  const [exercises, templates, locations, workouts, sets, userSettings] = await Promise.all([
+    getExercises(),
+    getTemplates(),
+    getLocations(),
+    getWorkouts(),
+    getSets(),
+    getUserSettings(),
+  ]);
+
+  return {
+    exercises,
+    templates,
+    locations,
+    workouts,
+    sets,
+    userSettings,
+    exportedAt: new Date().toISOString(),
+    version: '1.0.0',
+  };
+}
+
+export async function exportToJSON(): Promise<string> {
+  const data = await exportAllData();
+  return JSON.stringify(data, null, 2);
+}
+
+export async function exportToCSV(): Promise<string> {
+  const sets = await getSets();
+  const exercises = await getExercises();
+  const exerciseMap = new Map(exercises.map(e => [e.id, e]));
+
+  // CSV header
+  const header = 'Exercise Name,Date,Reps,Weight (lb),Workout ID\n';
+
+  // CSV rows
+  const rows = sets.map(set => {
+    const exercise = exerciseMap.get(set.exerciseId);
+    const exerciseName = exercise?.name || set.exerciseId;
+    const date = new Date(set.loggedAt).toISOString();
+
+    return `"${exerciseName}",${date},${set.reps},${set.weight},"${set.workoutId}"`;
+  });
+
+  return header + rows.join('\n');
+}
+
+// ==================== DATA IMPORT (Setgraph) ====================
+
+export interface SetgraphMapping {
+  setgraphName: string;
+  exerciseId: string;
+}
+
+export async function getSetgraphMappings(): Promise<SetgraphMapping[]> {
+  return getItem(STORAGE_KEYS.SETGRAPH_MAPPINGS, []);
+}
+
+export async function saveSetgraphMappings(mappings: SetgraphMapping[]): Promise<void> {
+  await setItem(STORAGE_KEYS.SETGRAPH_MAPPINGS, mappings);
+}
+
+export async function importData(data: ExportData): Promise<void> {
+  await setItem(STORAGE_KEYS.EXERCISES, data.exercises);
+  await setItem(STORAGE_KEYS.TEMPLATES, data.templates);
+  if (data.locations) {
+    await setItem(STORAGE_KEYS.LOCATIONS, data.locations);
+  }
+  await setItem(STORAGE_KEYS.WORKOUTS, data.workouts);
+  await setItem(STORAGE_KEYS.SETS, data.sets);
+  await setItem(STORAGE_KEYS.USER_SETTINGS, data.userSettings);
+}

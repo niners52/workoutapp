@@ -5,15 +5,26 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tylerr82.workouttracker8052",
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.background-delivery": true
+      },
+      "infoPlist": {
+        "UIBackgroundModes": ["fetch"],
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSHealthShareUsageDescription": "WorkoutTracker needs access to your health data to show your workout history and track your fitness progress.",
+        "NSHealthUpdateUsageDescription": "WorkoutTracker will save your completed workouts to Apple Health."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +36,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8fc23c5a-aae4-4269-ac5d-bc77ad6dd97b"
+      }
     }
   }
 }

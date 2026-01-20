@@ -1,0 +1,252 @@
+import {
+  MuscleGroupVolume,
+  WeeklyVolume,
+  PrimaryMuscleGroup,
+  WorkoutSet,
+  Exercise,
+  UserSettings,
+  MUSCLE_GROUP_HIERARCHY,
+  getParentMuscleGroup,
+  ALL_TRACKABLE_MUSCLE_GROUPS,
+} from '../types';
+import { getSetsInDateRange, getExercises, getUserSettings } from './storage';
+import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
+
+// Calculate volume (sets) per muscle group for a date range
+export async function calculateVolumeForDateRange(
+  startDate: Date,
+  endDate: Date
+): Promise<MuscleGroupVolume[]> {
+  const sets = await getSetsInDateRange(startDate, endDate);
+  const exercises = await getExercises();
+  const settings = await getUserSettings();
+
+  const exerciseMap = new Map<string, Exercise>(
+    exercises.map(e => [e.id, e])
+  );
+
+  // Initialize volume tracking for each muscle group
+  const volumeMap = new Map<PrimaryMuscleGroup, {
+    sets: number;
+    exercises: Map<string, { exerciseId: string; exerciseName: string; sets: number }>;
+  }>();
+
+  ALL_TRACKABLE_MUSCLE_GROUPS.forEach(mg => {
+    volumeMap.set(mg, { sets: 0, exercises: new Map() });
+  });
+
+  // Count sets for each muscle group (primary only for volume calculation)
+  sets.forEach(set => {
+    const exercise = exerciseMap.get(set.exerciseId);
+    if (!exercise) return;
+
+    const muscleGroup = exercise.primaryMuscleGroup;
+    const volume = volumeMap.get(muscleGroup);
+
+    if (volume) {
+      volume.sets += 1;
+
+      const existingExercise = volume.exercises.get(exercise.id);
+      if (existingExercise) {
+        existingExercise.sets += 1;
+      } else {
+        volume.exercises.set(exercise.id, {
+          exerciseId: exercise.id,
+          exerciseName: exercise.name,
+          sets: 1,
+        });
+      }
+    }
+  });
+
+  // Convert to array format
+  const result: MuscleGroupVolume[] = ALL_TRACKABLE_MUSCLE_GROUPS.map(mg => ({
+    muscleGroup: mg,
+    sets: volumeMap.get(mg)?.sets || 0,
+    target: settings.muscleGroupTargets[mg] || 0,
+    exercises: Array.from(volumeMap.get(mg)?.exercises.values() || []),
+  }));
+
+  return result;
+}
+
+// Get weekly volume data
+export async function getWeeklyVolume(weekStartDate: Date): Promise<WeeklyVolume> {
+  const settings = await getUserSettings();
+
+  // Adjust start of week based on user settings
+  const dayOffset = settings.weekStartDay === 'sunday' ? 0 : 1;
+  const weekStart = startOfWeek(weekStartDate, { weekStartsOn: dayOffset as 0 | 1 });
+  const weekEnd = endOfWeek(weekStartDate, { weekStartsOn: dayOffset as 0 | 1 });
+
+  const muscleGroups = await calculateVolumeForDateRange(weekStart, weekEnd);
+
+  // Calculate totals (only for muscle groups with targets > 0)
+  const totalSets = muscleGroups
+    .filter(mg => mg.target > 0)
+    .reduce((sum, mg) => sum + mg.sets, 0);
+  const targetSets = muscleGroups
+    .filter(mg => mg.target > 0)
+    .reduce((sum, mg) => sum + mg.target, 0);
+
+  return {
+    weekStart: format(weekStart, 'yyyy-MM-dd'),
+    weekEnd: format(weekEnd, 'yyyy-MM-dd'),
+    muscleGroups,
+    totalSets,
+    targetSets,
+  };
+}
+
+// Get volume data for multiple weeks (for charts)
+export async function getVolumeHistory(
+  weeks: number = 8
+): Promise<WeeklyVolume[]> {
+  const history: WeeklyVolume[] = [];
+  const today = new Date();
+
+  for (let i = 0; i < weeks; i++) {
+    const weekDate = subWeeks(today, i);
+    const weeklyVolume = await getWeeklyVolume(weekDate);
+    history.push(weeklyVolume);
+  }
+
+  // Return in chronological order (oldest first)
+  return history.reverse();
+}
+
+// Get parent muscle group volume (aggregating children)
+export interface ParentMuscleGroupVolume {
+  parent: 'back' | 'shoulders';
+  totalSets: number;
+  totalTarget: number;
+  children: MuscleGroupVolume[];
+}
+
+export function aggregateChildMuscleGroups(
+  volumes: MuscleGroupVolume[]
+): ParentMuscleGroupVolume[] {
+  return MUSCLE_GROUP_HIERARCHY.map(hierarchy => {
+    const childVolumes = volumes.filter(v =>
+      hierarchy.children.includes(v.muscleGroup as any)
+    );
+
+    return {
+      parent: hierarchy.parent,
+      totalSets: childVolumes.reduce((sum, v) => sum + v.sets, 0),
+      totalTarget: childVolumes.reduce((sum, v) => sum + v.target, 0),
+      children: childVolumes,
+    };
+  });
+}
+
+// Calculate overall training score (percentage of targets met)
+export function calculateTrainingScore(volumes: MuscleGroupVolume[]): number {
+  const targetedVolumes = volumes.filter(v => v.target > 0);
+
+  if (targetedVolumes.length === 0) return 0;
+
+  const totalSets = targetedVolumes.reduce((sum, v) => sum + v.sets, 0);
+  const totalTargets = targetedVolumes.reduce((sum, v) => sum + v.target, 0);
+
+  if (totalTargets === 0) return 0;
+
+  // Cap at 100% for the score
+  return Math.min(100, Math.round((totalSets / totalTargets) * 100));
+}
+
+// Get volume breakdown by exercise for a muscle group
+export async function getExerciseVolumeForMuscleGroup(
+  muscleGroup: PrimaryMuscleGroup,
+  startDate: Date,
+  endDate: Date
+): Promise<{ exerciseId: string; exerciseName: string; sets: number }[]> {
+  const volumes = await calculateVolumeForDateRange(startDate, endDate);
+  const muscleVolume = volumes.find(v => v.muscleGroup === muscleGroup);
+
+  if (!muscleVolume) return [];
+
+  // Sort by sets descending
+  return muscleVolume.exercises.sort((a, b) => b.sets - a.sets);
+}
+
+// Get personal records for an exercise
+export interface PersonalRecord {
+  exerciseId: string;
+  maxWeight: number;
+  maxReps: number;
+  maxVolume: number; // weight * reps
+  date: string;
+}
+
+export async function getPersonalRecords(exerciseId: string): Promise<PersonalRecord | null> {
+  const sets = await getSetsInDateRange(new Date(0), new Date());
+  const exerciseSets = sets.filter(s => s.exerciseId === exerciseId);
+
+  if (exerciseSets.length === 0) return null;
+
+  let maxWeight = 0;
+  let maxReps = 0;
+  let maxVolume = 0;
+  let prDate = '';
+
+  exerciseSets.forEach(set => {
+    if (set.weight > maxWeight) {
+      maxWeight = set.weight;
+    }
+    if (set.reps > maxReps) {
+      maxReps = set.reps;
+    }
+    const volume = set.weight * set.reps;
+    if (volume > maxVolume) {
+      maxVolume = volume;
+      prDate = set.loggedAt;
+    }
+  });
+
+  return {
+    exerciseId,
+    maxWeight,
+    maxReps,
+    maxVolume,
+    date: prDate,
+  };
+}
+
+// Get volume trend (comparing current week to previous weeks)
+export interface VolumeTrend {
+  muscleGroup: PrimaryMuscleGroup;
+  currentWeek: number;
+  previousWeek: number;
+  change: number; // percentage change
+  trend: 'up' | 'down' | 'stable';
+}
+
+export async function getVolumeTrends(): Promise<VolumeTrend[]> {
+  const today = new Date();
+  const currentWeekVolume = await getWeeklyVolume(today);
+  const previousWeekVolume = await getWeeklyVolume(subWeeks(today, 1));
+
+  return currentWeekVolume.muscleGroups.map(current => {
+    const previous = previousWeekVolume.muscleGroups.find(
+      p => p.muscleGroup === current.muscleGroup
+    );
+
+    const prevSets = previous?.sets || 0;
+    const change = prevSets === 0
+      ? (current.sets > 0 ? 100 : 0)
+      : Math.round(((current.sets - prevSets) / prevSets) * 100);
+
+    let trend: 'up' | 'down' | 'stable' = 'stable';
+    if (change > 10) trend = 'up';
+    else if (change < -10) trend = 'down';
+
+    return {
+      muscleGroup: current.muscleGroup,
+      currentWeek: current.sets,
+      previousWeek: prevSets,
+      change,
+      trend,
+    };
+  });
+}
