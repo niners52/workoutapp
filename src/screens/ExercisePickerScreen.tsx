@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { SearchBar, Button } from '../components/common';
@@ -16,9 +17,10 @@ import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type ExercisePickerRouteProp = RouteProp<RootStackParamList, 'ExercisePicker'>;
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function ExercisePickerScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ExercisePickerRouteProp>();
   const { exercises } = useData();
   const { addExerciseToWorkout, setCurrentExercise, activeWorkout } = useWorkout();

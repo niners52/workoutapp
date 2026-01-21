@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +22,23 @@ import { WorkoutSet, Exercise } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+// Cross-platform alert helper
+const showAlert = (
+  title: string,
+  message: string,
+  buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[]
+) => {
+  if (Platform.OS === 'web') {
+    const confirmed = window.confirm(`${title}\n\n${message}`);
+    if (confirmed) {
+      const confirmButton = buttons.find(b => b.style !== 'cancel');
+      confirmButton?.onPress?.();
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
 
 interface ExerciseHistory {
   exerciseId: string;
@@ -111,7 +129,7 @@ export function ActiveWorkoutScreen() {
   };
 
   const handleDeleteSet = (setId: string) => {
-    Alert.alert(
+    showAlert(
       'Delete Set',
       'Are you sure you want to delete this set?',
       [
@@ -126,7 +144,7 @@ export function ActiveWorkoutScreen() {
   };
 
   const handleFinishWorkout = () => {
-    Alert.alert(
+    showAlert(
       'Finish Workout',
       'Are you sure you want to finish this workout?',
       [
@@ -143,7 +161,7 @@ export function ActiveWorkoutScreen() {
   };
 
   const handleCancelWorkout = () => {
-    Alert.alert(
+    showAlert(
       'Cancel Workout',
       'Your progress will be saved but the workout won\'t be marked as complete.',
       [
