@@ -8,11 +8,11 @@ import {
   Alert,
   ActivityIndicator,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
@@ -55,8 +55,19 @@ export function SetgraphImportScreen() {
       const file = result.assets[0];
       setFileName(file.name);
 
-      // Read file content
-      const content = await FileSystem.readAsStringAsync(file.uri);
+      // Read file content - different approach for web vs native
+      let content: string;
+
+      if (Platform.OS === 'web') {
+        // On web, fetch the blob URL and read as text
+        const response = await fetch(file.uri);
+        content = await response.text();
+      } else {
+        // On native, use expo-file-system
+        const FileSystem = await import('expo-file-system');
+        content = await FileSystem.readAsStringAsync(file.uri);
+      }
+
       setCsvContent(content);
 
       // Auto-validate after picking file

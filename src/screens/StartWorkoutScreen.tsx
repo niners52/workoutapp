@@ -64,14 +64,24 @@ export function StartWorkoutScreen() {
     setStep('template');
   };
 
-  const handleSelectTemplate = async (template: Template) => {
-    const workoutId = await startWorkout(template.id);
-    navigation.navigate('ActiveWorkout', { workoutId });
+  const handleSelectTemplate = (template: Template) => {
+    startWorkout(template.id)
+      .then((workoutId) => {
+        navigation.navigate('ActiveWorkout', { workoutId });
+      })
+      .catch((error) => {
+        console.error('Failed to start workout:', error);
+      });
   };
 
-  const handleStartBlank = async () => {
-    const workoutId = await startWorkout();
-    navigation.navigate('ActiveWorkout', { workoutId });
+  const handleStartBlank = () => {
+    startWorkout()
+      .then((workoutId) => {
+        navigation.navigate('ActiveWorkout', { workoutId });
+      })
+      .catch((error) => {
+        console.error('Failed to start workout:', error);
+      });
   };
 
   const handleBack = () => {

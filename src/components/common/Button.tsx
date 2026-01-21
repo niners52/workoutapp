@@ -11,7 +11,7 @@ import { colors, typography, spacing, borderRadius } from '../../theme';
 
 interface ButtonProps {
   title: string;
-  onPress: () => void;
+  onPress: () => void | Promise<void>;
   variant?: 'primary' | 'secondary' | 'destructive' | 'ghost';
   size?: 'small' | 'medium' | 'large';
   disabled?: boolean;
