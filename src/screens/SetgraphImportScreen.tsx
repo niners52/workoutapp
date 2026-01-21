@@ -7,9 +7,12 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
@@ -27,6 +30,7 @@ export function SetgraphImportScreen() {
   const { exercises, refreshAll } = useData();
 
   const [csvContent, setCsvContent] = useState('');
+  const [fileName, setFileName] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [mappings, setMappings] = useState<SetgraphExerciseMapping[]>([]);
@@ -36,6 +40,47 @@ export function SetgraphImportScreen() {
     rowCount: number;
     errors: string[];
   } | null>(null);
+
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', 'application/csv', '*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const file = result.assets[0];
+      setFileName(file.name);
+
+      // Read file content
+      const content = await FileSystem.readAsStringAsync(file.uri);
+      setCsvContent(content);
+
+      // Auto-validate after picking file
+      setIsValidating(true);
+      try {
+        const validationResult = validateSetgraphCSV(content);
+        setValidationResult(validationResult);
+
+        if (validationResult.valid) {
+          const rows = parseSetgraphCSV(content);
+          const uniqueExercises = getUniqueSetgraphExercises(rows);
+          const defaultMappings = createDefaultMappings(uniqueExercises, exercises);
+          setMappings(defaultMappings);
+          setShowMappings(true);
+        }
+      } catch (error) {
+        Alert.alert('Validation Error', `Failed to validate CSV: ${error}`);
+      } finally {
+        setIsValidating(false);
+      }
+    } catch (error) {
+      Alert.alert('Error', `Failed to read file: ${error}`);
+    }
+  };
 
   const handleValidate = async () => {
     if (!csvContent.trim()) {
@@ -89,32 +134,58 @@ export function SetgraphImportScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.title}>Import from Setgraph</Text>
         <Text style={styles.description}>
-          Paste your Setgraph CSV export below. The data will be matched to exercises
-          in your library, and any unmatched exercises will be created automatically.
+          Import your Setgraph CSV export. You can pick a file from your device or paste
+          the data directly.
         </Text>
 
-        {/* CSV Input */}
+        {/* File Picker and CSV Input */}
         {!showMappings && (
-          <Card style={styles.section}>
-            <Text style={styles.label}>Setgraph CSV Data</Text>
-            <TextInput
-              style={styles.csvInput}
-              value={csvContent}
-              onChangeText={setCsvContent}
-              placeholder="Paste your CSV content here..."
-              placeholderTextColor={colors.textTertiary}
-              multiline
-              numberOfLines={10}
-              textAlignVertical="top"
-            />
-            <Button
-              title={isValidating ? 'Validating...' : 'Validate Data'}
-              onPress={handleValidate}
-              disabled={isValidating || !csvContent.trim()}
-              fullWidth
-              style={styles.validateButton}
-            />
-          </Card>
+          <>
+            {/* File Picker */}
+            <TouchableOpacity style={styles.filePickerButton} onPress={handlePickFile}>
+              <Text style={styles.filePickerIcon}>📁</Text>
+              <View style={styles.filePickerText}>
+                <Text style={styles.filePickerTitle}>
+                  {fileName ? fileName : 'Select CSV File'}
+                </Text>
+                <Text style={styles.filePickerSubtitle}>
+                  {fileName ? 'Tap to select a different file' : 'From Files, iCloud, or email attachment'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Or divider */}
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or paste manually</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Manual paste */}
+            <Card style={styles.section}>
+              <Text style={styles.label}>Paste CSV Data</Text>
+              <TextInput
+                style={styles.csvInput}
+                value={csvContent}
+                onChangeText={(text) => {
+                  setCsvContent(text);
+                  setFileName(null);
+                }}
+                placeholder="Paste your CSV content here..."
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                numberOfLines={8}
+                textAlignVertical="top"
+              />
+              <Button
+                title={isValidating ? 'Validating...' : 'Validate Data'}
+                onPress={handleValidate}
+                disabled={isValidating || !csvContent.trim()}
+                fullWidth
+                style={styles.validateButton}
+              />
+            </Card>
+          </>
         )}
 
         {/* Validation Result */}
@@ -202,6 +273,49 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.lg,
     lineHeight: 22,
+  },
+  filePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderStyle: 'dashed',
+  },
+  filePickerIcon: {
+    fontSize: 32,
+    marginRight: spacing.md,
+  },
+  filePickerText: {
+    flex: 1,
+  },
+  filePickerTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  filePickerSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.md,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.separator,
+  },
+  dividerText: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+    marginHorizontal: spacing.md,
   },
   section: {
     marginBottom: spacing.lg,

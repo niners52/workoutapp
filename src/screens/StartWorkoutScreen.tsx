@@ -200,7 +200,7 @@ export function StartWorkoutScreen() {
 
         {renderStepIndicator()}
 
-        {/* Start Blank Option */}
+        {/* Start Options */}
         <View style={styles.section}>
           <Button
             title="Start Blank Workout"
@@ -208,6 +208,14 @@ export function StartWorkoutScreen() {
             variant="secondary"
             fullWidth
           />
+          <TouchableOpacity
+            style={styles.pastWorkoutButton}
+            onPress={() => navigation.navigate('LogPastWorkout')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.pastWorkoutIcon}>📅</Text>
+            <Text style={styles.pastWorkoutText}>Log Past Workout</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.divider}>
@@ -444,6 +452,24 @@ const styles = StyleSheet.create({
   exerciseCount: {
     fontSize: typography.size.sm,
     color: colors.textTertiary,
+  },
+  pastWorkoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  pastWorkoutIcon: {
+    fontSize: 18,
+    marginRight: spacing.sm,
+  },
+  pastWorkoutText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
   },
 });
 

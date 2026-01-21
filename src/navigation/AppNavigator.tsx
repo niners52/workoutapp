@@ -21,6 +21,7 @@ import {
   MuscleGroupDetailScreen,
   SettingsScreen,
   SetgraphImportScreen,
+  LogPastWorkoutScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -202,6 +203,15 @@ export function AppNavigator() {
           component={SetgraphImportScreen}
           options={{
             title: 'Import Data',
+          }}
+        />
+        <Stack.Screen
+          name="LogPastWorkout"
+          component={LogPastWorkoutScreen}
+          options={{
+            title: 'Log Past Workout',
+            presentation: 'modal',
+            headerShown: false,
           }}
         />
       </Stack.Navigator>

@@ -12,3 +12,4 @@ export { AnalyticsScreen } from './AnalyticsScreen';
 export { MuscleGroupDetailScreen } from './MuscleGroupDetailScreen';
 export { SettingsScreen } from './SettingsScreen';
 export { SetgraphImportScreen } from './SetgraphImportScreen';
+export { LogPastWorkoutScreen } from './LogPastWorkoutScreen';
