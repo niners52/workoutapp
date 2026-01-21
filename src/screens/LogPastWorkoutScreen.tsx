@@ -13,8 +13,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
-import { v4 as uuidv4 } from 'uuid';
+import * as Crypto from 'expo-crypto';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
+
+// Generate UUID using expo-crypto
+const generateId = () => Crypto.randomUUID();
 import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { addWorkout, addSet, getLastSetsForExercise } from '../services/storage';
@@ -71,7 +74,7 @@ export function LogPastWorkoutScreen() {
       if (entry.exerciseId === exerciseId) {
         return {
           ...entry,
-          sets: [...entry.sets, { id: uuidv4(), reps: 8, weight: 0 }],
+          sets: [...entry.sets, { id: generateId(), reps: 8, weight: 0 }],
         };
       }
       return entry;
@@ -115,7 +118,7 @@ export function LogPastWorkoutScreen() {
     try {
       // Create workout with the selected date
       const workout: Workout = {
-        id: uuidv4(),
+        id: generateId(),
         startedAt: workoutDate.toISOString(),
         completedAt: workoutDate.toISOString(),
         templateId: selectedTemplate?.id || null,
@@ -127,7 +130,7 @@ export function LogPastWorkoutScreen() {
       for (const entry of exerciseEntries) {
         for (const set of entry.sets) {
           const workoutSet: WorkoutSet = {
-            id: uuidv4(),
+            id: generateId(),
             workoutId: workout.id,
             exerciseId: entry.exerciseId,
             reps: set.reps,
