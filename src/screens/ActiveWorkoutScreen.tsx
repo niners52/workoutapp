@@ -18,7 +18,7 @@ import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastSetsForExercise } from '../services/storage';
-import { WorkoutSet, Exercise } from '../types';
+import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -61,6 +61,7 @@ export function ActiveWorkoutScreen() {
     stopRestTimer,
     getSetsForExercise,
     addExerciseToWorkout,
+    swapExercise,
   } = useWorkout();
 
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
@@ -69,6 +70,8 @@ export function ActiveWorkoutScreen() {
   const [exerciseHistories, setExerciseHistories] = useState<Record<string, ExerciseHistory>>({});
   const [restTimerModalVisible, setRestTimerModalVisible] = useState(false);
   const [customRestTime, setCustomRestTime] = useState(userSettings?.restTimerSeconds || 90);
+  const [swapModalVisible, setSwapModalVisible] = useState(false);
+  const [exerciseToSwap, setExerciseToSwap] = useState<Exercise | null>(null);
 
   // Load history for all exercises when workout starts
   useEffect(() => {
@@ -184,6 +187,29 @@ export function ActiveWorkoutScreen() {
     });
   };
 
+  const handleOpenSwapModal = (exercise: Exercise) => {
+    setExerciseToSwap(exercise);
+    setSwapModalVisible(true);
+  };
+
+  const handleSwapExercise = (newExercise: Exercise) => {
+    if (!exerciseToSwap) return;
+    swapExercise(exerciseToSwap.id, newExercise.id);
+    setSwapModalVisible(false);
+    setExerciseToSwap(null);
+    // Expand the new exercise
+    setSelectedExerciseId(newExercise.id);
+  };
+
+  // Get exercises with the same muscle group for swap options
+  const getSwapOptions = (exercise: Exercise): Exercise[] => {
+    return exercises.filter(e =>
+      e.id !== exercise.id &&
+      e.primaryMuscleGroup === exercise.primaryMuscleGroup &&
+      !activeWorkout.exerciseIds.includes(e.id) // Don't show exercises already in workout
+    );
+  };
+
   const toggleExercise = (exerciseId: string) => {
     if (selectedExerciseId === exerciseId) {
       setSelectedExerciseId(null);
@@ -265,6 +291,8 @@ export function ActiveWorkoutScreen() {
 
             if (!exercise) return null;
 
+            const swapOptions = getSwapOptions(exercise);
+
             return (
               <ExerciseCard
                 key={exerciseId}
@@ -276,6 +304,8 @@ export function ActiveWorkoutScreen() {
                 onLogSet={handleLogSet}
                 onDeleteSet={handleDeleteSet}
                 onOpenRestTimer={() => setRestTimerModalVisible(true)}
+                onSwap={() => handleOpenSwapModal(exercise)}
+                hasSwapOptions={swapOptions.length > 0}
                 weight={weight}
                 setWeight={setWeight}
                 reps={reps}
@@ -352,6 +382,50 @@ export function ActiveWorkoutScreen() {
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* Swap Exercise Modal */}
+        <Modal
+          visible={swapModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSwapModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setSwapModalVisible(false)}
+          >
+            <View style={[styles.modalContent, styles.swapModalContent]}>
+              <Text style={styles.modalTitle}>
+                Swap {exerciseToSwap?.name}
+              </Text>
+              <Text style={styles.swapModalSubtitle}>
+                {exerciseToSwap && MUSCLE_GROUP_DISPLAY_NAMES[exerciseToSwap.primaryMuscleGroup]} exercises
+              </Text>
+
+              <ScrollView style={styles.swapList}>
+                {exerciseToSwap && getSwapOptions(exerciseToSwap).map(exercise => (
+                  <TouchableOpacity
+                    key={exercise.id}
+                    style={styles.swapOption}
+                    onPress={() => handleSwapExercise(exercise)}
+                  >
+                    <Text style={styles.swapOptionName}>{exercise.name}</Text>
+                    <Text style={styles.swapOptionEquipment}>{exercise.equipment}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Button
+                title="Cancel"
+                onPress={() => setSwapModalVisible(false)}
+                variant="secondary"
+                fullWidth
+                style={styles.cancelSwapButton}
+              />
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -366,6 +440,8 @@ interface ExerciseCardProps {
   onLogSet: () => void;
   onDeleteSet: (setId: string) => void;
   onOpenRestTimer: () => void;
+  onSwap: () => void;
+  hasSwapOptions: boolean;
   weight: number;
   setWeight: (w: number) => void;
   reps: number;
@@ -382,6 +458,8 @@ function ExerciseCard({
   onLogSet,
   onDeleteSet,
   onOpenRestTimer,
+  onSwap,
+  hasSwapOptions,
   weight,
   setWeight,
   reps,
@@ -402,7 +480,21 @@ function ExerciseCard({
             {currentSets.length} {currentSets.length === 1 ? 'set' : 'sets'} logged
           </Text>
         </View>
-        <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+        <View style={styles.exerciseHeaderRight}>
+          {hasSwapOptions && (
+            <TouchableOpacity
+              style={styles.swapButton}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                onSwap();
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.swapButtonText}>Swap</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+        </View>
       </TouchableOpacity>
 
       {/* Expanded Content */}
@@ -578,6 +670,11 @@ const styles = StyleSheet.create({
   exerciseHeaderLeft: {
     flex: 1,
   },
+  exerciseHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   exerciseName: {
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
@@ -587,6 +684,17 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  swapButton: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  swapButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
   },
   expandIcon: {
     fontSize: typography.size.sm,
@@ -741,6 +849,43 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.semibold,
   },
   startTimerButton: {
+    marginTop: spacing.md,
+  },
+  // Swap modal styles
+  swapModalContent: {
+    maxHeight: '70%',
+  },
+  swapModalSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: -spacing.md,
+    marginBottom: spacing.lg,
+  },
+  swapList: {
+    maxHeight: 300,
+  },
+  swapOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.base,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  swapOptionName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+    flex: 1,
+  },
+  swapOptionEquipment: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginLeft: spacing.sm,
+  },
+  cancelSwapButton: {
     marginTop: spacing.md,
   },
 });

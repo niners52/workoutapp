@@ -45,7 +45,7 @@ export function AnalyticsScreen() {
       const current = await getWeeklyVolume(today);
       setCurrentWeekVolume(current);
 
-      const history = await getVolumeHistory(8);
+      const history = await getVolumeHistory(52); // Load a full year of history
       setVolumeHistory(history);
     } catch (error) {
       console.error('Failed to load analytics:', error);
@@ -110,10 +110,10 @@ export function AnalyticsScreen() {
         <View style={styles.weekSelector}>
           <TouchableOpacity
             style={styles.weekButton}
-            onPress={() => setSelectedWeekIndex(Math.min(selectedWeekIndex + 1, 7))}
-            disabled={selectedWeekIndex >= 7}
+            onPress={() => setSelectedWeekIndex(Math.min(selectedWeekIndex + 1, volumeHistory.length - 1))}
+            disabled={selectedWeekIndex >= volumeHistory.length - 1}
           >
-            <Text style={[styles.weekButtonText, selectedWeekIndex >= 7 && styles.weekButtonDisabled]}>
+            <Text style={[styles.weekButtonText, selectedWeekIndex >= volumeHistory.length - 1 && styles.weekButtonDisabled]}>
               ‹ Previous
             </Text>
           </TouchableOpacity>
@@ -124,8 +124,8 @@ export function AnalyticsScreen() {
             </Text>
             {displayVolume && (
               <Text style={styles.weekDates}>
-                {format(new Date(displayVolume.weekStart), 'MMM d')} -{' '}
-                {format(new Date(displayVolume.weekEnd), 'MMM d')}
+                {format(new Date(displayVolume.weekStart), 'MMM d, yyyy')} -{' '}
+                {format(new Date(displayVolume.weekEnd), 'MMM d, yyyy')}
               </Text>
             )}
           </View>
@@ -192,39 +192,51 @@ export function AnalyticsScreen() {
           )}
         </View>
 
-        {/* Weekly Trend */}
+        {/* Weekly Trend - Show last 8 weeks */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Weekly Trend</Text>
+          <Text style={styles.sectionTitle}>Training Score (Last 8 Weeks)</Text>
           <Card>
-            <View style={styles.trendChart}>
-              {volumeHistory.map((week, index) => {
-                const score = calculateTrainingScore(week.muscleGroups);
-                const height = Math.max(score, 5);
-                const isSelected = index === volumeHistory.length - 1 - selectedWeekIndex;
+            <View style={styles.trendChartContainer}>
+              <View style={styles.trendYAxis}>
+                <Text style={styles.trendYLabel}>100%</Text>
+                <Text style={styles.trendYLabel}>50%</Text>
+                <Text style={styles.trendYLabel}>0%</Text>
+              </View>
+              <View style={styles.trendChart}>
+                {volumeHistory.slice(-8).map((week, index) => {
+                  const actualIndex = volumeHistory.length - 8 + index;
+                  const score = calculateTrainingScore(week.muscleGroups);
+                  const chartHeight = 80; // Fixed height in pixels
+                  const barHeight = Math.max((score / 100) * chartHeight, 4);
+                  const isSelected = actualIndex === volumeHistory.length - 1 - selectedWeekIndex;
+                  const weekStartDate = new Date(week.weekStart);
+                  const weekEndDate = new Date(week.weekEnd);
 
-                return (
-                  <TouchableOpacity
-                    key={week.weekStart}
-                    style={styles.trendBarContainer}
-                    onPress={() => setSelectedWeekIndex(volumeHistory.length - 1 - index)}
-                  >
-                    <View style={styles.trendBarWrapper}>
-                      <View
-                        style={[
-                          styles.trendBar,
-                          { height: `${height}%` },
-                          isSelected && styles.trendBarSelected,
-                          score >= 100 && styles.trendBarComplete,
-                        ]}
-                      />
-                    </View>
-                    <Text style={[styles.trendLabel, isSelected && styles.trendLabelSelected]}>
-                      {format(new Date(week.weekStart), 'M/d')}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                  return (
+                    <TouchableOpacity
+                      key={week.weekStart}
+                      style={styles.trendBarContainer}
+                      onPress={() => setSelectedWeekIndex(volumeHistory.length - 1 - actualIndex)}
+                    >
+                      <View style={styles.trendBarArea}>
+                        <View
+                          style={[
+                            styles.trendBar,
+                            { height: barHeight },
+                            isSelected && styles.trendBarSelected,
+                            score >= 100 && styles.trendBarComplete,
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.trendLabel, isSelected && styles.trendLabelSelected]}>
+                        {format(weekStartDate, 'M/d')}-{format(weekEndDate, 'M/d')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
+            <Text style={styles.trendCaption}>% of target sets completed per week</Text>
           </Card>
         </View>
       </ScrollView>
@@ -335,22 +347,40 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  trendChartContainer: {
+    flexDirection: 'row',
+  },
+  trendYAxis: {
+    width: 36,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingRight: spacing.xs,
+    paddingBottom: 24,
+    height: 104,
+  },
+  trendYLabel: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+  },
   trendChart: {
+    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    height: 100,
+    height: 104,
   },
   trendBarContainer: {
     flex: 1,
     alignItems: 'center',
   },
-  trendBarWrapper: {
-    flex: 1,
-    width: '80%',
+  trendBarArea: {
+    height: 80,
+    width: 24,
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   trendBar: {
+    width: 20,
     backgroundColor: colors.backgroundTertiary,
     borderRadius: borderRadius.sm,
     minHeight: 4,
@@ -362,13 +392,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.success,
   },
   trendLabel: {
-    fontSize: typography.size.xs,
+    fontSize: 8,
     color: colors.textTertiary,
     marginTop: spacing.xs,
+    textAlign: 'center',
   },
   trendLabelSelected: {
     color: colors.primary,
     fontWeight: typography.weight.medium,
+  },
+  trendCaption: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
 });
 

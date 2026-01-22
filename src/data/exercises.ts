@@ -168,6 +168,100 @@ export const SEED_EXERCISES: Exercise[] = [
     location: 'gym',
   },
 
+  // GYM PUSH B exercises
+  {
+    id: 'incline-bench-press',
+    name: 'Incline Bench Press',
+    primaryMuscleGroup: 'chest',
+    secondaryMuscleGroups: ['front_delts', 'triceps'],
+    equipment: 'barbell',
+    location: 'gym',
+  },
+  {
+    id: 'pec-fly-machine',
+    name: 'Pec Fly Machine',
+    primaryMuscleGroup: 'chest',
+    secondaryMuscleGroups: [],
+    equipment: 'machine',
+    location: 'gym',
+  },
+  {
+    id: 'db-overhead-press-neutral',
+    name: 'DB Overhead Press (Neutral)',
+    primaryMuscleGroup: 'front_delts',
+    secondaryMuscleGroups: ['triceps', 'side_delts'],
+    equipment: 'dumbbell',
+    location: 'gym',
+  },
+  {
+    id: 'cable-lateral-raise',
+    name: 'Cable Lateral Raise',
+    primaryMuscleGroup: 'side_delts',
+    secondaryMuscleGroups: [],
+    equipment: 'cable',
+    location: 'gym',
+  },
+  {
+    id: 'straight-bar-pushdown',
+    name: 'Straight-Bar Pushdown',
+    primaryMuscleGroup: 'triceps',
+    secondaryMuscleGroups: [],
+    equipment: 'cable',
+    location: 'gym',
+  },
+
+  // GYM PULL B exercises
+  {
+    id: 'close-grip-pulldown',
+    name: 'Close-Grip Pulldown',
+    primaryMuscleGroup: 'lats',
+    secondaryMuscleGroups: ['biceps'],
+    equipment: 'cable',
+    location: 'gym',
+  },
+  {
+    id: 'straight-arm-pulldown',
+    name: 'Straight-Arm Pulldown',
+    primaryMuscleGroup: 'lats',
+    secondaryMuscleGroups: [],
+    equipment: 'cable',
+    location: 'gym',
+  },
+  {
+    id: 'rear-delt-fly-machine',
+    name: 'Rear-Delt Fly Machine',
+    primaryMuscleGroup: 'rear_delts',
+    secondaryMuscleGroups: ['upper_back'],
+    equipment: 'machine',
+    location: 'gym',
+  },
+  {
+    id: 'ez-bar-curl',
+    name: 'EZ-Bar Curl',
+    primaryMuscleGroup: 'biceps',
+    secondaryMuscleGroups: ['forearms'],
+    equipment: 'barbell',
+    location: 'gym',
+  },
+  {
+    id: 'cable-curl',
+    name: 'Cable Curl',
+    primaryMuscleGroup: 'biceps',
+    secondaryMuscleGroups: ['forearms'],
+    equipment: 'cable',
+    location: 'gym',
+  },
+
+  // GYM LEGS B additional exercises
+  {
+    id: 'seated-calf-raise',
+    name: 'Seated Calf Raise',
+    primaryMuscleGroup: 'calves',
+    secondaryMuscleGroups: [],
+    equipment: 'machine',
+    location: 'gym',
+  },
+
   // PUSH (Home) exercises
   {
     id: 'db-flat-low-incline-bench-press',

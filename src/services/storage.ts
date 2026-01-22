@@ -11,6 +11,8 @@ import {
 } from '../types';
 import { SEED_EXERCISES } from '../data/exercises';
 import { SEED_TEMPLATES } from '../data/templates';
+import { IMPORTED_EXERCISES } from '../data/importedExercises';
+import { IMPORTED_WORKOUTS, IMPORTED_SETS } from '../data/importedWorkouts';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -26,7 +28,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 2;
+const CURRENT_MIGRATION_VERSION = 5;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -53,8 +55,9 @@ export async function initializeStorage(): Promise<void> {
   const initialized = await AsyncStorage.getItem(STORAGE_KEYS.INITIALIZED);
 
   if (!initialized) {
-    // Seed exercises
-    await setItem(STORAGE_KEYS.EXERCISES, SEED_EXERCISES);
+    // Seed exercises (combine built-in and imported)
+    const allExercises = [...SEED_EXERCISES, ...IMPORTED_EXERCISES];
+    await setItem(STORAGE_KEYS.EXERCISES, allExercises);
 
     // Seed templates
     await setItem(STORAGE_KEYS.TEMPLATES, SEED_TEMPLATES);
@@ -62,9 +65,9 @@ export async function initializeStorage(): Promise<void> {
     // Seed locations
     await setItem(STORAGE_KEYS.LOCATIONS, DEFAULT_LOCATIONS);
 
-    // Initialize empty workouts and sets
-    await setItem(STORAGE_KEYS.WORKOUTS, []);
-    await setItem(STORAGE_KEYS.SETS, []);
+    // Initialize with imported historical workouts and sets
+    await setItem(STORAGE_KEYS.WORKOUTS, IMPORTED_WORKOUTS);
+    await setItem(STORAGE_KEYS.SETS, IMPORTED_SETS);
 
     // Set default user settings
     await setItem(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
@@ -73,7 +76,7 @@ export async function initializeStorage(): Promise<void> {
     await AsyncStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
     await AsyncStorage.setItem(STORAGE_KEYS.MIGRATION_VERSION, String(CURRENT_MIGRATION_VERSION));
 
-    console.log('Storage initialized with seed data');
+    console.log('Storage initialized with seed data and imported history');
   } else {
     // Run migrations if needed
     await runMigrations();
@@ -87,6 +90,18 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 2) {
     await migrateToV2();
+  }
+
+  if (currentVersion < 3) {
+    await migrateToV3();
+  }
+
+  if (currentVersion < 4) {
+    await migrateToV4();
+  }
+
+  if (currentVersion < 5) {
+    await migrateToV5();
   }
 
   // Update migration version
@@ -133,6 +148,124 @@ async function migrateToV2(): Promise<void> {
 
   await setItem(STORAGE_KEYS.TEMPLATES, migratedTemplates);
   console.log('Migration to V2 complete');
+}
+
+// Migration V3: Import Setgraph historical data
+async function migrateToV3(): Promise<void> {
+  console.log('Running migration to V3 - importing Setgraph data...');
+
+  // Add imported exercises (merge with existing, avoiding duplicates)
+  const existingExercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const existingIds = new Set(existingExercises.map(e => e.id));
+  const newExercises = IMPORTED_EXERCISES.filter(e => !existingIds.has(e.id));
+  const mergedExercises = [...existingExercises, ...newExercises];
+  await setItem(STORAGE_KEYS.EXERCISES, mergedExercises);
+  console.log(`Added ${newExercises.length} new exercises from import`);
+
+  // Add imported workouts (merge with existing)
+  const existingWorkouts = await getItem<Workout[]>(STORAGE_KEYS.WORKOUTS, []);
+  const existingWorkoutIds = new Set(existingWorkouts.map(w => w.id));
+  const newWorkouts = IMPORTED_WORKOUTS.filter(w => !existingWorkoutIds.has(w.id));
+  const mergedWorkouts = [...existingWorkouts, ...newWorkouts];
+  await setItem(STORAGE_KEYS.WORKOUTS, mergedWorkouts);
+  console.log(`Added ${newWorkouts.length} workouts from import`);
+
+  // Add imported sets (merge with existing)
+  const existingSets = await getItem<WorkoutSet[]>(STORAGE_KEYS.SETS, []);
+  const existingSetIds = new Set(existingSets.map(s => s.id));
+  const newSets = IMPORTED_SETS.filter(s => !existingSetIds.has(s.id));
+  const mergedSets = [...existingSets, ...newSets];
+  await setItem(STORAGE_KEYS.SETS, mergedSets);
+  console.log(`Added ${newSets.length} sets from import`);
+
+  console.log('Migration to V3 complete');
+}
+
+// Migration V4: Add Gym B templates and rename Gym A templates
+async function migrateToV4(): Promise<void> {
+  console.log('Running migration to V4 - adding Gym B templates...');
+
+  // Update templates: merge in new templates and update existing ones
+  const existingTemplates = await getItem<Template[]>(STORAGE_KEYS.TEMPLATES, []);
+  const existingIds = new Set(existingTemplates.map(t => t.id));
+
+  // Update existing Gym A templates with new names (if they exist)
+  const updatedTemplates = existingTemplates.map(t => {
+    // Rename old Gym A templates
+    if (t.id === 'push-gym' && !t.name.includes('A')) {
+      return { ...t, name: 'PUSH A (Gym)' };
+    }
+    if (t.id === 'pull-gym' && !t.name.includes('A')) {
+      return { ...t, name: 'PULL A (Gym)' };
+    }
+    if (t.id === 'legs-gym' && !t.name.includes('A')) {
+      return { ...t, name: 'LEGS A (Gym)' };
+    }
+    return t;
+  });
+
+  // Add new templates from seed that don't exist
+  const newTemplates = SEED_TEMPLATES.filter(t => !existingIds.has(t.id));
+  const mergedTemplates = [...updatedTemplates, ...newTemplates];
+
+  await setItem(STORAGE_KEYS.TEMPLATES, mergedTemplates);
+  console.log(`Added ${newTemplates.length} new templates, updated names`);
+
+  // Also add new Gym B exercises from SEED_EXERCISES
+  const existingExercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const existingExerciseIds = new Set(existingExercises.map(e => e.id));
+  const newExercises = SEED_EXERCISES.filter(e => !existingExerciseIds.has(e.id));
+
+  if (newExercises.length > 0) {
+    const mergedExercises = [...existingExercises, ...newExercises];
+    await setItem(STORAGE_KEYS.EXERCISES, mergedExercises);
+    console.log(`Added ${newExercises.length} new exercises`);
+  }
+
+  console.log('Migration to V4 complete');
+}
+
+// Migration V5: Fix exercise locations - machine/cable should be gym-only
+async function migrateToV5(): Promise<void> {
+  console.log('Running migration to V5 - fixing exercise locations...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+
+  // Update exercises: machine and cable equipment should be gym-only
+  const updatedExercises = exercises.map(e => {
+    // If exercise has locationIds, it's already using the new system
+    if (e.locationIds && e.locationIds.length > 0) {
+      return e;
+    }
+
+    // Determine correct locationIds based on equipment
+    let locationIds: string[];
+    if (e.equipment === 'machine' || e.equipment === 'cable') {
+      // Machines and cables are gym-only
+      locationIds = ['gym'];
+    } else if (e.equipment === 'bodyweight') {
+      // Bodyweight can be done anywhere
+      locationIds = ['gym', 'home'];
+    } else if (e.equipment === 'dumbbell') {
+      // Dumbbells available at both (assuming home has dumbbells)
+      locationIds = ['gym', 'home'];
+    } else if (e.equipment === 'barbell') {
+      // Barbells typically gym-only
+      locationIds = ['gym'];
+    } else {
+      // Default to gym for safety
+      locationIds = ['gym'];
+    }
+
+    return {
+      ...e,
+      locationIds,
+      location: undefined, // Remove deprecated field
+    };
+  });
+
+  await setItem(STORAGE_KEYS.EXERCISES, updatedExercises);
+  console.log('Migration to V5 complete - updated exercise locations');
 }
 
 // Reset storage (for debugging/testing)

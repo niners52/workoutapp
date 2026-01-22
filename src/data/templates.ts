@@ -2,10 +2,10 @@ import { Template } from '../types';
 
 // Seed templates with all templates from the spec
 export const SEED_TEMPLATES: Template[] = [
-  // Gym Templates
+  // Gym A Templates
   {
     id: 'push-gym',
-    name: 'PUSH (Gym)',
+    name: 'PUSH A (Gym)',
     type: 'push',
     locationId: 'gym',
     exerciseIds: [
@@ -19,7 +19,7 @@ export const SEED_TEMPLATES: Template[] = [
   },
   {
     id: 'pull-gym',
-    name: 'PULL (Gym)',
+    name: 'PULL A (Gym)',
     type: 'pull',
     locationId: 'gym',
     exerciseIds: [
@@ -33,7 +33,7 @@ export const SEED_TEMPLATES: Template[] = [
   },
   {
     id: 'legs-gym',
-    name: 'LEGS (Gym)',
+    name: 'LEGS A (Gym)',
     type: 'lower',
     locationId: 'gym',
     exerciseIds: [
@@ -45,6 +45,50 @@ export const SEED_TEMPLATES: Template[] = [
       'calf-raise-machine',
       'cable-machine-crunch',
       'back-extension',
+    ],
+  },
+
+  // Gym B Templates
+  {
+    id: 'push-gym-b',
+    name: 'PUSH B (Gym)',
+    type: 'push',
+    locationId: 'gym',
+    exerciseIds: [
+      'incline-bench-press',
+      'pec-fly-machine',
+      'db-overhead-press-neutral',
+      'cable-lateral-raise',
+      'overhead-triceps-extension-rope',
+      'straight-bar-pushdown',
+    ],
+  },
+  {
+    id: 'pull-gym-b',
+    name: 'PULL B (Gym)',
+    type: 'pull',
+    locationId: 'gym',
+    exerciseIds: [
+      'close-grip-pulldown',
+      'chest-supported-machine-row',
+      'straight-arm-pulldown',
+      'rear-delt-fly-machine',
+      'ez-bar-curl',
+      'cable-curl',
+    ],
+  },
+  {
+    id: 'legs-gym-b',
+    name: 'LEGS B (Gym)',
+    type: 'lower',
+    locationId: 'gym',
+    exerciseIds: [
+      'leg-press',
+      'seated-leg-curl',
+      'back-extension',
+      'hip-abduction-machine',
+      'seated-calf-raise',
+      'cable-machine-crunch',
     ],
   },
 

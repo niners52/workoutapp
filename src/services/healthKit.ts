@@ -231,9 +231,76 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     return generateMockNutritionData(date);
   }
 
-  // TODO: Implement real HealthKit integration
-  // This would use the HealthKit API to fetch actual nutrition data
-  return null;
+  if (Platform.OS !== 'ios' || !AppleHealthKit) {
+    return null;
+  }
+
+  await initializeHealthKit();
+
+  const startOfDayDate = startOfDay(date);
+  const endOfDayDate = endOfDay(date);
+
+  const options = {
+    startDate: startOfDayDate.toISOString(),
+    endDate: endOfDayDate.toISOString(),
+  };
+
+  // Fetch all nutrition data in parallel
+  const [protein, carbs, fat, calories] = await Promise.all([
+    new Promise<number>((resolve) => {
+      AppleHealthKit.getDietaryProteinSamples(options, (err: string, results: any[]) => {
+        if (err || !results) {
+          resolve(0);
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
+        resolve(Math.round(total));
+      });
+    }),
+    new Promise<number>((resolve) => {
+      AppleHealthKit.getDietaryCarbohydratesSamples(options, (err: string, results: any[]) => {
+        if (err || !results) {
+          resolve(0);
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
+        resolve(Math.round(total));
+      });
+    }),
+    new Promise<number>((resolve) => {
+      AppleHealthKit.getDietaryFatTotalSamples(options, (err: string, results: any[]) => {
+        if (err || !results) {
+          resolve(0);
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
+        resolve(Math.round(total));
+      });
+    }),
+    new Promise<number>((resolve) => {
+      AppleHealthKit.getDietaryEnergyConsumedSamples(options, (err: string, results: any[]) => {
+        if (err || !results) {
+          resolve(0);
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
+        resolve(Math.round(total));
+      });
+    }),
+  ]);
+
+  // Only return data if we have at least some nutrition logged
+  if (protein === 0 && carbs === 0 && fat === 0 && calories === 0) {
+    return null;
+  }
+
+  return {
+    date: format(date, 'yyyy-MM-dd'),
+    calories,
+    protein,
+    carbs,
+    fat,
+  };
 }
 
 export async function getNutritionDataRange(

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,20 +8,28 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { v4 as uuidv4 } from 'uuid';
+import * as Crypto from 'expo-crypto';
+
+// Generate UUID using expo-crypto (uuid library crashes on React Native)
+const generateId = () => Crypto.randomUUID();
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import {
   Exercise,
   Equipment,
-  ExerciseLocation,
   PrimaryMuscleGroup,
   ALL_TRACKABLE_MUSCLE_GROUPS,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  CableAccessory,
+  ALL_CABLE_ACCESSORIES,
+  CABLE_ACCESSORY_DISPLAY_NAMES,
 } from '../types';
+import { RootStackParamList } from '../navigation/types';
+
+type EditExerciseRouteProp = RouteProp<RootStackParamList, 'EditExercise'>;
 
 const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
   { value: 'barbell', label: 'Barbell' },
@@ -32,40 +40,99 @@ const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-const LOCATION_OPTIONS: { value: ExerciseLocation; label: string }[] = [
-  { value: 'gym', label: 'Gym' },
-  { value: 'home', label: 'Home' },
-  { value: 'both', label: 'Both' },
-];
 
 export function AddExerciseScreen() {
   const navigation = useNavigation();
-  const { addExercise } = useData();
+  const route = useRoute<EditExerciseRouteProp>();
+  const { addExercise, updateExercise, exercises, locations } = useData();
+
+  // Check if we're in edit mode
+  const exerciseId = route.params?.exerciseId;
+  const isEditMode = !!exerciseId;
+  const existingExercise = isEditMode ? exercises.find(e => e.id === exerciseId) : null;
 
   const [name, setName] = useState('');
   const [equipment, setEquipment] = useState<Equipment>('dumbbell');
-  const [location, setLocation] = useState<ExerciseLocation>('both');
+  const [cableAccessory, setCableAccessory] = useState<CableAccessory | undefined>(undefined);
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [primaryMuscle, setPrimaryMuscle] = useState<PrimaryMuscleGroup>('chest');
   const [secondaryMuscles, setSecondaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
 
-  const handleSave = async () => {
+  // Load existing exercise data in edit mode
+  useEffect(() => {
+    if (existingExercise) {
+      setName(existingExercise.name);
+      setEquipment(existingExercise.equipment);
+      setCableAccessory(existingExercise.cableAccessory);
+      setPrimaryMuscle(existingExercise.primaryMuscleGroup);
+      setSecondaryMuscles(existingExercise.secondaryMuscleGroups || []);
+
+      // Handle locationIds
+      if (existingExercise.locationIds && existingExercise.locationIds.length > 0) {
+        setSelectedLocationIds(existingExercise.locationIds);
+      } else if (existingExercise.location) {
+        // Fallback to deprecated location field
+        if (existingExercise.location === 'both') {
+          setSelectedLocationIds(['gym', 'home']);
+        } else {
+          setSelectedLocationIds([existingExercise.location]);
+        }
+      }
+    }
+  }, [existingExercise]);
+
+  // Toggle location selection (multi-select)
+  const toggleLocation = (locationId: string) => {
+    if (selectedLocationIds.includes(locationId)) {
+      setSelectedLocationIds(selectedLocationIds.filter(id => id !== locationId));
+    } else {
+      setSelectedLocationIds([...selectedLocationIds, locationId]);
+    }
+  };
+
+  const handleSave = () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter an exercise name');
       return;
     }
 
-    const exercise: Exercise = {
-      id: uuidv4(),
-      name: name.trim(),
-      equipment,
-      location,
-      primaryMuscleGroup: primaryMuscle,
-      secondaryMuscleGroups: secondaryMuscles,
-      isCustom: true,
-    };
+    if (selectedLocationIds.length === 0) {
+      Alert.alert('Error', 'Please select at least one location');
+      return;
+    }
 
-    await addExercise(exercise);
-    navigation.goBack();
+    if (isEditMode && existingExercise) {
+      // Update existing exercise
+      const updatedExercise: Exercise = {
+        ...existingExercise,
+        name: name.trim(),
+        equipment,
+        cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
+        locationIds: selectedLocationIds,
+        primaryMuscleGroup: primaryMuscle,
+        secondaryMuscleGroups: secondaryMuscles,
+      };
+
+      updateExercise(updatedExercise).then(() => {
+        navigation.goBack();
+      });
+    } else {
+      // Create new exercise
+      const exercise: Exercise = {
+        id: generateId(),
+        name: name.trim(),
+        equipment,
+        cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
+        locationIds: selectedLocationIds,
+        primaryMuscleGroup: primaryMuscle,
+        secondaryMuscleGroups: secondaryMuscles,
+        isCustom: true,
+      };
+
+      addExercise(exercise).then(() => {
+        navigation.goBack();
+      });
+    }
   };
 
   const toggleSecondaryMuscle = (muscle: PrimaryMuscleGroup) => {
@@ -84,7 +151,7 @@ export function AddExerciseScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Add Exercise</Text>
+        <Text style={styles.title}>{isEditMode ? 'Edit Exercise' : 'Add Exercise'}</Text>
         <TouchableOpacity onPress={handleSave}>
           <Text style={styles.saveText}>Save</Text>
         </TouchableOpacity>
@@ -100,7 +167,7 @@ export function AddExerciseScreen() {
             onChangeText={setName}
             placeholder="e.g., Dumbbell Bench Press"
             placeholderTextColor={colors.textTertiary}
-            autoFocus
+            autoFocus={!isEditMode}
           />
         </Card>
 
@@ -115,7 +182,13 @@ export function AddExerciseScreen() {
                   styles.option,
                   equipment === option.value && styles.optionSelected,
                 ]}
-                onPress={() => setEquipment(option.value)}
+                onPress={() => {
+                  setEquipment(option.value);
+                  // Clear cable accessory when switching away from cable
+                  if (option.value !== 'cable') {
+                    setCableAccessory(undefined);
+                  }
+                }}
               >
                 <Text
                   style={[
@@ -130,26 +203,54 @@ export function AddExerciseScreen() {
           </View>
         </Card>
 
-        {/* Location */}
+        {/* Cable Accessory - Only show when equipment is cable */}
+        {equipment === 'cable' && (
+          <Card style={styles.section}>
+            <Text style={styles.label}>Cable Accessory (optional)</Text>
+            <View style={styles.optionsRow}>
+              {ALL_CABLE_ACCESSORIES.map(accessory => (
+                <TouchableOpacity
+                  key={accessory}
+                  style={[
+                    styles.option,
+                    cableAccessory === accessory && styles.optionSelected,
+                  ]}
+                  onPress={() => setCableAccessory(cableAccessory === accessory ? undefined : accessory)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      cableAccessory === accessory && styles.optionTextSelected,
+                    ]}
+                  >
+                    {CABLE_ACCESSORY_DISPLAY_NAMES[accessory]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Card>
+        )}
+
+        {/* Location - Multi-select */}
         <Card style={styles.section}>
-          <Text style={styles.label}>Location</Text>
+          <Text style={styles.label}>Available At (select all that apply)</Text>
           <View style={styles.optionsRow}>
-            {LOCATION_OPTIONS.map(option => (
+            {locations.sort((a, b) => a.sortOrder - b.sortOrder).map(loc => (
               <TouchableOpacity
-                key={option.value}
+                key={loc.id}
                 style={[
                   styles.option,
-                  location === option.value && styles.optionSelected,
+                  selectedLocationIds.includes(loc.id) && styles.optionSelected,
                 ]}
-                onPress={() => setLocation(option.value)}
+                onPress={() => toggleLocation(loc.id)}
               >
                 <Text
                   style={[
                     styles.optionText,
-                    location === option.value && styles.optionTextSelected,
+                    selectedLocationIds.includes(loc.id) && styles.optionTextSelected,
                   ]}
                 >
-                  {option.label}
+                  {loc.name}
                 </Text>
               </TouchableOpacity>
             ))}

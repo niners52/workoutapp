@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { v4 as uuidv4 } from 'uuid';
+import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
+
+// Generate UUID using expo-crypto (uuid library crashes on React Native)
+const generateId = () => Crypto.randomUUID();
 import * as Haptics from 'expo-haptics';
 import {
   Workout,
@@ -64,6 +67,7 @@ interface WorkoutContextType {
   removeExerciseFromWorkout: (exerciseId: string) => void;
   reorderExercises: (exerciseIds: string[]) => void;
   switchTemplate: (templateId: string) => Promise<void>;
+  swapExercise: (oldExerciseId: string, newExerciseId: string) => void;
 
   // Set actions
   logSet: (reps: number, weight: number, exerciseId?: string) => Promise<void>;
@@ -147,7 +151,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
   const startWorkout = useCallback(async (templateId?: string): Promise<string> => {
     const workout: Workout = {
-      id: uuidv4(),
+      id: generateId(),
       startedAt: new Date().toISOString(),
       completedAt: null,
       templateId: templateId || null,
@@ -313,6 +317,31 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeWorkout]);
 
+  const swapExercise = useCallback((oldExerciseId: string, newExerciseId: string) => {
+    if (!activeWorkout) return;
+
+    // Swap the exercise in the exerciseIds array (one-time swap for this session)
+    setActiveWorkout(prev => {
+      if (!prev) return null;
+      const newExerciseIds = prev.exerciseIds.map(id =>
+        id === oldExerciseId ? newExerciseId : id
+      );
+      return {
+        ...prev,
+        exerciseIds: newExerciseIds,
+        // Update currentExerciseId if the swapped exercise was selected
+        currentExerciseId: prev.currentExerciseId === oldExerciseId
+          ? newExerciseId
+          : prev.currentExerciseId,
+      };
+    });
+
+    // Load last session data for the new exercise
+    getLastSetsForExercise(newExerciseId).then(lastSets => {
+      setLastSessionData({ exerciseId: newExerciseId, sets: lastSets });
+    });
+  }, [activeWorkout]);
+
   const logSet = useCallback(async (reps: number, weight: number, exerciseId?: string) => {
     if (!activeWorkout) return;
 
@@ -321,7 +350,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     if (!targetExerciseId) return;
 
     const set: WorkoutSet = {
-      id: uuidv4(),
+      id: generateId(),
       workoutId: activeWorkout.workout.id,
       exerciseId: targetExerciseId,
       reps,
@@ -436,6 +465,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     removeExerciseFromWorkout,
     reorderExercises,
     switchTemplate,
+    swapExercise,
     logSet,
     removeSet,
     editSet,

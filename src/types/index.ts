@@ -118,6 +118,39 @@ export function getParentMuscleGroup(muscleGroup: MuscleGroup): ParentMuscleGrou
   return null;
 }
 
+// Cable Accessory types
+export type CableAccessory =
+  | 'straight_bar'
+  | 'ez_bar'
+  | 'rope'
+  | 'v_bar'
+  | 'd_handle'
+  | 'ankle_strap'
+  | 'lat_bar'
+  | 'other';
+
+export const CABLE_ACCESSORY_DISPLAY_NAMES: Record<CableAccessory, string> = {
+  straight_bar: 'Straight Bar',
+  ez_bar: 'EZ Bar',
+  rope: 'Rope',
+  v_bar: 'V-Bar',
+  d_handle: 'D-Handle',
+  ankle_strap: 'Ankle Strap',
+  lat_bar: 'Lat Bar',
+  other: 'Other',
+};
+
+export const ALL_CABLE_ACCESSORIES: CableAccessory[] = [
+  'straight_bar',
+  'ez_bar',
+  'rope',
+  'v_bar',
+  'd_handle',
+  'ankle_strap',
+  'lat_bar',
+  'other',
+];
+
 // Exercise
 export interface Exercise {
   id: string;
@@ -125,7 +158,9 @@ export interface Exercise {
   primaryMuscleGroup: PrimaryMuscleGroup;
   secondaryMuscleGroups: PrimaryMuscleGroup[];
   equipment: Equipment;
-  location: ExerciseLocation;
+  cableAccessory?: CableAccessory; // Only used when equipment is 'cable'
+  location?: ExerciseLocation; // Deprecated: kept for backward compatibility
+  locationIds?: string[]; // References WorkoutLocation.id - exercises available at these locations
   isCustom?: boolean;
 }
 
