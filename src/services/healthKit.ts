@@ -53,8 +53,13 @@ const healthKitPermissions = {
 let healthKitInitialized = false;
 
 export async function initializeHealthKit(): Promise<boolean> {
-  if (Platform.OS !== 'ios' || !AppleHealthKit) {
-    console.log('HealthKit not available on this platform');
+  if (Platform.OS !== 'ios') {
+    console.log('HealthKit not available - not iOS');
+    return false;
+  }
+
+  if (!AppleHealthKit) {
+    console.log('HealthKit not available - react-native-health not loaded');
     return false;
   }
 
@@ -231,12 +236,23 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     return generateMockNutritionData(date);
   }
 
-  if (Platform.OS !== 'ios' || !AppleHealthKit) {
+  if (Platform.OS !== 'ios') {
     // Return mock data on non-iOS platforms (web) for testing
+    console.log('getNutritionData: Not iOS, returning mock data');
     return generateMockNutritionData(date);
   }
 
-  await initializeHealthKit();
+  if (!AppleHealthKit) {
+    // react-native-health not available (e.g., Expo Go)
+    console.log('getNutritionData: AppleHealthKit not available, returning null');
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) {
+    console.log('getNutritionData: HealthKit not initialized, returning null');
+    return null;
+  }
 
   const startOfDayDate = startOfDay(date);
   const endOfDayDate = endOfDay(date);
@@ -327,12 +343,23 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
     return generateMockSleepData(date);
   }
 
-  if (Platform.OS !== 'ios' || !AppleHealthKit) {
+  if (Platform.OS !== 'ios') {
     // Return mock data on non-iOS platforms (web) for testing
+    console.log('getSleepData: Not iOS, returning mock data');
     return generateMockSleepData(date);
   }
 
-  await initializeHealthKit();
+  if (!AppleHealthKit) {
+    // react-native-health not available (e.g., Expo Go)
+    console.log('getSleepData: AppleHealthKit not available, returning null');
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) {
+    console.log('getSleepData: HealthKit not initialized, returning null');
+    return null;
+  }
 
   // For sleep, we want data from the night before the given date
   // e.g., for Jan 5, we want sleep that ended on Jan 5 morning (slept night of Jan 4-5)
