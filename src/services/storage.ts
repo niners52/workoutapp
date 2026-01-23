@@ -28,7 +28,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 5;
+const CURRENT_MIGRATION_VERSION = 6;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -102,6 +102,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 5) {
     await migrateToV5();
+  }
+
+  if (currentVersion < 6) {
+    await migrateToV6();
   }
 
   // Update migration version
@@ -266,6 +270,32 @@ async function migrateToV5(): Promise<void> {
 
   await setItem(STORAGE_KEYS.EXERCISES, updatedExercises);
   console.log('Migration to V5 complete - updated exercise locations');
+}
+
+// Migration V6: Convert primaryMuscleGroup to primaryMuscleGroups array
+async function migrateToV6(): Promise<void> {
+  console.log('Running migration to V6 - converting to multiple primary muscle groups...');
+
+  const exercises = await getItem<any[]>(STORAGE_KEYS.EXERCISES, []);
+
+  const updatedExercises = exercises.map(e => {
+    // If exercise already has primaryMuscleGroups array, it's already migrated
+    if (e.primaryMuscleGroups && Array.isArray(e.primaryMuscleGroups) && e.primaryMuscleGroups.length > 0) {
+      return e;
+    }
+
+    // Convert single primaryMuscleGroup to array
+    const primaryMuscleGroups = e.primaryMuscleGroup ? [e.primaryMuscleGroup] : ['chest'];
+
+    return {
+      ...e,
+      primaryMuscleGroups,
+      // Keep primaryMuscleGroup for backward compatibility
+    };
+  });
+
+  await setItem(STORAGE_KEYS.EXERCISES, updatedExercises);
+  console.log('Migration to V6 complete - converted to primaryMuscleGroups array');
 }
 
 // Reset storage (for debugging/testing)

@@ -38,6 +38,7 @@ export type StandaloneMuscleGroup =
   | 'calves'
   | 'abs'
   | 'forearms'
+  | 'traps'
   | 'lower_back'
   | 'miscellaneous';
 
@@ -64,6 +65,7 @@ export const STANDALONE_MUSCLE_GROUPS: StandaloneMuscleGroup[] = [
   'calves',
   'abs',
   'forearms',
+  'traps',
   'lower_back',
   'miscellaneous',
 ];
@@ -83,6 +85,7 @@ export const ALL_TRACKABLE_MUSCLE_GROUPS: (PrimaryMuscleGroup)[] = [
   'calves',
   'abs',
   'forearms',
+  'traps',
   'lower_back',
   'miscellaneous',
 ];
@@ -104,6 +107,7 @@ export const MUSCLE_GROUP_DISPLAY_NAMES: Record<MuscleGroup, string> = {
   calves: 'Calves',
   abs: 'Abs',
   forearms: 'Forearms',
+  traps: 'Traps',
   lower_back: 'Lower Back',
   miscellaneous: 'Miscellaneous',
 };
@@ -155,7 +159,8 @@ export const ALL_CABLE_ACCESSORIES: CableAccessory[] = [
 export interface Exercise {
   id: string;
   name: string;
-  primaryMuscleGroup: PrimaryMuscleGroup;
+  primaryMuscleGroup?: PrimaryMuscleGroup; // Deprecated: use primaryMuscleGroups
+  primaryMuscleGroups: PrimaryMuscleGroup[]; // Can have multiple primary muscles
   secondaryMuscleGroups: PrimaryMuscleGroup[];
   equipment: Equipment;
   cableAccessory?: CableAccessory; // Only used when equipment is 'cable'
@@ -224,6 +229,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     calves: 6,
     abs: 6,
     forearms: 0,
+    traps: 6,
     lower_back: 0,
     miscellaneous: 0,
   },

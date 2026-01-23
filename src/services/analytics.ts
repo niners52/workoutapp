@@ -36,27 +36,37 @@ export async function calculateVolumeForDateRange(
   });
 
   // Count sets for each muscle group (primary only for volume calculation)
+  // With multiple primary muscles, each primary muscle group gets credit for the set
   sets.forEach(set => {
     const exercise = exerciseMap.get(set.exerciseId);
     if (!exercise) return;
 
-    const muscleGroup = exercise.primaryMuscleGroup;
-    const volume = volumeMap.get(muscleGroup);
+    // Get primary muscle groups (support both new array and deprecated single field)
+    const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+      ? exercise.primaryMuscleGroups
+      : exercise.primaryMuscleGroup
+      ? [exercise.primaryMuscleGroup]
+      : [];
 
-    if (volume) {
-      volume.sets += 1;
+    // Add volume to each primary muscle group
+    primaryMuscleGroups.forEach(muscleGroup => {
+      const volume = volumeMap.get(muscleGroup);
 
-      const existingExercise = volume.exercises.get(exercise.id);
-      if (existingExercise) {
-        existingExercise.sets += 1;
-      } else {
-        volume.exercises.set(exercise.id, {
-          exerciseId: exercise.id,
-          exerciseName: exercise.name,
-          sets: 1,
-        });
+      if (volume) {
+        volume.sets += 1;
+
+        const existingExercise = volume.exercises.get(exercise.id);
+        if (existingExercise) {
+          existingExercise.sets += 1;
+        } else {
+          volume.exercises.set(exercise.id, {
+            exerciseId: exercise.id,
+            exerciseName: exercise.name,
+            sets: 1,
+          });
+        }
       }
-    }
+    });
   });
 
   // Convert to array format

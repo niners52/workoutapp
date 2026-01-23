@@ -265,7 +265,11 @@ export function CreateTemplateScreen() {
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{exercise.name}</Text>
                     <Text style={styles.exerciseMuscle}>
-                      {MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]}
+                      {exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+                        ? exercise.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ')
+                        : exercise.primaryMuscleGroup
+                        ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]
+                        : 'Unknown'}
                     </Text>
                   </View>
                   <Text style={[styles.checkmark, isSelected && styles.checkmarkSelected]}>

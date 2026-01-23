@@ -232,7 +232,8 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
   }
 
   if (Platform.OS !== 'ios' || !AppleHealthKit) {
-    return null;
+    // Return mock data on non-iOS platforms (web) for testing
+    return generateMockNutritionData(date);
   }
 
   await initializeHealthKit();
@@ -326,8 +327,97 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
     return generateMockSleepData(date);
   }
 
-  // TODO: Implement real HealthKit integration
-  return null;
+  if (Platform.OS !== 'ios' || !AppleHealthKit) {
+    // Return mock data on non-iOS platforms (web) for testing
+    return generateMockSleepData(date);
+  }
+
+  await initializeHealthKit();
+
+  // For sleep, we want data from the night before the given date
+  // e.g., for Jan 5, we want sleep that ended on Jan 5 morning (slept night of Jan 4-5)
+  const sleepEndDate = endOfDay(date);
+  const sleepStartDate = startOfDay(subDays(date, 1)); // Start looking from previous day
+
+  const options = {
+    startDate: sleepStartDate.toISOString(),
+    endDate: sleepEndDate.toISOString(),
+  };
+
+  return new Promise((resolve) => {
+    AppleHealthKit.getSleepSamples(options, (err: string, results: any[]) => {
+      if (err || !results || results.length === 0) {
+        resolve(null);
+        return;
+      }
+
+      // Filter for sleep samples that ended on the target date (the morning of)
+      const targetDateStr = format(date, 'yyyy-MM-dd');
+      const sleepSamples = results.filter((sample: any) => {
+        const sampleEndDate = new Date(sample.endDate);
+        return format(sampleEndDate, 'yyyy-MM-dd') === targetDateStr;
+      });
+
+      if (sleepSamples.length === 0) {
+        resolve(null);
+        return;
+      }
+
+      // Calculate total sleep time and stages
+      let totalMinutes = 0;
+      let deepMinutes = 0;
+      let remMinutes = 0;
+      let coreMinutes = 0;
+      let awakeMinutes = 0;
+
+      sleepSamples.forEach((sample: any) => {
+        const start = new Date(sample.startDate);
+        const end = new Date(sample.endDate);
+        const durationMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+
+        // Map sleep values to stages
+        // HealthKit sleep values: INBED, ASLEEP, AWAKE, CORE, DEEP, REM
+        const value = sample.value?.toLowerCase() || 'asleep';
+
+        if (value === 'inbed') {
+          // Don't count time in bed as sleep
+        } else if (value === 'awake') {
+          awakeMinutes += durationMinutes;
+          totalMinutes += durationMinutes;
+        } else if (value === 'deep') {
+          deepMinutes += durationMinutes;
+          totalMinutes += durationMinutes;
+        } else if (value === 'rem') {
+          remMinutes += durationMinutes;
+          totalMinutes += durationMinutes;
+        } else if (value === 'core' || value === 'asleep') {
+          coreMinutes += durationMinutes;
+          totalMinutes += durationMinutes;
+        }
+      });
+
+      // Convert to hours
+      const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
+
+      if (totalHours === 0) {
+        resolve(null);
+        return;
+      }
+
+      const stages: SleepStages = {
+        deep: Math.round((deepMinutes / 60) * 10) / 10,
+        rem: Math.round((remMinutes / 60) * 10) / 10,
+        core: Math.round((coreMinutes / 60) * 10) / 10,
+        awake: Math.round((awakeMinutes / 60) * 10) / 10,
+      };
+
+      resolve({
+        date: targetDateStr,
+        totalHours,
+        stages: (deepMinutes > 0 || remMinutes > 0) ? stages : null,
+      });
+    });
+  });
 }
 
 export async function getSleepDataRange(

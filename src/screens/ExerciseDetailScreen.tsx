@@ -134,6 +134,13 @@ export function ExerciseDetailScreen() {
     );
   };
 
+  // Get primary muscles display (support both new array and deprecated single field)
+  const primaryMuscles = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+    ? exercise.primaryMuscleGroups.map(mg => MUSCLE_GROUP_DISPLAY_NAMES[mg]).join(', ')
+    : exercise.primaryMuscleGroup
+    ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]
+    : 'Unknown';
+
   const secondaryMuscles = exercise.secondaryMuscleGroups
     .map(mg => MUSCLE_GROUP_DISPLAY_NAMES[mg])
     .join(', ');
@@ -165,6 +172,11 @@ export function ExerciseDetailScreen() {
           {exercise.isCustom && (
             <Text style={styles.customBadge}>Custom Exercise</Text>
           )}
+          {sessions.length > 0 && (
+            <Text style={styles.lastPerformed}>
+              Last performed: {format(new Date(sessions[0].date), 'MMM d, yyyy')}
+            </Text>
+          )}
         </View>
 
         {/* Muscle Groups */}
@@ -174,7 +186,7 @@ export function ExerciseDetailScreen() {
             title="Primary"
             rightElement={
               <Text style={styles.muscleValue}>
-                {MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]}
+                {primaryMuscles}
               </Text>
             }
             isFirst
@@ -424,6 +436,11 @@ const styles = StyleSheet.create({
   customBadge: {
     fontSize: typography.size.sm,
     color: colors.primary,
+    marginTop: spacing.xs,
+  },
+  lastPerformed: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
     marginTop: spacing.xs,
   },
   section: {

@@ -27,6 +27,14 @@ export function ExercisesScreen() {
   const { exercises } = useData();
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Helper to get primary muscles display
+  const getPrimaryMusclesText = (exercise: Exercise): string => {
+    if (exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0) {
+      return exercise.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ');
+    }
+    return exercise.primaryMuscleGroup ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup] : 'Unknown';
+  };
+
   const filteredExercises = useMemo(() => {
     if (!searchQuery) return exercises;
 
@@ -34,17 +42,21 @@ export function ExercisesScreen() {
     return exercises.filter(
       e =>
         e.name.toLowerCase().includes(query) ||
-        MUSCLE_GROUP_DISPLAY_NAMES[e.primaryMuscleGroup].toLowerCase().includes(query) ||
+        getPrimaryMusclesText(e).toLowerCase().includes(query) ||
         e.equipment.toLowerCase().includes(query)
     );
   }, [exercises, searchQuery]);
 
-  // Group by primary muscle group
+  // Group by first primary muscle group
   const sections: ExerciseSection[] = useMemo(() => {
     const groups: { [key: string]: Exercise[] } = {};
 
     filteredExercises.forEach(exercise => {
-      const groupName = MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup];
+      // Use first primary muscle for grouping
+      const firstMuscle = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+        ? exercise.primaryMuscleGroups[0]
+        : exercise.primaryMuscleGroup;
+      const groupName = firstMuscle ? MUSCLE_GROUP_DISPLAY_NAMES[firstMuscle] : 'Unknown';
       if (!groups[groupName]) {
         groups[groupName] = [];
       }

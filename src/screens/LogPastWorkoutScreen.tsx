@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,7 +23,7 @@ const generateId = () => Crypto.randomUUID();
 import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { addWorkout, addSet, getLastSetsForExercise } from '../services/storage';
-import { Workout, WorkoutSet, Exercise, Template } from '../types';
+import { Workout, WorkoutSet, Exercise, Template, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -44,6 +46,7 @@ export function LogPastWorkoutScreen() {
   const [workoutDate, setWorkoutDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [isBlankWorkout, setIsBlankWorkout] = useState(false);
   const [exerciseEntries, setExerciseEntries] = useState<ExerciseEntry[]>([]);
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -107,6 +110,23 @@ export function LogPastWorkoutScreen() {
     }));
   };
 
+  const addExerciseToWorkout = (exerciseId: string) => {
+    if (exerciseEntries.some(e => e.exerciseId === exerciseId)) {
+      return; // Already added
+    }
+    setExerciseEntries(prev => [...prev, { exerciseId, sets: [] }]);
+    setExpandedExerciseId(exerciseId);
+  };
+
+  const removeExerciseFromWorkout = (exerciseId: string) => {
+    setExerciseEntries(prev => prev.filter(e => e.exerciseId !== exerciseId));
+  };
+
+  const handleStartBlankWorkout = () => {
+    setIsBlankWorkout(true);
+    setExerciseEntries([]);
+  };
+
   const handleSaveWorkout = async () => {
     const totalSets = exerciseEntries.reduce((sum, e) => sum + e.sets.length, 0);
     if (totalSets === 0) {
@@ -160,13 +180,13 @@ export function LogPastWorkoutScreen() {
   };
 
   // Template selection view
-  if (!selectedTemplate) {
+  if (!selectedTemplate && !isBlankWorkout) {
     return (
       <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
           <Text style={styles.title}>Log Past Workout</Text>
           <Text style={styles.description}>
-            Select a template to log a workout from an earlier date.
+            Select a template or start a blank workout to log exercises from an earlier date.
           </Text>
 
           {/* Date Picker */}
@@ -194,8 +214,17 @@ export function LogPastWorkoutScreen() {
             )}
           </Card>
 
+          {/* Blank Workout Option */}
+          <TouchableOpacity
+            style={styles.blankWorkoutButton}
+            onPress={handleStartBlankWorkout}
+          >
+            <Text style={styles.blankWorkoutText}>+ Blank Workout</Text>
+            <Text style={styles.blankWorkoutHint}>Add any exercises manually</Text>
+          </TouchableOpacity>
+
           {/* Template Selection */}
-          <Text style={styles.sectionTitle}>Select Template</Text>
+          <Text style={styles.sectionTitle}>Or Select Template</Text>
           <Card padding="none">
             {templates.map((template, index) => (
               <TouchableOpacity
@@ -221,11 +250,19 @@ export function LogPastWorkoutScreen() {
   }
 
   // Workout entry view
+  const handleBack = () => {
+    setSelectedTemplate(null);
+    setIsBlankWorkout(false);
+    setExerciseEntries([]);
+  };
+
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => setSelectedTemplate(null)}>
+          <TouchableOpacity onPress={handleBack}>
             <Text style={styles.backButton}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerDate}>
@@ -233,7 +270,9 @@ export function LogPastWorkoutScreen() {
           </Text>
         </View>
 
-        <Text style={styles.title}>{selectedTemplate.name}</Text>
+        <Text style={styles.title}>
+          {isBlankWorkout ? 'Custom Workout' : selectedTemplate?.name}
+        </Text>
         <Text style={styles.description}>
           Add the sets you performed for each exercise.
         </Text>
@@ -308,6 +347,14 @@ export function LogPastWorkoutScreen() {
           );
         })}
 
+        {/* Add Exercise Button (for blank workouts or any workout) */}
+        <TouchableOpacity
+          style={styles.addExerciseButton}
+          onPress={() => setShowExercisePicker(true)}
+        >
+          <Text style={styles.addExerciseText}>+ Add Exercise</Text>
+        </TouchableOpacity>
+
         {/* Save Button */}
         <Button
           title={isSaving ? 'Saving...' : 'Save Workout'}
@@ -318,6 +365,49 @@ export function LogPastWorkoutScreen() {
           style={styles.saveButton}
         />
       </ScrollView>
+
+      {/* Exercise Picker Modal */}
+      <Modal
+        visible={showExercisePicker}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowExercisePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Exercise</Text>
+              <TouchableOpacity onPress={() => setShowExercisePicker(false)}>
+                <Text style={styles.modalClose}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.exerciseList}>
+              {exercises
+                .filter(e => !exerciseEntries.some(entry => entry.exerciseId === e.id))
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(exercise => (
+                  <TouchableOpacity
+                    key={exercise.id}
+                    style={styles.exerciseListItem}
+                    onPress={() => {
+                      addExerciseToWorkout(exercise.id);
+                      setShowExercisePicker(false);
+                    }}
+                  >
+                    <Text style={styles.exerciseListName}>{exercise.name}</Text>
+                    <Text style={styles.exerciseListMuscle}>
+                      {exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+                        ? exercise.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ')
+                        : exercise.primaryMuscleGroup
+                        ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]
+                        : 'Unknown'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -487,6 +577,88 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginTop: spacing.lg,
+  },
+  blankWorkoutButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  blankWorkoutText: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  blankWorkoutHint: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+    opacity: 0.8,
+    marginTop: spacing.xs,
+  },
+  addExerciseButton: {
+    padding: spacing.base,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.separator,
+    borderStyle: 'dashed',
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  addExerciseText: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.backgroundSecondary,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.base,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  modalTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  modalClose: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+  },
+  exerciseList: {
+    padding: spacing.base,
+  },
+  exerciseListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  exerciseListName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    flex: 1,
+  },
+  exerciseListMuscle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textTransform: 'capitalize',
   },
 });
 

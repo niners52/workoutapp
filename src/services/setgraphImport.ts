@@ -192,10 +192,10 @@ export function createExerciseFromSetgraph(
   return {
     id: `imported-${uuidv4()}`,
     name: name,
-    primaryMuscleGroup,
+    primaryMuscleGroups: [primaryMuscleGroup],
     secondaryMuscleGroups: [],
     equipment: 'other',
-    location: 'both',
+    locationIds: ['gym', 'home'],
     isCustom: true,
   };
 }

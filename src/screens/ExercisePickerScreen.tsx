@@ -27,6 +27,14 @@ export function ExercisePickerScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Helper to get primary muscles display
+  const getPrimaryMusclesText = (exercise: Exercise): string => {
+    if (exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0) {
+      return exercise.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ');
+    }
+    return exercise.primaryMuscleGroup ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup] : 'Unknown';
+  };
+
   const filteredExercises = useMemo(() => {
     if (!searchQuery) return exercises;
 
@@ -34,16 +42,20 @@ export function ExercisePickerScreen() {
     return exercises.filter(
       e =>
         e.name.toLowerCase().includes(query) ||
-        MUSCLE_GROUP_DISPLAY_NAMES[e.primaryMuscleGroup].toLowerCase().includes(query)
+        getPrimaryMusclesText(e).toLowerCase().includes(query)
     );
   }, [exercises, searchQuery]);
 
-  // Group by muscle group
+  // Group by first primary muscle group
   const groupedExercises = useMemo(() => {
     const groups: { [key: string]: Exercise[] } = {};
 
     filteredExercises.forEach(exercise => {
-      const group = MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup];
+      // Use first primary muscle for grouping
+      const firstMuscle = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+        ? exercise.primaryMuscleGroups[0]
+        : exercise.primaryMuscleGroup;
+      const group = firstMuscle ? MUSCLE_GROUP_DISPLAY_NAMES[firstMuscle] : 'Unknown';
       if (!groups[group]) {
         groups[group] = [];
       }
@@ -71,7 +83,7 @@ export function ExercisePickerScreen() {
         <View style={styles.exerciseInfo}>
           <Text style={styles.exerciseName}>{exercise.name}</Text>
           <Text style={styles.exerciseDetail}>
-            {MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]} • {exercise.equipment}
+            {getPrimaryMusclesText(exercise)} • {exercise.equipment}
           </Text>
         </View>
         {isInWorkout && (

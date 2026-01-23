@@ -55,7 +55,7 @@ export function AddExerciseScreen() {
   const [equipment, setEquipment] = useState<Equipment>('dumbbell');
   const [cableAccessory, setCableAccessory] = useState<CableAccessory | undefined>(undefined);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
-  const [primaryMuscle, setPrimaryMuscle] = useState<PrimaryMuscleGroup>('chest');
+  const [primaryMuscles, setPrimaryMuscles] = useState<PrimaryMuscleGroup[]>(['chest']);
   const [secondaryMuscles, setSecondaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
 
   // Load existing exercise data in edit mode
@@ -64,7 +64,12 @@ export function AddExerciseScreen() {
       setName(existingExercise.name);
       setEquipment(existingExercise.equipment);
       setCableAccessory(existingExercise.cableAccessory);
-      setPrimaryMuscle(existingExercise.primaryMuscleGroup);
+      // Load primaryMuscleGroups array, with fallback to deprecated single field
+      if (existingExercise.primaryMuscleGroups && existingExercise.primaryMuscleGroups.length > 0) {
+        setPrimaryMuscles(existingExercise.primaryMuscleGroups);
+      } else if (existingExercise.primaryMuscleGroup) {
+        setPrimaryMuscles([existingExercise.primaryMuscleGroup]);
+      }
       setSecondaryMuscles(existingExercise.secondaryMuscleGroups || []);
 
       // Handle locationIds
@@ -101,6 +106,11 @@ export function AddExerciseScreen() {
       return;
     }
 
+    if (primaryMuscles.length === 0) {
+      Alert.alert('Error', 'Please select at least one primary muscle group');
+      return;
+    }
+
     if (isEditMode && existingExercise) {
       // Update existing exercise
       const updatedExercise: Exercise = {
@@ -109,7 +119,7 @@ export function AddExerciseScreen() {
         equipment,
         cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
         locationIds: selectedLocationIds,
-        primaryMuscleGroup: primaryMuscle,
+        primaryMuscleGroups: primaryMuscles,
         secondaryMuscleGroups: secondaryMuscles,
       };
 
@@ -124,7 +134,7 @@ export function AddExerciseScreen() {
         equipment,
         cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
         locationIds: selectedLocationIds,
-        primaryMuscleGroup: primaryMuscle,
+        primaryMuscleGroups: primaryMuscles,
         secondaryMuscleGroups: secondaryMuscles,
         isCustom: true,
       };
@@ -135,8 +145,22 @@ export function AddExerciseScreen() {
     }
   };
 
+  // Toggle primary muscle selection (multi-select)
+  const togglePrimaryMuscle = (muscle: PrimaryMuscleGroup) => {
+    if (primaryMuscles.includes(muscle)) {
+      // Don't allow deselecting if it's the only one
+      if (primaryMuscles.length > 1) {
+        setPrimaryMuscles(primaryMuscles.filter(m => m !== muscle));
+      }
+    } else {
+      setPrimaryMuscles([...primaryMuscles, muscle]);
+      // Remove from secondary if it was there
+      setSecondaryMuscles(secondaryMuscles.filter(m => m !== muscle));
+    }
+  };
+
   const toggleSecondaryMuscle = (muscle: PrimaryMuscleGroup) => {
-    if (muscle === primaryMuscle) return; // Can't be both primary and secondary
+    if (primaryMuscles.includes(muscle)) return; // Can't be both primary and secondary
 
     if (secondaryMuscles.includes(muscle)) {
       setSecondaryMuscles(secondaryMuscles.filter(m => m !== muscle));
@@ -257,27 +281,23 @@ export function AddExerciseScreen() {
           </View>
         </Card>
 
-        {/* Primary Muscle Group */}
+        {/* Primary Muscle Groups - Multi-select */}
         <Card style={styles.section}>
-          <Text style={styles.label}>Primary Muscle Group</Text>
+          <Text style={styles.label}>Primary Muscle Groups (select 1 or more)</Text>
           <View style={styles.muscleGrid}>
             {ALL_TRACKABLE_MUSCLE_GROUPS.map(muscle => (
               <TouchableOpacity
                 key={muscle}
                 style={[
                   styles.muscleOption,
-                  primaryMuscle === muscle && styles.muscleOptionSelected,
+                  primaryMuscles.includes(muscle) && styles.muscleOptionSelected,
                 ]}
-                onPress={() => {
-                  setPrimaryMuscle(muscle);
-                  // Remove from secondary if it was there
-                  setSecondaryMuscles(secondaryMuscles.filter(m => m !== muscle));
-                }}
+                onPress={() => togglePrimaryMuscle(muscle)}
               >
                 <Text
                   style={[
                     styles.muscleText,
-                    primaryMuscle === muscle && styles.muscleTextSelected,
+                    primaryMuscles.includes(muscle) && styles.muscleTextSelected,
                   ]}
                 >
                   {MUSCLE_GROUP_DISPLAY_NAMES[muscle]}
@@ -291,7 +311,7 @@ export function AddExerciseScreen() {
         <Card style={styles.section}>
           <Text style={styles.label}>Secondary Muscle Groups (optional)</Text>
           <View style={styles.muscleGrid}>
-            {ALL_TRACKABLE_MUSCLE_GROUPS.filter(m => m !== primaryMuscle).map(muscle => (
+            {ALL_TRACKABLE_MUSCLE_GROUPS.filter(m => !primaryMuscles.includes(m)).map(muscle => (
               <TouchableOpacity
                 key={muscle}
                 style={[

@@ -61,6 +61,7 @@ export function ActiveWorkoutScreen() {
     stopRestTimer,
     getSetsForExercise,
     addExerciseToWorkout,
+    removeExerciseFromWorkout,
     swapExercise,
   } = useWorkout();
 
@@ -192,6 +193,36 @@ export function ActiveWorkoutScreen() {
     setSwapModalVisible(true);
   };
 
+  const handleRemoveExercise = (exercise: Exercise) => {
+    const currentSets = getSetsForExercise(exercise.id);
+    if (currentSets.length > 0) {
+      showAlert(
+        'Remove Exercise',
+        `This will remove "${exercise.name}" and its ${currentSets.length} logged set(s) from this workout.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => {
+              // Remove all sets for this exercise first
+              currentSets.forEach(set => removeSet(set.id));
+              removeExerciseFromWorkout(exercise.id);
+              if (selectedExerciseId === exercise.id) {
+                setSelectedExerciseId(null);
+              }
+            },
+          },
+        ]
+      );
+    } else {
+      removeExerciseFromWorkout(exercise.id);
+      if (selectedExerciseId === exercise.id) {
+        setSelectedExerciseId(null);
+      }
+    }
+  };
+
   const handleSwapExercise = (newExercise: Exercise) => {
     if (!exerciseToSwap) return;
     swapExercise(exerciseToSwap.id, newExercise.id);
@@ -203,11 +234,27 @@ export function ActiveWorkoutScreen() {
 
   // Get exercises with the same muscle group for swap options
   const getSwapOptions = (exercise: Exercise): Exercise[] => {
-    return exercises.filter(e =>
-      e.id !== exercise.id &&
-      e.primaryMuscleGroup === exercise.primaryMuscleGroup &&
-      !activeWorkout.exerciseIds.includes(e.id) // Don't show exercises already in workout
-    );
+    // Get primary muscles for current exercise (support both array and deprecated single field)
+    const currentPrimaryMuscles = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+      ? exercise.primaryMuscleGroups
+      : exercise.primaryMuscleGroup
+      ? [exercise.primaryMuscleGroup]
+      : [];
+
+    return exercises.filter(e => {
+      if (e.id === exercise.id) return false;
+      if (activeWorkout.exerciseIds.includes(e.id)) return false;
+
+      // Get primary muscles for potential swap exercise
+      const ePrimaryMuscles = e.primaryMuscleGroups && e.primaryMuscleGroups.length > 0
+        ? e.primaryMuscleGroups
+        : e.primaryMuscleGroup
+        ? [e.primaryMuscleGroup]
+        : [];
+
+      // Check if any primary muscles overlap
+      return currentPrimaryMuscles.some(m => ePrimaryMuscles.includes(m));
+    });
   };
 
   const toggleExercise = (exerciseId: string) => {
@@ -303,6 +350,7 @@ export function ActiveWorkoutScreen() {
                 onToggle={() => toggleExercise(exerciseId)}
                 onLogSet={handleLogSet}
                 onDeleteSet={handleDeleteSet}
+                onRemove={() => handleRemoveExercise(exercise)}
                 onOpenRestTimer={() => setRestTimerModalVisible(true)}
                 onSwap={() => handleOpenSwapModal(exercise)}
                 hasSwapOptions={swapOptions.length > 0}
@@ -400,7 +448,13 @@ export function ActiveWorkoutScreen() {
                 Swap {exerciseToSwap?.name}
               </Text>
               <Text style={styles.swapModalSubtitle}>
-                {exerciseToSwap && MUSCLE_GROUP_DISPLAY_NAMES[exerciseToSwap.primaryMuscleGroup]} exercises
+                {exerciseToSwap && (
+                  exerciseToSwap.primaryMuscleGroups && exerciseToSwap.primaryMuscleGroups.length > 0
+                    ? exerciseToSwap.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ')
+                    : exerciseToSwap.primaryMuscleGroup
+                    ? MUSCLE_GROUP_DISPLAY_NAMES[exerciseToSwap.primaryMuscleGroup]
+                    : 'Unknown'
+                )} exercises
               </Text>
 
               <ScrollView style={styles.swapList}>
@@ -439,6 +493,7 @@ interface ExerciseCardProps {
   onToggle: () => void;
   onLogSet: () => void;
   onDeleteSet: (setId: string) => void;
+  onRemove: () => void;
   onOpenRestTimer: () => void;
   onSwap: () => void;
   hasSwapOptions: boolean;
@@ -457,6 +512,7 @@ function ExerciseCard({
   onToggle,
   onLogSet,
   onDeleteSet,
+  onRemove,
   onOpenRestTimer,
   onSwap,
   hasSwapOptions,
@@ -493,6 +549,16 @@ function ExerciseCard({
               <Text style={styles.swapButtonText}>Swap</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.removeButton}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              onRemove();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.removeButtonText}>✕</Text>
+          </TouchableOpacity>
           <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
         </View>
       </TouchableOpacity>
@@ -545,9 +611,10 @@ function ExerciseCard({
                 value={weight}
                 onChangeValue={setWeight}
                 label="Weight (lbs)"
-                step={5}
+                step={2.5}
                 min={0}
                 max={1000}
+                allowDecimals
               />
               <NumberInput
                 value={reps}
@@ -694,6 +761,17 @@ const styles = StyleSheet.create({
   swapButtonText: {
     fontSize: typography.size.sm,
     color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  removeButton: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  removeButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.error,
     fontWeight: typography.weight.medium,
   },
   expandIcon: {

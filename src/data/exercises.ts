@@ -441,9 +441,16 @@ export function searchExercises(
       return false;
     }
 
-    // Apply filters
-    if (filters?.muscleGroup && exercise.primaryMuscleGroup !== filters.muscleGroup) {
-      return false;
+    // Apply filters - support both array and deprecated single field
+    if (filters?.muscleGroup) {
+      const exercisePrimaryMuscles = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [];
+      if (!exercisePrimaryMuscles.includes(filters.muscleGroup)) {
+        return false;
+      }
     }
     if (filters?.equipment && exercise.equipment !== filters.equipment) {
       return false;
