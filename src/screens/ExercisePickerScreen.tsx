@@ -13,7 +13,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { SearchBar, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
+import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type ExercisePickerRouteProp = RouteProp<RootStackParamList, 'ExercisePicker'>;
@@ -74,6 +74,12 @@ export function ExercisePickerScreen() {
   const renderExercise = ({ item: exercise }: { item: Exercise }) => {
     const isInWorkout = activeWorkout?.exerciseIds.includes(exercise.id);
 
+    // Build equipment text, including cable accessory if applicable
+    let equipmentText: string = exercise.equipment;
+    if (exercise.equipment === 'cable' && exercise.cableAccessory) {
+      equipmentText = `Cable (${CABLE_ACCESSORY_DISPLAY_NAMES[exercise.cableAccessory]})`;
+    }
+
     return (
       <TouchableOpacity
         style={styles.exerciseItem}
@@ -83,7 +89,7 @@ export function ExercisePickerScreen() {
         <View style={styles.exerciseInfo}>
           <Text style={styles.exerciseName}>{exercise.name}</Text>
           <Text style={styles.exerciseDetail}>
-            {getPrimaryMusclesText(exercise)} • {exercise.equipment}
+            {getPrimaryMusclesText(exercise)} • {equipmentText}
           </Text>
         </View>
         {isInWorkout && (
