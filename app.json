@@ -7,6 +7,14 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "plugins": [
+      [
+        "react-native-health",
+        {
+          "isClinicalDataEnabled": false
+        }
+      ]
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -20,7 +28,10 @@
         "com.apple.developer.healthkit.background-delivery": true
       },
       "infoPlist": {
-        "UIBackgroundModes": ["fetch"],
+        "UIBackgroundModes": [
+          "fetch",
+          "fetch"
+        ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "WorkoutTracker needs access to your health data to show your workout history and track your fitness progress.",
         "NSHealthUpdateUsageDescription": "WorkoutTracker will save your completed workouts to Apple Health."
@@ -41,6 +52,12 @@
       "eas": {
         "projectId": "8fc23c5a-aae4-4269-ac5d-bc77ad6dd97b"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/8fc23c5a-aae4-4269-ac5d-bc77ad6dd97b"
     }
   }
 }

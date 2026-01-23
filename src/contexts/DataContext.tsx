@@ -17,6 +17,9 @@ import {
   getWorkouts,
   getSets,
   getUserSettings,
+} from '../services/storage';
+import { initializeHealthKit } from '../services/healthKit';
+import {
   addExercise as addExerciseToStorage,
   updateExercise as updateExerciseInStorage,
   deleteExercise as deleteExerciseFromStorage,
@@ -95,6 +98,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       try {
         await initializeStorage();
         await refreshAll();
+
+        // Initialize HealthKit (this will trigger the permission prompt on iOS)
+        initializeHealthKit().then(success => {
+          if (success) {
+            console.log('HealthKit initialized successfully');
+          } else {
+            console.log('HealthKit not available or permission denied');
+          }
+        });
+
         setIsInitialized(true);
       } catch (error) {
         console.error('Failed to initialize data:', error);
