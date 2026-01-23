@@ -120,6 +120,15 @@ export function ExercisePickerScreen() {
           />
         </View>
 
+        {/* Create Custom Exercise Button */}
+        <TouchableOpacity
+          style={styles.createCustomButton}
+          onPress={() => navigation.navigate('AddExercise')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.createCustomText}>+ Create Custom Exercise</Text>
+        </TouchableOpacity>
+
         {/* Exercise List */}
         <FlatList
           data={filteredExercises}
@@ -204,6 +213,19 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: spacing.sm,
+  },
+  createCustomButton: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.primaryDark,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  createCustomText: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
   },
 });
 
