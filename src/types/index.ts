@@ -25,7 +25,30 @@ export const TEMPLATE_TYPE_DISPLAY_NAMES: Record<TemplateType, string> = {
 
 export const ALL_TEMPLATE_TYPES: TemplateType[] = ['push', 'pull', 'lower'];
 
-// Muscle Group Hierarchy
+// Muscle Group Hierarchy - 6 main categories for analytics display
+export type AnalyticsCategory = 'back' | 'shoulders' | 'chest' | 'arms' | 'legs' | 'core';
+
+// All individual muscle groups that can be tracked
+export type PrimaryMuscleGroup =
+  | 'lats'
+  | 'upper_back'
+  | 'traps'
+  | 'front_delts'
+  | 'side_delts'
+  | 'rear_delts'
+  | 'chest'
+  | 'triceps'
+  | 'biceps'
+  | 'forearms'
+  | 'quads'
+  | 'hamstrings'
+  | 'calves'
+  | 'abs'
+  | 'glutes'
+  | 'lower_back'
+  | 'miscellaneous';
+
+// Legacy types kept for backward compatibility
 export type ParentMuscleGroup = 'back' | 'shoulders';
 export type ChildMuscleGroup = 'lats' | 'upper_back' | 'front_delts' | 'side_delts' | 'rear_delts';
 export type StandaloneMuscleGroup =
@@ -42,9 +65,25 @@ export type StandaloneMuscleGroup =
   | 'lower_back'
   | 'miscellaneous';
 
-export type MuscleGroup = ParentMuscleGroup | ChildMuscleGroup | StandaloneMuscleGroup;
-export type PrimaryMuscleGroup = ChildMuscleGroup | StandaloneMuscleGroup;
+export type MuscleGroup = AnalyticsCategory | PrimaryMuscleGroup;
 
+export interface AnalyticsCategoryConfig {
+  category: AnalyticsCategory;
+  name: string;
+  muscleGroups: PrimaryMuscleGroup[];
+}
+
+// 6 main categories for analytics display
+export const ANALYTICS_CATEGORIES: AnalyticsCategoryConfig[] = [
+  { category: 'back', name: 'Back', muscleGroups: ['lats', 'upper_back', 'traps'] },
+  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'rear_delts'] },
+  { category: 'chest', name: 'Chest', muscleGroups: ['chest'] },
+  { category: 'arms', name: 'Arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
+  { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'calves'] },
+  { category: 'core', name: 'Core', muscleGroups: ['abs', 'glutes', 'lower_back'] },
+];
+
+// Legacy hierarchy for backward compatibility
 export interface MuscleGroupHierarchy {
   parent: ParentMuscleGroup;
   children: ChildMuscleGroup[];
@@ -91,23 +130,28 @@ export const ALL_TRACKABLE_MUSCLE_GROUPS: (PrimaryMuscleGroup)[] = [
 ];
 
 export const MUSCLE_GROUP_DISPLAY_NAMES: Record<MuscleGroup, string> = {
+  // Analytics categories
   back: 'Back',
   shoulders: 'Shoulders',
+  chest: 'Chest',
+  arms: 'Arms',
+  legs: 'Legs',
+  core: 'Core',
+  // Individual muscle groups
   lats: 'Lats',
   upper_back: 'Upper Back',
+  traps: 'Traps',
   front_delts: 'Front Delts',
   side_delts: 'Side Delts',
   rear_delts: 'Rear Delts',
-  chest: 'Chest',
   triceps: 'Triceps',
   biceps: 'Biceps',
+  forearms: 'Forearms',
   quads: 'Quads',
   hamstrings: 'Hamstrings',
-  glutes: 'Glutes',
   calves: 'Calves',
   abs: 'Abs',
-  forearms: 'Forearms',
-  traps: 'Traps',
+  glutes: 'Glutes',
   lower_back: 'Lower Back',
   miscellaneous: 'Miscellaneous',
 };

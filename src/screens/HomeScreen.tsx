@@ -18,8 +18,7 @@ import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getWeeklyVolume, calculateTrainingScore } from '../services/analytics';
 import { getWeeklyNutritionAverage, getWeeklySleepAverage } from '../services/healthKit';
-import { getSetsByWorkoutId } from '../services/storage';
-import { Workout, WeeklyVolume, WorkoutSet } from '../types';
+import { Workout, WeeklyVolume } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 
@@ -40,8 +39,6 @@ export function HomeScreen() {
     avgHours: number;
     days: number;
   } | null>(null);
-  const [workoutSets, setWorkoutSets] = useState<Record<string, WorkoutSet[]>>({});
-  const [expandedWorkoutId, setExpandedWorkoutId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -140,17 +137,8 @@ export function HomeScreen() {
     }
   };
 
-  const handleToggleWorkout = async (workoutId: string) => {
-    if (expandedWorkoutId === workoutId) {
-      setExpandedWorkoutId(null);
-    } else {
-      // Load sets if not already loaded
-      if (!workoutSets[workoutId]) {
-        const sets = await getSetsByWorkoutId(workoutId);
-        setWorkoutSets(prev => ({ ...prev, [workoutId]: sets }));
-      }
-      setExpandedWorkoutId(workoutId);
-    }
+  const handleWorkoutPress = (workoutId: string) => {
+    navigation.navigate('WorkoutDetail', { workoutId });
   };
 
   return (
@@ -214,9 +202,7 @@ export function HomeScreen() {
                 <WorkoutListItem
                   key={workout.id}
                   workout={workout}
-                  sets={workoutSets[workout.id] || []}
-                  isExpanded={expandedWorkoutId === workout.id}
-                  onPress={() => handleToggleWorkout(workout.id)}
+                  onPress={() => handleWorkoutPress(workout.id)}
                   isFirst={index === 0}
                   isLast={index === thisWeeksWorkouts.length - 1}
                 />
@@ -244,15 +230,13 @@ export function HomeScreen() {
 
 interface WorkoutListItemProps {
   workout: Workout;
-  sets: WorkoutSet[];
-  isExpanded: boolean;
   onPress: () => void;
   isFirst: boolean;
   isLast: boolean;
 }
 
-function WorkoutListItem({ workout, sets, isExpanded, onPress, isFirst, isLast }: WorkoutListItemProps) {
-  const { templates, exercises } = useData();
+function WorkoutListItem({ workout, onPress, isFirst, isLast }: WorkoutListItemProps) {
+  const { templates } = useData();
   const template = workout.templateId
     ? templates.find(t => t.id === workout.templateId)
     : null;
@@ -261,22 +245,13 @@ function WorkoutListItem({ workout, sets, isExpanded, onPress, isFirst, isLast }
   const dateStr = format(workoutDate, 'EEEE, MMM d');
   const timeStr = format(workoutDate, 'h:mm a');
 
-  // Group sets by exercise
-  const setsByExercise = sets.reduce((acc, set) => {
-    if (!acc[set.exerciseId]) {
-      acc[set.exerciseId] = [];
-    }
-    acc[set.exerciseId].push(set);
-    return acc;
-  }, {} as Record<string, WorkoutSet[]>);
-
   return (
     <TouchableOpacity
       style={[
         styles.workoutItem,
         isFirst && styles.workoutItemFirst,
-        isLast && !isExpanded && styles.workoutItemLast,
-        !isLast && !isExpanded && styles.workoutItemBorder,
+        isLast && styles.workoutItemLast,
+        !isLast && styles.workoutItemBorder,
       ]}
       onPress={onPress}
       activeOpacity={0.7}
@@ -287,34 +262,11 @@ function WorkoutListItem({ workout, sets, isExpanded, onPress, isFirst, isLast }
             {template?.name || 'Custom Workout'}
           </Text>
           <Text style={styles.workoutDate}>
-            {dateStr} at {timeStr} • {sets.length} sets
+            {dateStr} at {timeStr}
           </Text>
         </View>
-        <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+        <Text style={styles.chevron}>›</Text>
       </View>
-
-      {isExpanded && sets.length > 0 && (
-        <View style={styles.workoutSetsContainer}>
-          {Object.entries(setsByExercise).map(([exerciseId, exerciseSets]) => {
-            const exercise = exercises.find(e => e.id === exerciseId);
-            return (
-              <View key={exerciseId} style={styles.exerciseSetsGroup}>
-                <Text style={styles.exerciseName}>
-                  {exercise?.name || 'Unknown Exercise'}
-                </Text>
-                <View style={styles.setsRow}>
-                  {exerciseSets.map((set, idx) => (
-                    <Text key={set.id} style={styles.setDetail}>
-                      {set.weight}×{set.reps}
-                      {idx < exerciseSets.length - 1 ? '  ' : ''}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
     </TouchableOpacity>
   );
 }
@@ -408,33 +360,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-  expandIcon: {
-    fontSize: typography.size.sm,
-    color: colors.textSecondary,
+  chevron: {
+    fontSize: typography.size.xl,
+    color: colors.textTertiary,
     marginLeft: spacing.sm,
-  },
-  workoutSetsContainer: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.separator,
-  },
-  exerciseSetsGroup: {
-    marginBottom: spacing.sm,
-  },
-  exerciseName: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.medium,
-    color: colors.text,
-    marginBottom: 2,
-  },
-  setsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  setDetail: {
-    fontSize: typography.size.sm,
-    color: colors.textSecondary,
   },
   buttonSpacer: {
     height: 80,

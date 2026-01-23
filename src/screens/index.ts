@@ -10,6 +10,7 @@ export { TemplateDetailScreen } from './TemplateDetailScreen';
 export { CreateTemplateScreen } from './CreateTemplateScreen';
 export { AnalyticsScreen } from './AnalyticsScreen';
 export { MuscleGroupDetailScreen } from './MuscleGroupDetailScreen';
+export { WorkoutDetailScreen } from './WorkoutDetailScreen';
 export { SettingsScreen } from './SettingsScreen';
 export { SetgraphImportScreen } from './SetgraphImportScreen';
 export { LogPastWorkoutScreen } from './LogPastWorkoutScreen';

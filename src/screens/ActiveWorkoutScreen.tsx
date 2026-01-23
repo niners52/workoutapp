@@ -485,6 +485,50 @@ export function ActiveWorkoutScreen() {
   );
 }
 
+// Previous Set Indicator Component
+interface PreviousSetIndicatorProps {
+  currentSets: WorkoutSet[];
+  history: ExerciseHistory | undefined;
+}
+
+function PreviousSetIndicator({ currentSets, history }: PreviousSetIndicatorProps) {
+  // Determine what to show: last set from current session, or last set from previous session
+  const lastCurrentSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
+  const lastHistorySet = history?.sets?.[0];
+
+  if (lastCurrentSet) {
+    // Show previous set from current session
+    return (
+      <View style={styles.previousSetContainer}>
+        <Text style={styles.previousSetLabel}>Previous set:</Text>
+        <Text style={styles.previousSetValue}>
+          {lastCurrentSet.weight} lbs × {lastCurrentSet.reps} reps
+        </Text>
+      </View>
+    );
+  }
+
+  if (lastHistorySet) {
+    // Show last set from previous workout
+    const historyDate = history?.date ? format(new Date(history.date), 'MMM d') : '';
+    return (
+      <View style={styles.previousSetContainer}>
+        <Text style={styles.previousSetLabel}>Last time ({historyDate}):</Text>
+        <Text style={styles.previousSetValue}>
+          {lastHistorySet.weight} lbs × {lastHistorySet.reps} reps
+        </Text>
+      </View>
+    );
+  }
+
+  // No previous data - first time doing this exercise
+  return (
+    <View style={styles.previousSetContainer}>
+      <Text style={styles.previousSetLabel}>First time logging this exercise</Text>
+    </View>
+  );
+}
+
 interface ExerciseCardProps {
   exercise: Exercise;
   currentSets: WorkoutSet[];
@@ -606,6 +650,12 @@ function ExerciseCard({
 
           {/* Input Section */}
           <View style={styles.inputSection}>
+            {/* Previous Set Indicator */}
+            <PreviousSetIndicator
+              currentSets={currentSets}
+              history={history}
+            />
+
             <View style={styles.inputRow}>
               <NumberInput
                 value={weight}
@@ -836,6 +886,26 @@ const styles = StyleSheet.create({
   },
   inputSection: {
     marginTop: spacing.sm,
+  },
+  previousSetContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary + '20',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+  },
+  previousSetLabel: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginRight: spacing.xs,
+  },
+  previousSetValue: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
   },
   inputRow: {
     flexDirection: 'row',

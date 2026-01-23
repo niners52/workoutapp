@@ -4,8 +4,10 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, parseISO, addDays } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
@@ -19,9 +21,11 @@ import {
 import { RootStackParamList } from '../navigation/types';
 
 type MuscleGroupDetailRouteProp = RouteProp<RootStackParamList, 'MuscleGroupDetail'>;
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function MuscleGroupDetailScreen() {
   const route = useRoute<MuscleGroupDetailRouteProp>();
+  const navigation = useNavigation<NavigationProp>();
   const { muscleGroup, weekStart } = route.params;
   const { userSettings } = useData();
 
@@ -48,6 +52,10 @@ export function MuscleGroupDetailScreen() {
   const target = userSettings.muscleGroupTargets[muscleGroup] || 0;
   const totalSets = exerciseVolume.reduce((sum, e) => sum + e.sets, 0);
   const progress = target > 0 ? (totalSets / target) * 100 : 0;
+
+  const handleExercisePress = (exerciseId: string) => {
+    navigation.navigate('ExerciseDetail', { exerciseId });
+  };
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
@@ -88,7 +96,7 @@ export function MuscleGroupDetailScreen() {
           ) : (
             <Card padding="none">
               {exerciseVolume.map((exercise, index) => (
-                <View
+                <TouchableOpacity
                   key={exercise.exerciseId}
                   style={[
                     styles.exerciseRow,
@@ -96,10 +104,15 @@ export function MuscleGroupDetailScreen() {
                     index === exerciseVolume.length - 1 && styles.exerciseRowLast,
                     index < exerciseVolume.length - 1 && styles.exerciseRowBorder,
                   ]}
+                  onPress={() => handleExercisePress(exercise.exerciseId)}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
-                  <Text style={styles.exerciseSets}>{exercise.sets} sets</Text>
-                </View>
+                  <View style={styles.exerciseInfo}>
+                    <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
+                    <Text style={styles.exerciseSets}>{exercise.sets} sets</Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </TouchableOpacity>
               ))}
             </Card>
           )}
@@ -198,15 +211,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.separator,
   },
+  exerciseInfo: {
+    flex: 1,
+  },
   exerciseName: {
     fontSize: typography.size.md,
     color: colors.text,
-    flex: 1,
   },
   exerciseSets: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.semibold,
+    fontSize: typography.size.sm,
     color: colors.primary,
+    marginTop: spacing.xs,
+  },
+  chevron: {
+    fontSize: typography.size.xl,
+    color: colors.textTertiary,
+    marginLeft: spacing.sm,
   },
   tipCard: {
     backgroundColor: colors.backgroundTertiary,

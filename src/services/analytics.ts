@@ -6,6 +6,8 @@ import {
   Exercise,
   UserSettings,
   MUSCLE_GROUP_HIERARCHY,
+  ANALYTICS_CATEGORIES,
+  AnalyticsCategory,
   getParentMuscleGroup,
   ALL_TRACKABLE_MUSCLE_GROUPS,
 } from '../types';
@@ -125,7 +127,34 @@ export async function getVolumeHistory(
   return history.reverse();
 }
 
-// Get parent muscle group volume (aggregating children)
+// Get category volume (aggregating muscle groups into 6 main categories)
+export interface CategoryVolume {
+  category: AnalyticsCategory;
+  name: string;
+  totalSets: number;
+  totalTarget: number;
+  muscleGroups: MuscleGroupVolume[];
+}
+
+export function aggregateIntoCategories(
+  volumes: MuscleGroupVolume[]
+): CategoryVolume[] {
+  return ANALYTICS_CATEGORIES.map(config => {
+    const categoryVolumes = volumes.filter(v =>
+      config.muscleGroups.includes(v.muscleGroup)
+    );
+
+    return {
+      category: config.category,
+      name: config.name,
+      totalSets: categoryVolumes.reduce((sum, v) => sum + v.sets, 0),
+      totalTarget: categoryVolumes.reduce((sum, v) => sum + v.target, 0),
+      muscleGroups: categoryVolumes,
+    };
+  });
+}
+
+// Legacy function for backward compatibility
 export interface ParentMuscleGroupVolume {
   parent: 'back' | 'shoulders';
   totalSets: number;

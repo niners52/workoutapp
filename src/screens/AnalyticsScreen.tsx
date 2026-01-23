@@ -19,12 +19,12 @@ import {
   getWeeklyVolume,
   getVolumeHistory,
   calculateTrainingScore,
-  aggregateChildMuscleGroups,
+  aggregateIntoCategories,
+  CategoryVolume,
 } from '../services/analytics';
 import {
   WeeklyVolume,
   MUSCLE_GROUP_DISPLAY_NAMES,
-  getParentMuscleGroup,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
@@ -85,9 +85,9 @@ export function AnalyticsScreen() {
   const weekStart = startOfWeek(new Date(), { weekStartsOn: dayOffset as 0 | 1 });
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: dayOffset as 0 | 1 });
 
-  // Get parent group aggregates
-  const parentVolumes = displayVolume
-    ? aggregateChildMuscleGroups(displayVolume.muscleGroups)
+  // Get 6 category aggregates
+  const categoryVolumes = displayVolume
+    ? aggregateIntoCategories(displayVolume.muscleGroups)
     : [];
 
   return (
@@ -154,22 +154,20 @@ export function AnalyticsScreen() {
           )}
         </Card>
 
-        {/* Parent Group Summary */}
-        {parentVolumes.length > 0 && (
+        {/* Category Summary */}
+        {categoryVolumes.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Group Summary</Text>
-            <View style={styles.parentGrid}>
-              {parentVolumes.map(pv => (
+            <Text style={styles.sectionTitle}>Category Summary</Text>
+            <View style={styles.categoryGrid}>
+              {categoryVolumes.map(cv => (
                 <TouchableOpacity
-                  key={pv.parent}
-                  style={styles.parentCard}
-                  onPress={() => {/* Could expand to show children */}}
+                  key={cv.category}
+                  style={styles.categoryCard}
+                  onPress={() => {/* Could expand to show muscle groups */}}
                 >
-                  <Text style={styles.parentName}>
-                    {pv.parent.charAt(0).toUpperCase() + pv.parent.slice(1)}
-                  </Text>
-                  <Text style={styles.parentSets}>
-                    {pv.totalSets} / {pv.totalTarget}
+                  <Text style={styles.categoryName}>{cv.name}</Text>
+                  <Text style={styles.categorySets}>
+                    {cv.totalSets} / {cv.totalTarget}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -320,24 +318,26 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.md,
   },
-  parentGrid: {
+  categoryGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  parentCard: {
-    flex: 1,
+  categoryCard: {
+    width: '31%',
     backgroundColor: colors.backgroundSecondary,
     borderRadius: borderRadius.lg,
     padding: spacing.base,
     alignItems: 'center',
   },
-  parentName: {
-    fontSize: typography.size.base,
+  categoryName: {
+    fontSize: typography.size.sm,
     fontWeight: typography.weight.medium,
     color: colors.text,
+    textAlign: 'center',
   },
-  parentSets: {
-    fontSize: typography.size.lg,
+  categorySets: {
+    fontSize: typography.size.base,
     fontWeight: typography.weight.bold,
     color: colors.primary,
     marginTop: spacing.xs,

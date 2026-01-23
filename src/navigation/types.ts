@@ -15,6 +15,7 @@ export type RootStackParamList = {
   CreateTemplate: undefined;
   EditTemplate: { templateId: string };
   MuscleGroupDetail: { muscleGroup: string; weekStart: string };
+  WorkoutDetail: { workoutId: string };
   SetgraphImport: undefined;
   LogPastWorkout: undefined;
 };

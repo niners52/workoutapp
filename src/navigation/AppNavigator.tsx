@@ -19,6 +19,7 @@ import {
   CreateTemplateScreen,
   AnalyticsScreen,
   MuscleGroupDetailScreen,
+  WorkoutDetailScreen,
   SettingsScreen,
   SetgraphImportScreen,
   LogPastWorkoutScreen,
@@ -196,6 +197,13 @@ export function AppNavigator() {
           component={MuscleGroupDetailScreen}
           options={{
             title: 'Volume Detail',
+          }}
+        />
+        <Stack.Screen
+          name="WorkoutDetail"
+          component={WorkoutDetailScreen}
+          options={{
+            title: 'Workout',
           }}
         />
         <Stack.Screen
