@@ -22,10 +22,18 @@ import {
   Template,
   TemplateType,
   Exercise,
+  PrimaryMuscleGroup,
   MUSCLE_GROUP_DISPLAY_NAMES,
   ALL_TEMPLATE_TYPES,
   TEMPLATE_TYPE_DISPLAY_NAMES,
 } from '../types';
+
+// Map template types to their associated muscle groups
+const TEMPLATE_TYPE_MUSCLES: Record<TemplateType, PrimaryMuscleGroup[]> = {
+  push: ['chest', 'front_delts', 'side_delts', 'triceps'],
+  pull: ['lats', 'upper_back', 'traps', 'rear_delts', 'biceps', 'forearms'],
+  lower: ['quads', 'hamstrings', 'glutes', 'calves'],
+};
 import { RootStackParamList } from '../navigation/types';
 
 type RouteProps = RouteProp<RootStackParamList, 'EditTemplate'>;
@@ -52,6 +60,7 @@ export function CreateTemplateScreen() {
     existingTemplate?.exerciseIds || []
   );
   const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [showAllExercises, setShowAllExercises] = useState(false);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -101,15 +110,37 @@ export function CreateTemplateScreen() {
   const currentLocation = locations.find(l => l.id === locationId);
   const locationName = currentLocation?.name.toLowerCase() || 'gym';
 
-  // Filter exercises based on the location name (matches 'gym', 'home', or 'both')
+  // Filter exercises based on location and template type
   const filteredExercises = exercises.filter(e => {
-    if (e.location === 'both') return true;
-    // Match location name to exercise location
-    if (locationName.includes('gym') && e.location === 'gym') return true;
-    if (locationName.includes('home') && e.location === 'home') return true;
-    // For custom locations, show all exercises
-    if (!locationName.includes('gym') && !locationName.includes('home')) return true;
-    return false;
+    // If showing all exercises, skip filtering
+    if (showAllExercises) return true;
+
+    // Check location filter
+    let locationMatch = false;
+    if (e.locationIds && e.locationIds.length > 0) {
+      // New locationIds field
+      locationMatch = e.locationIds.includes(locationId);
+    } else if (e.location) {
+      // Legacy location field
+      if (e.location === 'both') locationMatch = true;
+      else if (locationName.includes('gym') && e.location === 'gym') locationMatch = true;
+      else if (locationName.includes('home') && e.location === 'home') locationMatch = true;
+      else if (!locationName.includes('gym') && !locationName.includes('home')) locationMatch = true;
+    } else {
+      // No location info, include it
+      locationMatch = true;
+    }
+
+    if (!locationMatch) return false;
+
+    // Check template type filter (muscle groups)
+    const templateMuscles = TEMPLATE_TYPE_MUSCLES[templateType];
+    const exerciseMuscles = e.primaryMuscleGroups || (e.primaryMuscleGroup ? [e.primaryMuscleGroup] : []);
+
+    // Check if any of the exercise's muscles match the template type
+    const muscleMatch = exerciseMuscles.some(muscle => templateMuscles.includes(muscle));
+
+    return muscleMatch;
   });
 
   const selectedExerciseObjects = selectedExercises
@@ -265,7 +296,16 @@ export function CreateTemplateScreen() {
         {/* Exercise Picker */}
         {showExercisePicker && (
           <Card style={styles.section}>
-            <Text style={styles.label}>Available Exercises</Text>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.label}>
+                {showAllExercises ? 'All Exercises' : 'Filtered Exercises'} ({filteredExercises.length})
+              </Text>
+              <TouchableOpacity onPress={() => setShowAllExercises(!showAllExercises)}>
+                <Text style={styles.showAllText}>
+                  {showAllExercises ? 'Show Filtered' : 'Show All'}
+                </Text>
+              </TouchableOpacity>
+            </View>
             {filteredExercises.map(exercise => {
               const isSelected = selectedExercises.includes(exercise.id);
               return (
@@ -351,6 +391,17 @@ const styles = StyleSheet.create({
   },
   addText: {
     fontSize: typography.size.md,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  showAllText: {
+    fontSize: typography.size.sm,
     color: colors.primary,
     fontWeight: typography.weight.medium,
   },
