@@ -304,9 +304,17 @@ export function ActiveWorkoutScreen() {
               Started {format(new Date(activeWorkout.workout.startedAt), 'h:mm a')} • {totalSetsLogged} sets logged
             </Text>
           </View>
-          <TouchableOpacity onPress={handleCancelWorkout}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => navigation.navigate('MainTabs', { screen: 'Analytics' })}
+            >
+              <Text style={styles.analyticsText}>📊</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleCancelWorkout}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Rest Timer Banner */}
@@ -722,6 +730,17 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  headerButton: {
+    padding: spacing.xs,
+  },
+  analyticsText: {
+    fontSize: typography.size.xl,
   },
   workoutTitle: {
     fontSize: typography.size.lg,

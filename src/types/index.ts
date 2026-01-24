@@ -1,6 +1,6 @@
 // Core data types for the workout tracking app
 
-export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | 'other';
+export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | 'medicine_ball' | 'other';
 export type ExerciseLocation = 'gym' | 'home' | 'both';
 export type WeekStartDay = 'sunday' | 'monday';
 export type TemplateType = 'push' | 'pull' | 'lower';

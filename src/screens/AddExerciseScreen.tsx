@@ -37,6 +37,7 @@ const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
   { value: 'cable', label: 'Cable' },
   { value: 'machine', label: 'Machine' },
   { value: 'bodyweight', label: 'Bodyweight' },
+  { value: 'medicine_ball', label: 'Medicine Ball' },
   { value: 'other', label: 'Other' },
 ];
 
