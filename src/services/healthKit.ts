@@ -292,11 +292,12 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
   };
 
   // Fetch all nutrition data in parallel
+  // Using full HKQuantityTypeIdentifier format
   const [protein, carbs, fat, calories] = await Promise.all([
-    fetchNutritionSample('DietaryProtein'),
-    fetchNutritionSample('DietaryCarbohydrates'),
-    fetchNutritionSample('DietaryFatTotal'),
-    fetchNutritionSample('DietaryEnergyConsumed'),
+    fetchNutritionSample('HKQuantityTypeIdentifierDietaryProtein'),
+    fetchNutritionSample('HKQuantityTypeIdentifierDietaryCarbohydrates'),
+    fetchNutritionSample('HKQuantityTypeIdentifierDietaryFatTotal'),
+    fetchNutritionSample('HKQuantityTypeIdentifierDietaryEnergyConsumed'),
   ]);
 
   // Only return data if we have at least some nutrition logged
