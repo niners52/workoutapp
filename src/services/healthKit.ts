@@ -41,10 +41,10 @@ const healthKitPermissions = {
       'Workout',
       'ActiveEnergyBurned',
       'SleepAnalysis',
-      'Protein',
-      'Carbohydrates',
-      'FatTotal',
-      'EnergyConsumed',
+      'DietaryProtein',
+      'DietaryCarbohydrates',
+      'DietaryFatTotal',
+      'DietaryEnergyConsumed',
     ],
     write: [
       'Workout',
@@ -71,12 +71,13 @@ export async function initializeHealthKit(): Promise<boolean> {
   }
 
   return new Promise((resolve) => {
+    console.log('Requesting HealthKit permissions:', JSON.stringify(healthKitPermissions));
     AppleHealthKit.initHealthKit(healthKitPermissions, (error: string) => {
       if (error) {
         console.log('HealthKit initialization error:', error);
         resolve(false);
       } else {
-        console.log('HealthKit initialized successfully');
+        console.log('HealthKit initialized successfully with permissions');
         healthKitInitialized = true;
         resolve(true);
       }
@@ -364,11 +365,20 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
   };
 
   return new Promise((resolve) => {
+    console.log('Fetching sleep samples with options:', JSON.stringify(options));
     AppleHealthKit.getSleepSamples(options, (err: string, results: any[]) => {
-      if (err || !results || results.length === 0) {
+      console.log('Sleep samples response - error:', err, 'results count:', results?.length || 0);
+      if (err) {
+        console.log('Sleep fetch error:', err);
         resolve(null);
         return;
       }
+      if (!results || results.length === 0) {
+        console.log('No sleep results found');
+        resolve(null);
+        return;
+      }
+      console.log('Sleep samples found:', results.length, 'First sample:', JSON.stringify(results[0]));
 
       // Filter for sleep samples that ended on the target date (the morning of)
       const targetDateStr = format(date, 'yyyy-MM-dd');
