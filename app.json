@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "plugins": [
       [
         "react-native-health",
@@ -29,7 +29,6 @@
       },
       "infoPlist": {
         "UIBackgroundModes": [
-          "fetch",
           "fetch"
         ],
         "ITSAppUsesNonExemptEncryption": false,

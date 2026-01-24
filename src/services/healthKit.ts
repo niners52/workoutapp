@@ -6,9 +6,12 @@ import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 let AppleHealthKit: any = null;
 if (Platform.OS === 'ios') {
   try {
-    AppleHealthKit = require('react-native-health').default;
+    const healthModule = require('react-native-health');
+    AppleHealthKit = healthModule.default || healthModule;
+    console.log('HealthKit module loaded:', !!AppleHealthKit);
+    console.log('HealthKit methods:', AppleHealthKit ? Object.keys(AppleHealthKit).slice(0, 10) : 'none');
   } catch (e) {
-    console.log('react-native-health not available');
+    console.log('react-native-health import error:', e);
   }
 }
 
