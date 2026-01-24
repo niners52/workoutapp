@@ -208,18 +208,21 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   filterContainer: {
-    maxHeight: 44,
     marginBottom: spacing.sm,
   },
   filterContent: {
     paddingHorizontal: spacing.base,
+    paddingVertical: spacing.xs,
     gap: spacing.sm,
+    alignItems: 'center',
   },
   filterChip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
     backgroundColor: colors.backgroundSecondary,
+    height: 36,
+    justifyContent: 'center',
   },
   filterChipSelected: {
     backgroundColor: colors.primary,
