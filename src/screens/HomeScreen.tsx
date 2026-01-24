@@ -117,14 +117,14 @@ export function HomeScreen() {
       value: weeklyNutrition?.avgProtein || 0,
       maxValue: userSettings.proteinGoal,
       color: colors.chartProtein,
-      onPress: () => {/* TODO: Navigate to nutrition detail */},
+      onPress: () => navigation.navigate('MainTabs', { screen: 'Analytics' }),
     },
     {
       label: 'Sleep',
       value: weeklySleep?.avgHours || 0,
       maxValue: userSettings.sleepGoal,
       color: colors.chartSleep,
-      onPress: () => {/* TODO: Navigate to sleep detail */},
+      onPress: () => navigation.navigate('MainTabs', { screen: 'Analytics' }),
     },
   ];
 

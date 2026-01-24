@@ -23,6 +23,10 @@ import {
   CategoryVolume,
 } from '../services/analytics';
 import {
+  getWeeklySleepAverage,
+  getWeeklyNutritionAverage,
+} from '../services/healthKit';
+import {
   WeeklyVolume,
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
@@ -38,6 +42,14 @@ export function AnalyticsScreen() {
   const [currentWeekVolume, setCurrentWeekVolume] = useState<WeeklyVolume | null>(null);
   const [volumeHistory, setVolumeHistory] = useState<WeeklyVolume[]>([]);
   const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const [sleepData, setSleepData] = useState<{ avgHours: number; days: number } | null>(null);
+  const [nutritionData, setNutritionData] = useState<{
+    avgCalories: number;
+    avgProtein: number;
+    avgCarbs: number;
+    avgFat: number;
+    days: number;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -47,6 +59,13 @@ export function AnalyticsScreen() {
 
       const history = await getVolumeHistory(52); // Load a full year of history
       setVolumeHistory(history);
+
+      // Load health data
+      const sleep = await getWeeklySleepAverage(today);
+      setSleepData({ avgHours: sleep.avgHours, days: sleep.days });
+
+      const nutrition = await getWeeklyNutritionAverage(today);
+      setNutritionData(nutrition);
     } catch (error) {
       console.error('Failed to load analytics:', error);
     }
@@ -153,6 +172,68 @@ export function AnalyticsScreen() {
             </Text>
           )}
         </Card>
+
+        {/* Health Data - Sleep & Nutrition */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health (Last 7 Days)</Text>
+          <View style={styles.healthGrid}>
+            {/* Sleep */}
+            <Card style={styles.healthCard}>
+              <Text style={styles.healthLabel}>Avg Sleep</Text>
+              <Text style={styles.healthValue}>
+                {sleepData && sleepData.avgHours > 0 ? `${sleepData.avgHours}h` : '--'}
+              </Text>
+              {sleepData && sleepData.days > 0 && (
+                <Text style={styles.healthSubtext}>
+                  {Math.round((sleepData.avgHours / userSettings.sleepGoal) * 100)}% of {userSettings.sleepGoal}h goal
+                </Text>
+              )}
+              {(!sleepData || sleepData.days === 0) && (
+                <Text style={styles.healthSubtext}>No data</Text>
+              )}
+            </Card>
+
+            {/* Protein */}
+            <Card style={styles.healthCard}>
+              <Text style={styles.healthLabel}>Avg Protein</Text>
+              <Text style={styles.healthValue}>
+                {nutritionData && nutritionData.avgProtein > 0 ? `${nutritionData.avgProtein}g` : '--'}
+              </Text>
+              {nutritionData && nutritionData.days > 0 && nutritionData.avgProtein > 0 && (
+                <Text style={styles.healthSubtext}>
+                  {Math.round((nutritionData.avgProtein / userSettings.proteinGoal) * 100)}% of {userSettings.proteinGoal}g goal
+                </Text>
+              )}
+              {(!nutritionData || nutritionData.days === 0 || nutritionData.avgProtein === 0) && (
+                <Text style={styles.healthSubtext}>No data</Text>
+              )}
+            </Card>
+          </View>
+
+          {/* Additional nutrition if available */}
+          {nutritionData && nutritionData.days > 0 && (nutritionData.avgCalories > 0 || nutritionData.avgCarbs > 0) && (
+            <View style={styles.nutritionRow}>
+              {nutritionData.avgCalories > 0 && (
+                <View style={styles.nutritionItem}>
+                  <Text style={styles.nutritionLabel}>Calories</Text>
+                  <Text style={styles.nutritionValue}>{nutritionData.avgCalories}</Text>
+                </View>
+              )}
+              {nutritionData.avgCarbs > 0 && (
+                <View style={styles.nutritionItem}>
+                  <Text style={styles.nutritionLabel}>Carbs</Text>
+                  <Text style={styles.nutritionValue}>{nutritionData.avgCarbs}g</Text>
+                </View>
+              )}
+              {nutritionData.avgFat > 0 && (
+                <View style={styles.nutritionItem}>
+                  <Text style={styles.nutritionLabel}>Fat</Text>
+                  <Text style={styles.nutritionValue}>{nutritionData.avgFat}g</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
 
         {/* Category Summary */}
         {categoryVolumes.length > 0 && (
@@ -341,6 +422,53 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.bold,
     color: colors.primary,
     marginTop: spacing.xs,
+  },
+  healthGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  healthCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: spacing.base,
+  },
+  healthLabel: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  healthValue: {
+    fontSize: 32,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginVertical: spacing.xs,
+  },
+  healthSubtext: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    textAlign: 'center',
+  },
+  nutritionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
+    marginTop: spacing.sm,
+  },
+  nutritionItem: {
+    alignItems: 'center',
+  },
+  nutritionLabel: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+  },
+  nutritionValue: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginTop: 2,
   },
   emptyText: {
     fontSize: typography.size.base,
