@@ -41,10 +41,10 @@ const healthKitPermissions = {
       'Workout',
       'ActiveEnergyBurned',
       'SleepAnalysis',
-      'DietaryProtein',
-      'DietaryCarbohydrates',
-      'DietaryFatTotal',
-      'DietaryEnergyConsumed',
+      'Protein',
+      'Carbohydrates',
+      'FatTotal',
+      'EnergyConsumed',
     ],
     write: [
       'Workout',
@@ -265,48 +265,37 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     endDate: endOfDayDate.toISOString(),
   };
 
+  // Helper to fetch nutrition samples
+  const fetchNutritionSample = (type: string): Promise<number> => {
+    return new Promise((resolve) => {
+      const sampleOptions = {
+        ...options,
+        type,
+      };
+      AppleHealthKit.getSamples(sampleOptions, (err: string, results: any[]) => {
+        if (err) {
+          console.log(`Error fetching ${type}:`, err);
+          resolve(0);
+          return;
+        }
+        if (!results || results.length === 0) {
+          console.log(`No ${type} data found`);
+          resolve(0);
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
+        console.log(`${type} total:`, total);
+        resolve(Math.round(total));
+      });
+    });
+  };
+
   // Fetch all nutrition data in parallel
   const [protein, carbs, fat, calories] = await Promise.all([
-    new Promise<number>((resolve) => {
-      AppleHealthKit.getDietaryProteinSamples(options, (err: string, results: any[]) => {
-        if (err || !results) {
-          resolve(0);
-          return;
-        }
-        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
-        resolve(Math.round(total));
-      });
-    }),
-    new Promise<number>((resolve) => {
-      AppleHealthKit.getDietaryCarbohydratesSamples(options, (err: string, results: any[]) => {
-        if (err || !results) {
-          resolve(0);
-          return;
-        }
-        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
-        resolve(Math.round(total));
-      });
-    }),
-    new Promise<number>((resolve) => {
-      AppleHealthKit.getDietaryFatTotalSamples(options, (err: string, results: any[]) => {
-        if (err || !results) {
-          resolve(0);
-          return;
-        }
-        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
-        resolve(Math.round(total));
-      });
-    }),
-    new Promise<number>((resolve) => {
-      AppleHealthKit.getDietaryEnergyConsumedSamples(options, (err: string, results: any[]) => {
-        if (err || !results) {
-          resolve(0);
-          return;
-        }
-        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
-        resolve(Math.round(total));
-      });
-    }),
+    fetchNutritionSample('DietaryProtein'),
+    fetchNutritionSample('DietaryCarbohydrates'),
+    fetchNutritionSample('DietaryFatTotal'),
+    fetchNutritionSample('DietaryEnergyConsumed'),
   ]);
 
   // Only return data if we have at least some nutrition logged
