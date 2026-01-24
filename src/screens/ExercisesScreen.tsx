@@ -5,6 +5,7 @@ import {
   StyleSheet,
   SectionList,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { SearchBar, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, PrimaryMuscleGroup } from '../types';
+import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, PrimaryMuscleGroup, ALL_TRACKABLE_MUSCLE_GROUPS } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -26,6 +27,7 @@ export function ExercisesScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { exercises } = useData();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
 
   // Helper to get primary muscles display
   const getPrimaryMusclesText = (exercise: Exercise): string => {
@@ -36,16 +38,29 @@ export function ExercisesScreen() {
   };
 
   const filteredExercises = useMemo(() => {
-    if (!searchQuery) return exercises;
+    let result = exercises;
 
-    const query = searchQuery.toLowerCase();
-    return exercises.filter(
-      e =>
-        e.name.toLowerCase().includes(query) ||
-        getPrimaryMusclesText(e).toLowerCase().includes(query) ||
-        e.equipment.toLowerCase().includes(query)
-    );
-  }, [exercises, searchQuery]);
+    // Filter by selected muscle group
+    if (selectedMuscle) {
+      result = result.filter(e => {
+        const muscles = e.primaryMuscleGroups || (e.primaryMuscleGroup ? [e.primaryMuscleGroup] : []);
+        return muscles.includes(selectedMuscle);
+      });
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        e =>
+          e.name.toLowerCase().includes(query) ||
+          getPrimaryMusclesText(e).toLowerCase().includes(query) ||
+          e.equipment.toLowerCase().includes(query)
+      );
+    }
+
+    return result;
+  }, [exercises, searchQuery, selectedMuscle]);
 
   // Group by first primary muscle group
   const sections: ExerciseSection[] = useMemo(() => {
@@ -125,6 +140,34 @@ export function ExercisesScreen() {
           />
         </View>
 
+        {/* Muscle Group Filter */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterContainer}
+          contentContainerStyle={styles.filterContent}
+        >
+          <TouchableOpacity
+            style={[styles.filterChip, !selectedMuscle && styles.filterChipSelected]}
+            onPress={() => setSelectedMuscle(null)}
+          >
+            <Text style={[styles.filterChipText, !selectedMuscle && styles.filterChipTextSelected]}>
+              All
+            </Text>
+          </TouchableOpacity>
+          {ALL_TRACKABLE_MUSCLE_GROUPS.map(muscle => (
+            <TouchableOpacity
+              key={muscle}
+              style={[styles.filterChip, selectedMuscle === muscle && styles.filterChipSelected]}
+              onPress={() => setSelectedMuscle(selectedMuscle === muscle ? null : muscle)}
+            >
+              <Text style={[styles.filterChipText, selectedMuscle === muscle && styles.filterChipTextSelected]}>
+                {MUSCLE_GROUP_DISPLAY_NAMES[muscle]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         {/* Exercise List */}
         <SectionList
           sections={sections}
@@ -162,7 +205,32 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: spacing.base,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  filterContainer: {
+    maxHeight: 44,
+    marginBottom: spacing.sm,
+  },
+  filterContent: {
+    paddingHorizontal: spacing.base,
+    gap: spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  filterChipSelected: {
+    backgroundColor: colors.primary,
+  },
+  filterChipText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  filterChipTextSelected: {
+    color: colors.text,
+    fontWeight: typography.weight.medium,
   },
   listContent: {
     paddingBottom: spacing.xl,
