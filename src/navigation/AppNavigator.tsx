@@ -8,6 +8,7 @@ import { RootStackParamList, MainTabParamList } from './types';
 
 import {
   HomeScreen,
+  CalendarScreen,
   StartWorkoutScreen,
   ActiveWorkoutScreen,
   ExercisePickerScreen,
@@ -32,6 +33,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   const icons: { [key: string]: string } = {
     Home: '🏠',
+    Calendar: '📅',
     Exercises: '💪',
     Templates: '📋',
     Analytics: '📊',
@@ -68,6 +70,11 @@ function MainTabs() {
         name="Home"
         component={HomeScreen}
         options={{ tabBarLabel: 'Home' }}
+      />
+      <Tab.Screen
+        name="Calendar"
+        component={CalendarScreen}
+        options={{ tabBarLabel: 'Calendar' }}
       />
       <Tab.Screen
         name="Exercises"

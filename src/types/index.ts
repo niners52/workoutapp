@@ -17,6 +17,21 @@ export const DEFAULT_LOCATIONS: WorkoutLocation[] = [
   { id: 'home', name: 'Home', sortOrder: 1 },
 ];
 
+// Supplement tracking
+export interface Supplement {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface SupplementIntake {
+  id: string;
+  supplementId: string;
+  date: string; // 'YYYY-MM-DD' format
+  takenAt: string; // ISO datetime when marked as taken
+}
+
 export const TEMPLATE_TYPE_DISPLAY_NAMES: Record<TemplateType, string> = {
   push: 'Push',
   pull: 'Pull',
@@ -75,12 +90,12 @@ export interface AnalyticsCategoryConfig {
 
 // 6 main categories for analytics display
 export const ANALYTICS_CATEGORIES: AnalyticsCategoryConfig[] = [
-  { category: 'back', name: 'Back', muscleGroups: ['lats', 'upper_back', 'traps'] },
-  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'rear_delts'] },
+  { category: 'back', name: 'Back', muscleGroups: ['lats', 'upper_back', 'lower_back'] },
+  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'rear_delts', 'traps'] },
   { category: 'chest', name: 'Chest', muscleGroups: ['chest'] },
   { category: 'arms', name: 'Arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
-  { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'calves'] },
-  { category: 'core', name: 'Core', muscleGroups: ['abs', 'glutes', 'lower_back'] },
+  { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'calves'] },
+  { category: 'core', name: 'Core', muscleGroups: ['abs'] },
 ];
 
 // Legacy hierarchy for backward compatibility

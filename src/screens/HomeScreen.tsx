@@ -14,6 +14,7 @@ import { format, startOfWeek, endOfWeek, isWithinInterval, subDays } from 'date-
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { WeeklyBarChart } from '../components/charts';
+import { SupplementCheckbox } from '../components/supplements';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getWeeklyVolume, calculateTrainingScore } from '../services/analytics';
@@ -26,8 +27,12 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { workouts, userSettings, refreshWorkouts } = useData();
+  const { workouts, userSettings, refreshWorkouts, supplements, supplementIntakes, toggleSupplementIntake } = useData();
   const { isWorkoutActive } = useWorkout();
+
+  // Get today's date string for supplements
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const activeSupplements = supplements.filter(s => s.isActive);
 
   const [refreshing, setRefreshing] = useState(false);
   const [weeklyVolume, setWeeklyVolume] = useState<WeeklyVolume | null>(null);
@@ -188,6 +193,30 @@ export function HomeScreen() {
             <Text style={styles.statLabel}>Avg Protein</Text>
           </Card>
         </View>
+
+        {/* Today's Supplements */}
+        {activeSupplements.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today's Supplements</Text>
+            <Card padding="none">
+              {activeSupplements.map((supplement, index) => {
+                const isTaken = supplementIntakes.some(
+                  i => i.supplementId === supplement.id && i.date === todayStr
+                );
+                return (
+                  <SupplementCheckbox
+                    key={supplement.id}
+                    supplement={supplement}
+                    isTaken={isTaken}
+                    onToggle={() => toggleSupplementIntake(supplement.id, todayStr)}
+                    isFirst={index === 0}
+                    isLast={index === activeSupplements.length - 1}
+                  />
+                );
+              })}
+            </Card>
+          </View>
+        )}
 
         {/* This Week's Workouts */}
         <View style={styles.section}>

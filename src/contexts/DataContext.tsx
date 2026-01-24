@@ -6,6 +6,8 @@ import {
   WorkoutSet,
   UserSettings,
   WorkoutLocation,
+  Supplement,
+  SupplementIntake,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
 } from '../types';
@@ -17,6 +19,8 @@ import {
   getWorkouts,
   getSets,
   getUserSettings,
+  getSupplements,
+  getSupplementIntakes,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
 import {
@@ -31,6 +35,11 @@ import {
   deleteLocation as deleteLocationFromStorage,
   reorderLocations as reorderLocationsInStorage,
   updateUserSettings as updateUserSettingsInStorage,
+  addSupplement as addSupplementToStorage,
+  updateSupplement as updateSupplementInStorage,
+  deleteSupplement as deleteSupplementFromStorage,
+  addSupplementIntake as addSupplementIntakeToStorage,
+  deleteSupplementIntakeBySupplementAndDate,
 } from '../services/storage';
 
 interface DataContextType {
@@ -71,6 +80,16 @@ interface DataContextType {
   deleteLocation: (id: string) => Promise<void>;
   reorderLocations: (locationIds: string[]) => Promise<void>;
 
+  // Supplement data and CRUD
+  supplements: Supplement[];
+  supplementIntakes: SupplementIntake[];
+  refreshSupplements: () => Promise<void>;
+  refreshSupplementIntakes: () => Promise<void>;
+  addSupplement: (supplement: Supplement) => Promise<void>;
+  updateSupplement: (supplement: Supplement) => Promise<void>;
+  deleteSupplement: (id: string) => Promise<void>;
+  toggleSupplementIntake: (supplementId: string, date: string) => Promise<void>;
+
   // Settings
   updateUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
 
@@ -78,6 +97,7 @@ interface DataContextType {
   getExerciseById: (id: string) => Exercise | undefined;
   getTemplateById: (id: string) => Template | undefined;
   getLocationById: (id: string) => WorkoutLocation | undefined;
+  getSupplementById: (id: string) => Supplement | undefined;
 }
 
 const DataContext = createContext<DataContextType | null>(null);
@@ -91,6 +111,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
+  const [supplements, setSupplements] = useState<Supplement[]>([]);
+  const [supplementIntakes, setSupplementIntakes] = useState<SupplementIntake[]>([]);
 
   // Initialize storage and load data
   useEffect(() => {
@@ -151,6 +173,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setUserSettings(data);
   }, []);
 
+  const refreshSupplements = useCallback(async () => {
+    const data = await getSupplements();
+    data.sort((a, b) => a.sortOrder - b.sortOrder);
+    setSupplements(data);
+  }, []);
+
+  const refreshSupplementIntakes = useCallback(async () => {
+    const data = await getSupplementIntakes();
+    setSupplementIntakes(data);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([
       refreshExercises(),
@@ -159,8 +192,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshWorkouts(),
       refreshSets(),
       refreshUserSettings(),
+      refreshSupplements(),
+      refreshSupplementIntakes(),
     ]);
-  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings]);
+  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes]);
 
   // Exercise CRUD
   const addExercise = useCallback(async (exercise: Exercise) => {
@@ -215,6 +250,44 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refreshLocations();
   }, [refreshLocations]);
 
+  // Supplement CRUD
+  const addSupplement = useCallback(async (supplement: Supplement) => {
+    await addSupplementToStorage(supplement);
+    await refreshSupplements();
+  }, [refreshSupplements]);
+
+  const updateSupplement = useCallback(async (supplement: Supplement) => {
+    await updateSupplementInStorage(supplement);
+    await refreshSupplements();
+  }, [refreshSupplements]);
+
+  const deleteSupplement = useCallback(async (id: string) => {
+    await deleteSupplementFromStorage(id);
+    await refreshSupplements();
+    await refreshSupplementIntakes(); // Also refresh intakes since they may be deleted
+  }, [refreshSupplements, refreshSupplementIntakes]);
+
+  const toggleSupplementIntake = useCallback(async (supplementId: string, date: string) => {
+    const existing = supplementIntakes.find(
+      i => i.supplementId === supplementId && i.date === date
+    );
+
+    if (existing) {
+      // Remove the intake
+      await deleteSupplementIntakeBySupplementAndDate(supplementId, date);
+    } else {
+      // Add the intake
+      const intake: SupplementIntake = {
+        id: `intake-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        supplementId,
+        date,
+        takenAt: new Date().toISOString(),
+      };
+      await addSupplementIntakeToStorage(intake);
+    }
+    await refreshSupplementIntakes();
+  }, [supplementIntakes, refreshSupplementIntakes]);
+
   // Settings
   const updateUserSettingsHandler = useCallback(async (settings: Partial<UserSettings>) => {
     await updateUserSettingsInStorage(settings);
@@ -233,6 +306,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const getLocationById = useCallback((id: string): WorkoutLocation | undefined => {
     return locations.find(l => l.id === id);
   }, [locations]);
+
+  const getSupplementById = useCallback((id: string): Supplement | undefined => {
+    return supplements.find(s => s.id === id);
+  }, [supplements]);
 
   const value: DataContextType = {
     isLoading,
@@ -260,10 +337,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateLocation,
     deleteLocation,
     reorderLocations,
+    supplements,
+    supplementIntakes,
+    refreshSupplements,
+    refreshSupplementIntakes,
+    addSupplement,
+    updateSupplement,
+    deleteSupplement,
+    toggleSupplementIntake,
     updateUserSettings: updateUserSettingsHandler,
     getExerciseById,
     getTemplateById,
     getLocationById,
+    getSupplementById,
   };
 
   return (

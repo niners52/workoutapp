@@ -19,6 +19,7 @@ import { exportToJSON, exportToCSV, resetStorage } from '../services/storage';
 import {
   WeekStartDay,
   WorkoutLocation,
+  Supplement,
   ALL_TRACKABLE_MUSCLE_GROUPS,
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
@@ -28,12 +29,27 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { userSettings, updateUserSettings, refreshAll, locations, addLocation, updateLocation, deleteLocation } = useData();
+  const {
+    userSettings,
+    updateUserSettings,
+    refreshAll,
+    locations,
+    addLocation,
+    updateLocation,
+    deleteLocation,
+    supplements,
+    addSupplement,
+    updateSupplement,
+    deleteSupplement,
+  } = useData();
 
   const [showMuscleTargets, setShowMuscleTargets] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
+  const [showSupplements, setShowSupplements] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
+  const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
+  const [editingSupplement, setEditingSupplement] = useState<Supplement | null>(null);
 
   const handleWeekStartChange = (day: WeekStartDay) => {
     updateUserSettings({ weekStartDay: day });
@@ -130,6 +146,48 @@ export function SettingsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => deleteLocation(location.id),
+        },
+      ]
+    );
+  };
+
+  const handleAddSupplement = async () => {
+    if (!newSupplementName.trim()) return;
+
+    const id = `supplement-${Date.now()}`;
+    await addSupplement({
+      id,
+      name: newSupplementName.trim(),
+      sortOrder: supplements.length,
+      isActive: true,
+    });
+    setNewSupplementName('');
+  };
+
+  const handleEditSupplement = (supplement: Supplement) => {
+    setEditingSupplement(supplement);
+  };
+
+  const handleSaveSupplementEdit = async () => {
+    if (!editingSupplement || !editingSupplement.name.trim()) return;
+    await updateSupplement(editingSupplement);
+    setEditingSupplement(null);
+  };
+
+  const handleToggleSupplementActive = async (supplement: Supplement) => {
+    await updateSupplement({ ...supplement, isActive: !supplement.isActive });
+  };
+
+  const handleDeleteSupplement = (supplement: Supplement) => {
+    Alert.alert(
+      'Delete Supplement',
+      `Are you sure you want to delete "${supplement.name}"? All tracking history for this supplement will be removed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteSupplement(supplement.id),
         },
       ]
     );
@@ -315,6 +373,114 @@ export function SettingsScreen() {
           )}
           <Text style={styles.hint}>
             Locations help organize your templates by where you work out
+          </Text>
+        </View>
+
+        {/* Supplements Management */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => setShowSupplements(!showSupplements)}
+          >
+            <Text style={styles.sectionTitle}>Supplements</Text>
+            <Text style={styles.expandIcon}>{showSupplements ? '−' : '+'}</Text>
+          </TouchableOpacity>
+
+          {showSupplements && (
+            <>
+              {supplements.length > 0 && (
+                <Card padding="none">
+                  {supplements.map((supplement, index) => (
+                    <View
+                      key={supplement.id}
+                      style={[
+                        styles.locationRow,
+                        index === supplements.length - 1 && styles.locationRowLast,
+                      ]}
+                    >
+                      {editingSupplement?.id === supplement.id ? (
+                        <View style={styles.editLocationRow}>
+                          <TextInput
+                            style={styles.locationInput}
+                            value={editingSupplement.name}
+                            onChangeText={(text) =>
+                              setEditingSupplement({ ...editingSupplement, name: text })
+                            }
+                            autoFocus
+                          />
+                          <TouchableOpacity
+                            onPress={handleSaveSupplementEdit}
+                            style={styles.locationAction}
+                          >
+                            <Text style={styles.locationActionText}>Save</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setEditingSupplement(null)}
+                            style={styles.locationAction}
+                          >
+                            <Text style={[styles.locationActionText, styles.locationActionCancel]}>
+                              Cancel
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={styles.supplementNameRow}
+                            onPress={() => handleToggleSupplementActive(supplement)}
+                          >
+                            <Text style={[
+                              styles.locationName,
+                              !supplement.isActive && styles.supplementInactive
+                            ]}>
+                              {supplement.name}
+                            </Text>
+                            {!supplement.isActive && (
+                              <Text style={styles.inactiveBadge}>Inactive</Text>
+                            )}
+                          </TouchableOpacity>
+                          <View style={styles.locationActions}>
+                            <TouchableOpacity
+                              onPress={() => handleEditSupplement(supplement)}
+                              style={styles.locationAction}
+                            >
+                              <Text style={styles.locationActionText}>Edit</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleDeleteSupplement(supplement)}
+                              style={styles.locationAction}
+                            >
+                              <Text style={[styles.locationActionText, styles.locationActionDelete]}>
+                                Delete
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  ))}
+                </Card>
+              )}
+              <View style={styles.addLocationRow}>
+                <TextInput
+                  style={styles.addLocationInput}
+                  placeholder="New supplement name"
+                  placeholderTextColor={colors.textTertiary}
+                  value={newSupplementName}
+                  onChangeText={setNewSupplementName}
+                  onSubmitEditing={handleAddSupplement}
+                />
+                <Button
+                  title="Add"
+                  onPress={handleAddSupplement}
+                  variant="secondary"
+                  disabled={!newSupplementName.trim()}
+                />
+              </View>
+            </>
+          )}
+          <Text style={styles.hint}>
+            Track daily supplement intake on the Home screen
           </Text>
         </View>
 
@@ -573,6 +739,23 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.base,
+  },
+  supplementNameRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  supplementInactive: {
+    color: colors.textTertiary,
+  },
+  inactiveBadge: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    backgroundColor: colors.backgroundTertiary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
   },
 });
 

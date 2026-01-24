@@ -1,4 +1,5 @@
 export { HomeScreen } from './HomeScreen';
+export { CalendarScreen } from './CalendarScreen';
 export { StartWorkoutScreen } from './StartWorkoutScreen';
 export { ActiveWorkoutScreen } from './ActiveWorkoutScreen';
 export { ExercisePickerScreen } from './ExercisePickerScreen';

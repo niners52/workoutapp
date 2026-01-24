@@ -6,6 +6,8 @@ import {
   WorkoutSet,
   UserSettings,
   WorkoutLocation,
+  Supplement,
+  SupplementIntake,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
 } from '../types';
@@ -22,6 +24,8 @@ const STORAGE_KEYS = {
   SETS: '@workout_tracker/sets',
   USER_SETTINGS: '@workout_tracker/user_settings',
   LOCATIONS: '@workout_tracker/locations',
+  SUPPLEMENTS: '@workout_tracker/supplements',
+  SUPPLEMENT_INTAKES: '@workout_tracker/supplement_intakes',
   INITIALIZED: '@workout_tracker/initialized',
   MIGRATION_VERSION: '@workout_tracker/migration_version',
   SETGRAPH_MAPPINGS: '@workout_tracker/setgraph_mappings',
@@ -620,4 +624,91 @@ export async function importData(data: ExportData): Promise<void> {
   await setItem(STORAGE_KEYS.WORKOUTS, data.workouts);
   await setItem(STORAGE_KEYS.SETS, data.sets);
   await setItem(STORAGE_KEYS.USER_SETTINGS, data.userSettings);
+}
+
+// ==================== SUPPLEMENTS ====================
+
+export async function getSupplements(): Promise<Supplement[]> {
+  return getItem(STORAGE_KEYS.SUPPLEMENTS, []);
+}
+
+export async function getSupplementById(id: string): Promise<Supplement | undefined> {
+  const supplements = await getSupplements();
+  return supplements.find(s => s.id === id);
+}
+
+export async function addSupplement(supplement: Supplement): Promise<void> {
+  const supplements = await getSupplements();
+  const maxSortOrder = supplements.reduce((max, s) => Math.max(max, s.sortOrder), -1);
+  supplements.push({ ...supplement, sortOrder: maxSortOrder + 1 });
+  await setItem(STORAGE_KEYS.SUPPLEMENTS, supplements);
+}
+
+export async function updateSupplement(supplement: Supplement): Promise<void> {
+  const supplements = await getSupplements();
+  const index = supplements.findIndex(s => s.id === supplement.id);
+  if (index !== -1) {
+    supplements[index] = supplement;
+    await setItem(STORAGE_KEYS.SUPPLEMENTS, supplements);
+  }
+}
+
+export async function deleteSupplement(id: string): Promise<void> {
+  const supplements = await getSupplements();
+  const filtered = supplements.filter(s => s.id !== id);
+  await setItem(STORAGE_KEYS.SUPPLEMENTS, filtered);
+
+  // Also delete associated intakes
+  const intakes = await getSupplementIntakes();
+  const filteredIntakes = intakes.filter(i => i.supplementId !== id);
+  await setItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, filteredIntakes);
+}
+
+// ==================== SUPPLEMENT INTAKES ====================
+
+export async function getSupplementIntakes(): Promise<SupplementIntake[]> {
+  return getItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, []);
+}
+
+export async function getSupplementIntakesForDate(date: string): Promise<SupplementIntake[]> {
+  const intakes = await getSupplementIntakes();
+  return intakes.filter(i => i.date === date);
+}
+
+export async function addSupplementIntake(intake: SupplementIntake): Promise<void> {
+  const intakes = await getSupplementIntakes();
+  intakes.push(intake);
+  await setItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, intakes);
+}
+
+export async function deleteSupplementIntake(id: string): Promise<void> {
+  const intakes = await getSupplementIntakes();
+  const filtered = intakes.filter(i => i.id !== id);
+  await setItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, filtered);
+}
+
+export async function deleteSupplementIntakeBySupplementAndDate(
+  supplementId: string,
+  date: string
+): Promise<void> {
+  const intakes = await getSupplementIntakes();
+  const filtered = intakes.filter(i => !(i.supplementId === supplementId && i.date === date));
+  await setItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, filtered);
+}
+
+// ==================== CALENDAR HELPERS ====================
+
+export async function getWorkoutDatesInMonth(year: number, month: number): Promise<string[]> {
+  const workouts = await getWorkouts();
+  const dates = workouts
+    .filter(w => {
+      if (!w.completedAt) return false;
+      const date = new Date(w.startedAt);
+      return date.getFullYear() === year && date.getMonth() === month;
+    })
+    .map(w => {
+      const date = new Date(w.startedAt);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    });
+  return [...new Set(dates)]; // Unique dates
 }
