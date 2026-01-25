@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { MuscleGroupVolume, MUSCLE_GROUP_DISPLAY_NAMES, getParentMuscleGroup } from '../../types';
+import { MuscleGroupVolume, MUSCLE_GROUP_DISPLAY_NAMES, ANALYTICS_CATEGORIES } from '../../types';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { ProgressBar } from '../common/ProgressBar';
 
@@ -68,43 +68,19 @@ interface GroupedVolume {
 function organizeByParentGroup(volumes: MuscleGroupVolume[]): GroupedVolume[] {
   const groups: GroupedVolume[] = [];
 
-  // Separate into parent groups
-  const backVolumes = volumes.filter(v =>
-    v.muscleGroup === 'lats' || v.muscleGroup === 'upper_back'
-  );
-  const shoulderVolumes = volumes.filter(v =>
-    v.muscleGroup === 'front_delts' ||
-    v.muscleGroup === 'side_delts' ||
-    v.muscleGroup === 'rear_delts'
-  );
-  const standaloneVolumes = volumes.filter(v =>
-    !backVolumes.includes(v) && !shoulderVolumes.includes(v)
-  );
+  // Use ANALYTICS_CATEGORIES to organize muscle groups
+  for (const category of ANALYTICS_CATEGORIES) {
+    const categoryVolumes = volumes.filter(v =>
+      category.muscleGroups.includes(v.muscleGroup)
+    );
 
-  // Add back group
-  if (backVolumes.length > 0) {
-    groups.push({
-      parentName: 'Back',
-      isParentHeader: true,
-      items: backVolumes,
-    });
-  }
-
-  // Add shoulder group
-  if (shoulderVolumes.length > 0) {
-    groups.push({
-      parentName: 'Shoulders',
-      isParentHeader: true,
-      items: shoulderVolumes,
-    });
-  }
-
-  // Add standalone groups
-  if (standaloneVolumes.length > 0) {
-    groups.push({
-      isParentHeader: false,
-      items: standaloneVolumes,
-    });
+    if (categoryVolumes.length > 0) {
+      groups.push({
+        parentName: category.name,
+        isParentHeader: true,
+        items: categoryVolumes,
+      });
+    }
   }
 
   return groups;
