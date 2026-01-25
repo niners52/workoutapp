@@ -96,7 +96,7 @@ export function TemplateDetailScreen() {
           <Text style={styles.sectionTitle}>Exercises</Text>
           <Card padding="none">
             {templateExercises.map((exercise, index) => (
-              <View
+              <TouchableOpacity
                 key={exercise!.id}
                 style={[
                   styles.exerciseItem,
@@ -104,6 +104,8 @@ export function TemplateDetailScreen() {
                   index === templateExercises.length - 1 && styles.exerciseItemLast,
                   index < templateExercises.length - 1 && styles.exerciseItemBorder,
                 ]}
+                onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: exercise!.id })}
+                activeOpacity={0.7}
               >
                 <View style={styles.exerciseNumber}>
                   <Text style={styles.numberText}>{index + 1}</Text>
@@ -118,7 +120,8 @@ export function TemplateDetailScreen() {
                       : 'Unknown'}
                   </Text>
                 </View>
-              </View>
+                <Text style={styles.chevron}>›</Text>
+              </TouchableOpacity>
             ))}
           </Card>
         </View>
@@ -230,6 +233,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  chevron: {
+    fontSize: typography.size.xl,
+    color: colors.textTertiary,
+    marginLeft: spacing.sm,
   },
   actions: {
     marginTop: spacing.xl,
