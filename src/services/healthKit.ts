@@ -41,10 +41,10 @@ const healthKitPermissions = {
       'Workout',
       'ActiveEnergyBurned',
       'SleepAnalysis',
-      'DietaryProtein',
-      'DietaryCarbohydrates',
-      'DietaryFatTotal',
-      'DietaryEnergyConsumed',
+      'Protein',
+      'Carbohydrates',
+      'FatTotal',
+      'EnergyConsumed',
     ],
     write: [
       'Workout',
@@ -292,12 +292,12 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
   };
 
   // Fetch all nutrition data in parallel
-  // Using full HKQuantityTypeIdentifier format
+  // Using react-native-health permission names
   const [protein, carbs, fat, calories] = await Promise.all([
-    fetchNutritionSample('HKQuantityTypeIdentifierDietaryProtein'),
-    fetchNutritionSample('HKQuantityTypeIdentifierDietaryCarbohydrates'),
-    fetchNutritionSample('HKQuantityTypeIdentifierDietaryFatTotal'),
-    fetchNutritionSample('HKQuantityTypeIdentifierDietaryEnergyConsumed'),
+    fetchNutritionSample('Protein'),
+    fetchNutritionSample('Carbohydrates'),
+    fetchNutritionSample('FatTotal'),
+    fetchNutritionSample('EnergyConsumed'),
   ]);
 
   // Only return data if we have at least some nutrition logged
