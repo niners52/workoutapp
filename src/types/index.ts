@@ -1,6 +1,17 @@
 // Core data types for the workout tracking app
 
 export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | 'medicine_ball' | 'other';
+
+export const EQUIPMENT_DISPLAY_NAMES: Record<Equipment, string> = {
+  barbell: 'Barbell',
+  dumbbell: 'Dumbbells',
+  cable: 'Cable',
+  machine: 'Machine',
+  bodyweight: 'Bodyweight',
+  medicine_ball: 'Medicine Ball',
+  other: 'Other',
+};
+
 export type ExerciseLocation = 'gym' | 'home' | 'both';
 export type WeekStartDay = 'sunday' | 'monday';
 export type TemplateType = 'push' | 'pull' | 'lower';
@@ -348,3 +359,19 @@ export interface SetgraphExerciseMapping {
   exerciseId: string | null; // null means create new exercise
   needsMapping: boolean;
 }
+
+// Weekly Routine types
+export interface RoutineDaySchedule {
+  day: number;              // 0-6 (0=Sunday, 1=Monday, etc.)
+  templateIds: string[];    // empty array = rest day, can have multiple for AM/PM workouts
+}
+
+export interface Routine {
+  id: string;
+  name: string;
+  daySchedule: RoutineDaySchedule[]; // 7 entries, one per day
+  isActive: boolean;
+}
+
+export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

@@ -15,3 +15,6 @@ export { WorkoutDetailScreen } from './WorkoutDetailScreen';
 export { SettingsScreen } from './SettingsScreen';
 export { SetgraphImportScreen } from './SetgraphImportScreen';
 export { LogPastWorkoutScreen } from './LogPastWorkoutScreen';
+export { RoutinesScreen } from './RoutinesScreen';
+export { CreateRoutineScreen } from './CreateRoutineScreen';
+export { RoutineDetailScreen } from './RoutineDetailScreen';

@@ -24,6 +24,9 @@ import {
   SettingsScreen,
   SetgraphImportScreen,
   LogPastWorkoutScreen,
+  RoutinesScreen,
+  CreateRoutineScreen,
+  RoutineDetailScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -225,6 +228,40 @@ export function AppNavigator() {
           component={LogPastWorkoutScreen}
           options={{
             title: 'Log Past Workout',
+            presentation: 'modal',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="Routines"
+          component={RoutinesScreen}
+          options={{
+            title: 'Routines',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="RoutineDetail"
+          component={RoutineDetailScreen}
+          options={{
+            title: 'Routine',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="CreateRoutine"
+          component={CreateRoutineScreen}
+          options={{
+            title: 'Create Routine',
+            presentation: 'modal',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="EditRoutine"
+          component={CreateRoutineScreen}
+          options={{
+            title: 'Edit Routine',
             presentation: 'modal',
             headerShown: false,
           }}

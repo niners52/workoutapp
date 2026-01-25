@@ -8,6 +8,7 @@ import {
   WorkoutLocation,
   Supplement,
   SupplementIntake,
+  Routine,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
 } from '../types';
@@ -21,6 +22,7 @@ import {
   getUserSettings,
   getSupplements,
   getSupplementIntakes,
+  getRoutines,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
 import {
@@ -40,6 +42,10 @@ import {
   deleteSupplement as deleteSupplementFromStorage,
   addSupplementIntake as addSupplementIntakeToStorage,
   deleteSupplementIntakeBySupplementAndDate,
+  addRoutine as addRoutineToStorage,
+  updateRoutine as updateRoutineInStorage,
+  deleteRoutine as deleteRoutineFromStorage,
+  setActiveRoutine as setActiveRoutineInStorage,
 } from '../services/storage';
 
 interface DataContextType {
@@ -90,6 +96,16 @@ interface DataContextType {
   deleteSupplement: (id: string) => Promise<void>;
   toggleSupplementIntake: (supplementId: string, date: string) => Promise<void>;
 
+  // Routine data and CRUD
+  routines: Routine[];
+  refreshRoutines: () => Promise<void>;
+  addRoutine: (routine: Routine) => Promise<void>;
+  updateRoutine: (routine: Routine) => Promise<void>;
+  deleteRoutine: (id: string) => Promise<void>;
+  setActiveRoutine: (routineId: string | null) => Promise<void>;
+  getActiveRoutine: () => Routine | undefined;
+  getRoutineById: (id: string) => Routine | undefined;
+
   // Settings
   updateUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
 
@@ -113,6 +129,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [supplements, setSupplements] = useState<Supplement[]>([]);
   const [supplementIntakes, setSupplementIntakes] = useState<SupplementIntake[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
 
   // Initialize storage and load data
   useEffect(() => {
@@ -184,6 +201,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setSupplementIntakes(data);
   }, []);
 
+  const refreshRoutines = useCallback(async () => {
+    const data = await getRoutines();
+    setRoutines(data);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([
       refreshExercises(),
@@ -194,8 +216,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshUserSettings(),
       refreshSupplements(),
       refreshSupplementIntakes(),
+      refreshRoutines(),
     ]);
-  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes]);
+  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshRoutines]);
 
   // Exercise CRUD
   const addExercise = useCallback(async (exercise: Exercise) => {
@@ -288,6 +311,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await refreshSupplementIntakes();
   }, [supplementIntakes, refreshSupplementIntakes]);
 
+  // Routine CRUD
+  const addRoutine = useCallback(async (routine: Routine) => {
+    await addRoutineToStorage(routine);
+    await refreshRoutines();
+  }, [refreshRoutines]);
+
+  const updateRoutine = useCallback(async (routine: Routine) => {
+    await updateRoutineInStorage(routine);
+    await refreshRoutines();
+  }, [refreshRoutines]);
+
+  const deleteRoutine = useCallback(async (id: string) => {
+    await deleteRoutineFromStorage(id);
+    await refreshRoutines();
+  }, [refreshRoutines]);
+
+  const setActiveRoutine = useCallback(async (routineId: string | null) => {
+    await setActiveRoutineInStorage(routineId);
+    await refreshRoutines();
+  }, [refreshRoutines]);
+
+  const getActiveRoutine = useCallback((): Routine | undefined => {
+    return routines.find(r => r.isActive);
+  }, [routines]);
+
+  const getRoutineById = useCallback((id: string): Routine | undefined => {
+    return routines.find(r => r.id === id);
+  }, [routines]);
+
   // Settings
   const updateUserSettingsHandler = useCallback(async (settings: Partial<UserSettings>) => {
     await updateUserSettingsInStorage(settings);
@@ -345,6 +397,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateSupplement,
     deleteSupplement,
     toggleSupplementIntake,
+    routines,
+    refreshRoutines,
+    addRoutine,
+    updateRoutine,
+    deleteRoutine,
+    setActiveRoutine,
+    getActiveRoutine,
+    getRoutineById,
     updateUserSettings: updateUserSettingsHandler,
     getExerciseById,
     getTemplateById,

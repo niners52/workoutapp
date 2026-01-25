@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
+import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, Equipment } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -44,6 +44,17 @@ export function TemplateDetailScreen() {
     .filter(Boolean);
 
   const location = getLocationById(template.locationId);
+
+  // Get unique equipment used in this template
+  const uniqueEquipment = useMemo(() => {
+    const equipmentSet = new Set<Equipment>();
+    templateExercises.forEach(exercise => {
+      if (exercise?.equipment) {
+        equipmentSet.add(exercise.equipment);
+      }
+    });
+    return Array.from(equipmentSet);
+  }, [templateExercises]);
 
   const handleStartWorkout = async () => {
     const workoutId = await startWorkout(template.id);
@@ -81,6 +92,17 @@ export function TemplateDetailScreen() {
           <Text style={styles.subtitle}>
             {location?.name || 'Unknown'} • {templateExercises.length} exercises
           </Text>
+          {uniqueEquipment.length > 0 && (
+            <View style={styles.equipmentRow}>
+              {uniqueEquipment.map(eq => (
+                <View key={eq} style={styles.equipmentChip}>
+                  <Text style={styles.equipmentChipText}>
+                    {EQUIPMENT_DISPLAY_NAMES[eq]}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Start Workout Button */}
@@ -178,6 +200,22 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
     textTransform: 'capitalize',
+  },
+  equipmentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  equipmentChip: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  equipmentChipText: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
   },
   section: {
     marginTop: spacing.xl,

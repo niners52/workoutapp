@@ -4,7 +4,10 @@ import {
   PrimaryMuscleGroup,
   WorkoutSet,
   Exercise,
+  Template,
+  Routine,
   UserSettings,
+  MuscleGroupTargets,
   MUSCLE_GROUP_HIERARCHY,
   ANALYTICS_CATEGORIES,
   AnalyticsCategory,
@@ -288,4 +291,98 @@ export async function getVolumeTrends(): Promise<VolumeTrend[]> {
       trend,
     };
   });
+}
+
+// Calculate projected weekly volume from a routine's scheduled templates
+// Assumes 3 sets per exercise (standard working sets)
+const SETS_PER_EXERCISE = 3;
+
+export function calculateProjectedVolumeForRoutine(
+  routine: Routine,
+  templates: Template[],
+  exercises: Exercise[],
+  userTargets: MuscleGroupTargets
+): MuscleGroupVolume[] {
+  // Build a map for quick exercise lookups
+  const exerciseMap = new Map<string, Exercise>(
+    exercises.map(e => [e.id, e])
+  );
+
+  // Build a map for quick template lookups
+  const templateMap = new Map<string, Template>(
+    templates.map(t => [t.id, t])
+  );
+
+  // Initialize volume tracking for each muscle group
+  const volumeMap = new Map<PrimaryMuscleGroup, {
+    sets: number;
+    exercises: Map<string, { exerciseId: string; exerciseName: string; sets: number }>;
+  }>();
+
+  ALL_TRACKABLE_MUSCLE_GROUPS.forEach(mg => {
+    volumeMap.set(mg, { sets: 0, exercises: new Map() });
+  });
+
+  // Process each day in the routine
+  routine.daySchedule.forEach(daySchedule => {
+    if (!daySchedule.templateIds || daySchedule.templateIds.length === 0) return; // Rest day
+
+    // Process each template for this day (supports multiple workouts per day)
+    daySchedule.templateIds.forEach(templateId => {
+      const template = templateMap.get(templateId);
+      if (!template) return;
+
+      // Process each exercise in the template
+      template.exerciseIds.forEach(exerciseId => {
+        const exercise = exerciseMap.get(exerciseId);
+        if (!exercise) return;
+
+        // Get primary muscle groups (support both new array and deprecated single field)
+        const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+          ? exercise.primaryMuscleGroups
+          : exercise.primaryMuscleGroup
+          ? [exercise.primaryMuscleGroup]
+          : [];
+
+        // Add projected sets to each primary muscle group
+        primaryMuscleGroups.forEach(muscleGroup => {
+          const volume = volumeMap.get(muscleGroup);
+
+          if (volume) {
+            volume.sets += SETS_PER_EXERCISE;
+
+            const existingExercise = volume.exercises.get(exercise.id);
+            if (existingExercise) {
+              existingExercise.sets += SETS_PER_EXERCISE;
+            } else {
+              volume.exercises.set(exercise.id, {
+                exerciseId: exercise.id,
+                exerciseName: exercise.name,
+                sets: SETS_PER_EXERCISE,
+              });
+            }
+          }
+        });
+      });
+    });
+  });
+
+  // Convert to array format
+  const result: MuscleGroupVolume[] = ALL_TRACKABLE_MUSCLE_GROUPS.map(mg => ({
+    muscleGroup: mg,
+    sets: volumeMap.get(mg)?.sets || 0,
+    target: userTargets[mg] || 0,
+    exercises: Array.from(volumeMap.get(mg)?.exercises.values() || []),
+  }));
+
+  return result;
+}
+
+// Get the templates for a specific day from a routine
+export function getTemplatesForDay(
+  routine: Routine,
+  dayOfWeek: number // 0-6 (Sunday-Saturday)
+): string[] {
+  const daySchedule = routine.daySchedule.find(d => d.day === dayOfWeek);
+  return daySchedule?.templateIds || [];
 }

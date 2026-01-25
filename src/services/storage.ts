@@ -8,6 +8,7 @@ import {
   WorkoutLocation,
   Supplement,
   SupplementIntake,
+  Routine,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
 } from '../types';
@@ -26,6 +27,7 @@ const STORAGE_KEYS = {
   LOCATIONS: '@workout_tracker/locations',
   SUPPLEMENTS: '@workout_tracker/supplements',
   SUPPLEMENT_INTAKES: '@workout_tracker/supplement_intakes',
+  ROUTINES: '@workout_tracker/routines',
   INITIALIZED: '@workout_tracker/initialized',
   MIGRATION_VERSION: '@workout_tracker/migration_version',
   SETGRAPH_MAPPINGS: '@workout_tracker/setgraph_mappings',
@@ -711,4 +713,50 @@ export async function getWorkoutDatesInMonth(year: number, month: number): Promi
       return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     });
   return [...new Set(dates)]; // Unique dates
+}
+
+// ==================== ROUTINES ====================
+
+export async function getRoutines(): Promise<Routine[]> {
+  return getItem(STORAGE_KEYS.ROUTINES, []);
+}
+
+export async function getRoutineById(id: string): Promise<Routine | undefined> {
+  const routines = await getRoutines();
+  return routines.find(r => r.id === id);
+}
+
+export async function addRoutine(routine: Routine): Promise<void> {
+  const routines = await getRoutines();
+  routines.push(routine);
+  await setItem(STORAGE_KEYS.ROUTINES, routines);
+}
+
+export async function updateRoutine(routine: Routine): Promise<void> {
+  const routines = await getRoutines();
+  const index = routines.findIndex(r => r.id === routine.id);
+  if (index !== -1) {
+    routines[index] = routine;
+    await setItem(STORAGE_KEYS.ROUTINES, routines);
+  }
+}
+
+export async function deleteRoutine(id: string): Promise<void> {
+  const routines = await getRoutines();
+  const filtered = routines.filter(r => r.id !== id);
+  await setItem(STORAGE_KEYS.ROUTINES, filtered);
+}
+
+export async function setActiveRoutine(routineId: string | null): Promise<void> {
+  const routines = await getRoutines();
+  const updated = routines.map(r => ({
+    ...r,
+    isActive: r.id === routineId,
+  }));
+  await setItem(STORAGE_KEYS.ROUTINES, updated);
+}
+
+export async function getActiveRoutine(): Promise<Routine | undefined> {
+  const routines = await getRoutines();
+  return routines.find(r => r.isActive);
 }

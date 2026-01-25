@@ -255,6 +255,21 @@ export function SettingsScreen() {
           </Card>
         </View>
 
+        {/* Routines */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Planning</Text>
+          <Card padding="none">
+            <ListItem
+              title="Weekly Routines"
+              subtitle="Plan your weekly workout schedule"
+              onPress={() => navigation.navigate('Routines')}
+              showChevron
+              isFirst
+              isLast
+            />
+          </Card>
+        </View>
+
         {/* Goals */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Daily Goals</Text>

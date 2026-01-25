@@ -19,7 +19,7 @@ import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getWeeklyVolume, calculateTrainingScore } from '../services/analytics';
 import { getWeeklyNutritionAverage, getWeeklySleepAverage } from '../services/healthKit';
-import { Workout, WeeklyVolume } from '../types';
+import { Workout, WeeklyVolume, DAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 
@@ -27,7 +27,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { workouts, userSettings, refreshWorkouts, supplements, supplementIntakes, toggleSupplementIntake } = useData();
+  const { workouts, userSettings, refreshWorkouts, supplements, supplementIntakes, toggleSupplementIntake, templates, getActiveRoutine } = useData();
   const { isWorkoutActive } = useWorkout();
 
   // Get today's date string for supplements
@@ -133,6 +133,14 @@ export function HomeScreen() {
     },
   ];
 
+  // Get today's planned workouts from active routine
+  const activeRoutine = getActiveRoutine();
+  const todayDayOfWeek = today.getDay(); // 0-6 (Sunday-Saturday)
+  const todayPlannedTemplateIds = activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek)?.templateIds || [];
+  const todayPlannedTemplates = todayPlannedTemplateIds
+    .map(id => templates.find(t => t.id === id))
+    .filter((t): t is NonNullable<typeof t> => t !== undefined);
+
   const handleStartWorkout = () => {
     if (isWorkoutActive) {
       // Resume active workout
@@ -140,6 +148,10 @@ export function HomeScreen() {
     } else {
       navigation.navigate('StartWorkout');
     }
+  };
+
+  const handleStartPlannedWorkout = (templateId: string) => {
+    navigation.navigate('TemplateDetail', { templateId });
   };
 
   const handleWorkoutPress = (workoutId: string) => {
@@ -173,6 +185,46 @@ export function HomeScreen() {
           title="This Week"
           height={140}
         />
+
+        {/* Today's Planned Workouts */}
+        {activeRoutine && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today's Plan ({DAY_NAMES[todayDayOfWeek]})</Text>
+            <Card padding={todayPlannedTemplates.length > 0 ? 'none' : undefined}>
+              {todayPlannedTemplates.length > 0 ? (
+                todayPlannedTemplates.map((template, index) => (
+                  <TouchableOpacity
+                    key={template.id}
+                    style={[
+                      styles.plannedWorkout,
+                      index === 0 && styles.plannedWorkoutFirst,
+                      index === todayPlannedTemplates.length - 1 && styles.plannedWorkoutLast,
+                      index < todayPlannedTemplates.length - 1 && styles.plannedWorkoutBorder,
+                    ]}
+                    onPress={() => handleStartPlannedWorkout(template.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.plannedWorkoutInfo}>
+                      <Text style={styles.plannedWorkoutName}>{template.name}</Text>
+                      <Text style={styles.plannedWorkoutRoutine}>
+                        {todayPlannedTemplates.length > 1
+                          ? `Workout ${index + 1} of ${todayPlannedTemplates.length}`
+                          : `From: ${activeRoutine.name}`}
+                      </Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.restDayContainer}>
+                  <Text style={styles.restDayEmoji}>😴</Text>
+                  <Text style={styles.restDayText}>Rest Day</Text>
+                  <Text style={styles.restDaySubtext}>Enjoy your recovery!</Text>
+                </View>
+              )}
+            </Card>
+          </View>
+        )}
 
         {/* Quick Stats */}
         <View style={styles.statsRow}>
@@ -406,6 +458,56 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.separator,
+  },
+  plannedWorkout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+  },
+  plannedWorkoutFirst: {
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+  },
+  plannedWorkoutLast: {
+    borderBottomLeftRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
+  },
+  plannedWorkoutBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  plannedWorkoutInfo: {
+    flex: 1,
+  },
+  plannedWorkoutName: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  plannedWorkoutRoutine: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  restDayContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  restDayEmoji: {
+    fontSize: 32,
+    marginBottom: spacing.sm,
+  },
+  restDayText: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  restDaySubtext: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });
 

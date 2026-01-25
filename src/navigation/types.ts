@@ -18,6 +18,10 @@ export type RootStackParamList = {
   WorkoutDetail: { workoutId: string };
   SetgraphImport: undefined;
   LogPastWorkout: undefined;
+  Routines: undefined;
+  RoutineDetail: { routineId: string };
+  CreateRoutine: undefined;
+  EditRoutine: { routineId: string };
 };
 
 // Bottom Tab Navigator
