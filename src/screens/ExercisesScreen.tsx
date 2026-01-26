@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -86,15 +86,19 @@ export function ExercisesScreen() {
       }));
   }, [filteredExercises]);
 
-  const handleExercisePress = (exercise: Exercise) => {
+  const handleExercisePress = useCallback((exercise: Exercise) => {
     navigation.navigate('ExerciseDetail', { exerciseId: exercise.id });
-  };
+  }, [navigation]);
 
-  const handleAddExercise = () => {
+  const handleAddExercise = useCallback(() => {
     navigation.navigate('AddExercise');
-  };
+  }, [navigation]);
 
-  const renderExercise = ({ item: exercise }: { item: Exercise }) => (
+  // Fixed heights for getItemLayout
+  const ITEM_HEIGHT = 62; // exerciseItem height
+  const SECTION_HEADER_HEIGHT = 38; // sectionHeader height
+
+  const renderExercise = useCallback(({ item: exercise }: { item: Exercise }) => (
     <TouchableOpacity
       style={styles.exerciseItem}
       onPress={() => handleExercisePress(exercise)}
@@ -111,14 +115,14 @@ export function ExercisesScreen() {
       )}
       <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
-  );
+  ), [handleExercisePress]);
 
-  const renderSectionHeader = ({ section }: { section: ExerciseSection }) => (
+  const renderSectionHeader = useCallback(({ section }: { section: ExerciseSection }) => (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{section.title}</Text>
       <Text style={styles.sectionCount}>{section.data.length}</Text>
     </View>
-  );
+  ), []);
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
@@ -174,8 +178,12 @@ export function ExercisesScreen() {
           keyExtractor={item => item.id}
           renderItem={renderExercise}
           renderSectionHeader={renderSectionHeader}
-          stickySectionHeadersEnabled
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.listContent}
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={10}
+          removeClippedSubviews={true}
         />
       </View>
     </SafeAreaView>

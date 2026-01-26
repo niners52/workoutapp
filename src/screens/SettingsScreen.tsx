@@ -560,6 +560,12 @@ export function SettingsScreen() {
               subtitle="Import historical workout data"
               onPress={handleImportSetgraph}
               showChevron
+            />
+            <ListItem
+              title="HealthKit Data"
+              subtitle="View raw Apple Health data for debugging"
+              onPress={() => navigation.navigate('HealthKitData')}
+              showChevron
               isLast
             />
           </Card>

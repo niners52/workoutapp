@@ -1,12 +1,14 @@
 // Core data types for the workout tracking app
 
-export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'bodyweight' | 'medicine_ball' | 'other';
+export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'smith_machine' | 'kettlebell' | 'bodyweight' | 'medicine_ball' | 'other';
 
 export const EQUIPMENT_DISPLAY_NAMES: Record<Equipment, string> = {
   barbell: 'Barbell',
   dumbbell: 'Dumbbells',
   cable: 'Cable',
   machine: 'Machine',
+  smith_machine: 'Smith Machine',
+  kettlebell: 'Kettlebell',
   bodyweight: 'Bodyweight',
   medicine_ball: 'Medicine Ball',
   other: 'Other',

@@ -1,0 +1,29 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background with rounded corners for iOS -->
+  <rect width="1024" height="1024" rx="180" fill="#000000"/>
+
+  <!-- Dumbbell design -->
+  <g transform="translate(512, 512)">
+    <!-- Center bar -->
+    <rect x="-180" y="-28" width="360" height="56" rx="28" fill="#007AFF"/>
+
+    <!-- Left weight stack -->
+    <!-- Outer plate -->
+    <rect x="-340" y="-140" width="80" height="280" rx="16" fill="#007AFF"/>
+    <!-- Inner plate -->
+    <rect x="-280" y="-100" width="60" height="200" rx="12" fill="#007AFF"/>
+    <!-- Collar -->
+    <rect x="-220" y="-50" width="40" height="100" rx="8" fill="#4DA2FF"/>
+
+    <!-- Right weight stack -->
+    <!-- Outer plate -->
+    <rect x="260" y="-140" width="80" height="280" rx="16" fill="#007AFF"/>
+    <!-- Inner plate -->
+    <rect x="220" y="-100" width="60" height="200" rx="12" fill="#007AFF"/>
+    <!-- Collar -->
+    <rect x="180" y="-50" width="40" height="100" rx="8" fill="#4DA2FF"/>
+
+    <!-- Highlight/shine effect on center bar -->
+    <rect x="-160" y="-20" width="320" height="12" rx="6" fill="#4DA2FF" opacity="0.5"/>
+  </g>
+</svg>

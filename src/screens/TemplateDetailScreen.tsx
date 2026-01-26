@@ -14,7 +14,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, Equipment } from '../types';
+import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, Equipment } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -140,6 +140,10 @@ export function TemplateDetailScreen() {
                       : exercise!.primaryMuscleGroup
                       ? MUSCLE_GROUP_DISPLAY_NAMES[exercise!.primaryMuscleGroup]
                       : 'Unknown'}
+                    {' • '}
+                    {EQUIPMENT_DISPLAY_NAMES[exercise!.equipment]}
+                    {exercise!.equipment === 'cable' && exercise!.cableAccessory &&
+                      ` (${CABLE_ACCESSORY_DISPLAY_NAMES[exercise!.cableAccessory]})`}
                   </Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>

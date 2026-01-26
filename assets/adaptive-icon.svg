@@ -1,0 +1,29 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Transparent background for adaptive icon -->
+  <!-- Android will apply its own background shape -->
+
+  <!-- Dumbbell design - centered with safe zone margins -->
+  <g transform="translate(512, 512)">
+    <!-- Center bar -->
+    <rect x="-160" y="-24" width="320" height="48" rx="24" fill="#007AFF"/>
+
+    <!-- Left weight stack -->
+    <!-- Outer plate -->
+    <rect x="-300" y="-120" width="70" height="240" rx="14" fill="#007AFF"/>
+    <!-- Inner plate -->
+    <rect x="-245" y="-85" width="52" height="170" rx="10" fill="#007AFF"/>
+    <!-- Collar -->
+    <rect x="-193" y="-42" width="33" height="84" rx="6" fill="#4DA2FF"/>
+
+    <!-- Right weight stack -->
+    <!-- Outer plate -->
+    <rect x="230" y="-120" width="70" height="240" rx="14" fill="#007AFF"/>
+    <!-- Inner plate -->
+    <rect x="193" y="-85" width="52" height="170" rx="10" fill="#007AFF"/>
+    <!-- Collar -->
+    <rect x="160" y="-42" width="33" height="84" rx="6" fill="#4DA2FF"/>
+
+    <!-- Highlight/shine effect on center bar -->
+    <rect x="-140" y="-16" width="280" height="10" rx="5" fill="#4DA2FF" opacity="0.5"/>
+  </g>
+</svg>

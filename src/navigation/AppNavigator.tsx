@@ -27,6 +27,7 @@ import {
   RoutinesScreen,
   CreateRoutineScreen,
   RoutineDetailScreen,
+  HealthKitDataScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -263,6 +264,14 @@ export function AppNavigator() {
           options={{
             title: 'Edit Routine',
             presentation: 'modal',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="HealthKitData"
+          component={HealthKitDataScreen}
+          options={{
+            title: 'HealthKit Data',
             headerShown: false,
           }}
         />

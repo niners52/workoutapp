@@ -1,10 +1,21 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
+import * as Notifications from 'expo-notifications';
 
 // Generate UUID using expo-crypto (uuid library crashes on React Native)
 const generateId = () => Crypto.randomUUID();
 import * as Haptics from 'expo-haptics';
+
+// Configure notifications to show when app is in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 import {
   Workout,
   WorkoutSet,
@@ -38,6 +49,7 @@ interface RestTimerState {
   isRunning: boolean;
   secondsRemaining: number;
   totalSeconds: number;
+  endTime: number | null; // Unix timestamp when timer should end (for background support)
 }
 
 interface LastSessionData {
@@ -92,16 +104,63 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     isRunning: false,
     secondsRemaining: 0,
     totalSeconds: 90,
+    endTime: null,
   });
   const [lastSessionData, setLastSessionData] = useState<LastSessionData | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const notificationIdRef = useRef<string | null>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   // Load user settings on mount
   useEffect(() => {
     getUserSettings().then(setUserSettings);
+  }, []);
+
+  // Request notification permissions on mount
+  useEffect(() => {
+    const requestPermissions = async () => {
+      if (Platform.OS !== 'web') {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        if (existingStatus !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+        }
+      }
+    };
+    requestPermissions();
+  }, []);
+
+  // Handle app state changes for background timer support
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        // App has come to foreground - recalculate timer from endTime
+        setRestTimer(prev => {
+          if (prev.isRunning && prev.endTime) {
+            const now = Date.now();
+            const remaining = Math.max(0, Math.ceil((prev.endTime - now) / 1000));
+            if (remaining <= 0) {
+              // Timer finished while in background
+              playTimerEndSound();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null };
+            }
+            return { ...prev, secondsRemaining: remaining };
+          }
+          return prev;
+        });
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   // Rest timer logic
@@ -113,7 +172,12 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
             // Timer finished
             playTimerEndSound();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            return { ...prev, isRunning: false, secondsRemaining: 0 };
+            // Cancel notification since timer completed in foreground
+            if (notificationIdRef.current) {
+              Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+              notificationIdRef.current = null;
+            }
+            return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null };
           }
           return { ...prev, secondsRemaining: prev.secondsRemaining - 1 };
         });
@@ -213,16 +277,16 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
     setActiveWorkout(null);
     setLastSessionData(null);
-    stopRestTimer();
-  }, [activeWorkout]);
+    await stopRestTimer();
+  }, [activeWorkout, stopRestTimer]);
 
   const cancelWorkout = useCallback(async () => {
     // Note: We keep the workout and sets in storage even if cancelled
     // The user might want to continue later or review partial data
     setActiveWorkout(null);
     setLastSessionData(null);
-    stopRestTimer();
-  }, []);
+    await stopRestTimer();
+  }, [stopRestTimer]);
 
   const setCurrentExercise = useCallback((exerciseId: string) => {
     if (!activeWorkout) return;
@@ -413,30 +477,67 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeWorkout]);
 
-  const startRestTimer = useCallback((seconds?: number) => {
+  const startRestTimer = useCallback(async (seconds?: number) => {
     const timerSeconds = seconds || userSettings?.restTimerSeconds || 90;
+    const endTime = Date.now() + timerSeconds * 1000;
+
+    // Cancel any existing notification
+    if (notificationIdRef.current) {
+      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+    }
+
+    // Schedule notification for when timer ends
+    try {
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Rest Timer Complete',
+          body: 'Time to start your next set!',
+          sound: true,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: timerSeconds,
+        },
+      });
+      notificationIdRef.current = notificationId;
+    } catch (error) {
+      console.log('Failed to schedule notification:', error);
+    }
+
     setRestTimer({
       isRunning: true,
       secondsRemaining: timerSeconds,
       totalSeconds: timerSeconds,
+      endTime,
     });
   }, [userSettings]);
 
-  const stopRestTimer = useCallback(() => {
+  const stopRestTimer = useCallback(async () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
     }
-    setRestTimer(prev => ({ ...prev, isRunning: false }));
+    // Cancel scheduled notification
+    if (notificationIdRef.current) {
+      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+      notificationIdRef.current = null;
+    }
+    setRestTimer(prev => ({ ...prev, isRunning: false, endTime: null }));
   }, []);
 
-  const resetRestTimer = useCallback(() => {
+  const resetRestTimer = useCallback(async () => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
+    }
+    // Cancel scheduled notification
+    if (notificationIdRef.current) {
+      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+      notificationIdRef.current = null;
     }
     setRestTimer(prev => ({
       isRunning: false,
       secondsRemaining: prev.totalSeconds,
       totalSeconds: prev.totalSeconds,
+      endTime: null,
     }));
   }, []);
 

@@ -18,3 +18,4 @@ export { LogPastWorkoutScreen } from './LogPastWorkoutScreen';
 export { RoutinesScreen } from './RoutinesScreen';
 export { CreateRoutineScreen } from './CreateRoutineScreen';
 export { RoutineDetailScreen } from './RoutineDetailScreen';
+export { HealthKitDataScreen } from './HealthKitDataScreen';

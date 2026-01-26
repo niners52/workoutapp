@@ -255,6 +255,15 @@ export function ExerciseDetailScreen() {
           </Card>
         )}
 
+        {/* Edit Button - placed above charts/history for easy access */}
+        <Button
+          title="Edit Exercise"
+          onPress={handleEdit}
+          variant="secondary"
+          fullWidth
+          style={styles.editButton}
+        />
+
         {/* Weight Progression Chart */}
         {chartSessions.length > 1 && (
           <Card style={styles.section}>
@@ -384,24 +393,17 @@ export function ExerciseDetailScreen() {
           </Card>
         )}
 
-        {/* Actions - Edit available for all, Delete only for custom */}
-        <View style={styles.actions}>
-          <Button
-            title="Edit Exercise"
-            onPress={handleEdit}
-            variant="secondary"
-            fullWidth
-          />
-          {exercise.isCustom && (
+        {/* Delete Button - only for custom exercises */}
+        {exercise.isCustom && (
+          <View style={styles.actions}>
             <Button
               title="Delete Exercise"
               onPress={handleDelete}
               variant="destructive"
               fullWidth
-              style={styles.deleteButton}
             />
-          )}
-        </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -600,11 +602,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     color: colors.text,
   },
+  editButton: {
+    marginBottom: spacing.lg,
+  },
   actions: {
     marginTop: spacing.lg,
-  },
-  deleteButton: {
-    marginTop: spacing.md,
   },
 });
 

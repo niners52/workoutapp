@@ -22,6 +22,7 @@ export type RootStackParamList = {
   RoutineDetail: { routineId: string };
   CreateRoutine: undefined;
   EditRoutine: { routineId: string };
+  HealthKitData: undefined;
 };
 
 // Bottom Tab Navigator
