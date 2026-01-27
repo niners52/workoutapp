@@ -149,76 +149,125 @@ export function HealthKitDataScreen() {
     const options = {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
-      type: dataType.type,
       ascending: false,
       limit: 100,
     };
 
     return new Promise((resolve) => {
-      // Special handling for different data types
-      if (dataType.type === 'SleepAnalysis') {
-        AppleHealthKit.getSleepSamples(options, (err: string, results: any[]) => {
+      try {
+        // Map data types to their specific getter methods
+        const nutritionMethods: Record<string, string> = {
+          'Protein': 'getProteinSamples',
+          'Carbohydrates': 'getCarbohydratesSamples',
+          'FatTotal': 'getTotalFatSamples',
+          'EnergyConsumed': 'getEnergyConsumedSamples',
+          'DietaryWater': 'getWaterSamples',
+          'Caffeine': 'getCaffeineSamples',
+          'Fiber': 'getFiberSamples',
+          'Sugar': 'getSugarSamples',
+        };
+
+        const callback = (err: string | null, results: any[]) => {
           if (err) {
-            resolve({ ...baseSection, error: err });
+            resolve({ ...baseSection, error: String(err) });
           } else {
             resolve({ ...baseSection, data: results || [] });
           }
-        });
-      } else if (dataType.type === 'Workout') {
-        AppleHealthKit.getSamples({ ...options, type: 'Workout' }, (err: string, results: any[]) => {
-          if (err) {
-            resolve({ ...baseSection, error: err });
+        };
+
+        // Special handling for different data types
+        if (dataType.type === 'SleepAnalysis') {
+          if (typeof AppleHealthKit.getSleepSamples === 'function') {
+            AppleHealthKit.getSleepSamples(options, callback);
           } else {
-            resolve({ ...baseSection, data: results || [] });
+            resolve({ ...baseSection, error: 'getSleepSamples not available' });
           }
-        });
-      } else if (dataType.type === 'StepCount') {
-        AppleHealthKit.getDailyStepCountSamples(options, (err: string, results: any[]) => {
-          if (err) {
-            resolve({ ...baseSection, error: err });
+        } else if (dataType.type === 'Workout') {
+          if (typeof AppleHealthKit.getSamples === 'function') {
+            AppleHealthKit.getSamples({ ...options, type: 'Workout' }, callback);
           } else {
-            resolve({ ...baseSection, data: results || [] });
+            resolve({ ...baseSection, error: 'getSamples not available' });
           }
-        });
-      } else if (dataType.type === 'Weight') {
-        AppleHealthKit.getWeightSamples(options, (err: string, results: any[]) => {
-          if (err) {
-            resolve({ ...baseSection, error: err });
+        } else if (dataType.type === 'StepCount') {
+          if (typeof AppleHealthKit.getDailyStepCountSamples === 'function') {
+            AppleHealthKit.getDailyStepCountSamples(options, callback);
           } else {
-            resolve({ ...baseSection, data: results || [] });
+            resolve({ ...baseSection, error: 'getDailyStepCountSamples not available' });
           }
-        });
-      } else if (dataType.type === 'HeartRate') {
-        AppleHealthKit.getHeartRateSamples(options, (err: string, results: any[]) => {
-          if (err) {
-            resolve({ ...baseSection, error: err });
+        } else if (dataType.type === 'Weight') {
+          if (typeof AppleHealthKit.getWeightSamples === 'function') {
+            AppleHealthKit.getWeightSamples(options, callback);
           } else {
-            resolve({ ...baseSection, data: results || [] });
+            resolve({ ...baseSection, error: 'getWeightSamples not available' });
           }
-        });
-      } else {
-        // Generic getSamples for nutrition data
-        AppleHealthKit.getSamples(options, (err: string, results: any[]) => {
-          if (err) {
-            resolve({ ...baseSection, error: err });
+        } else if (dataType.type === 'HeartRate') {
+          if (typeof AppleHealthKit.getHeartRateSamples === 'function') {
+            AppleHealthKit.getHeartRateSamples(options, callback);
           } else {
-            resolve({ ...baseSection, data: results || [] });
+            resolve({ ...baseSection, error: 'getHeartRateSamples not available' });
           }
-        });
+        } else if (dataType.type === 'ActiveEnergyBurned') {
+          if (typeof AppleHealthKit.getActiveEnergyBurned === 'function') {
+            AppleHealthKit.getActiveEnergyBurned(options, callback);
+          } else {
+            resolve({ ...baseSection, error: 'getActiveEnergyBurned not available' });
+          }
+        } else if (nutritionMethods[dataType.type]) {
+          // Use specific nutrition method if available
+          const methodName = nutritionMethods[dataType.type];
+          if (typeof AppleHealthKit[methodName] === 'function') {
+            AppleHealthKit[methodName](options, callback);
+          } else {
+            // Fallback to getSamples with type
+            if (typeof AppleHealthKit.getSamples === 'function') {
+              AppleHealthKit.getSamples({ ...options, type: dataType.type }, callback);
+            } else {
+              resolve({ ...baseSection, error: `${methodName} not available` });
+            }
+          }
+        } else {
+          // Generic fallback
+          if (typeof AppleHealthKit.getSamples === 'function') {
+            AppleHealthKit.getSamples({ ...options, type: dataType.type }, callback);
+          } else {
+            resolve({ ...baseSection, error: 'getSamples not available' });
+          }
+        }
+      } catch (error) {
+        resolve({ ...baseSection, error: `Exception: ${error}` });
       }
     });
   }, [daysBack]);
 
   const loadAllData = useCallback(async () => {
-    const initialized = await initHealthKit();
-    if (!initialized) {
-      setSections(prev => prev.map(s => ({ ...s, loading: false, error: 'HealthKit not initialized' })));
-      return;
-    }
+    try {
+      const initialized = await initHealthKit();
+      if (!initialized) {
+        setSections(prev => prev.map(s => ({ ...s, loading: false, error: 'HealthKit not initialized' })));
+        return;
+      }
 
-    // Load data for all types
-    const results = await Promise.all(DATA_TYPES.map(dt => fetchDataForType(dt)));
-    setSections(results);
+      // Load data for all types sequentially to avoid overwhelming the system
+      const results: DataSection[] = [];
+      for (const dt of DATA_TYPES) {
+        try {
+          const result = await fetchDataForType(dt);
+          results.push(result);
+        } catch (error) {
+          results.push({
+            title: dt.title,
+            type: dt.type,
+            data: [],
+            error: `Failed: ${error}`,
+            loading: false,
+          });
+        }
+      }
+      setSections(results);
+    } catch (error) {
+      console.log('loadAllData error:', error);
+      setSections(prev => prev.map(s => ({ ...s, loading: false, error: `Load error: ${error}` })));
+    }
   }, [initHealthKit, fetchDataForType]);
 
   useEffect(() => {
