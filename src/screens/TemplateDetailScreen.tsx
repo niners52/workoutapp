@@ -56,6 +56,51 @@ export function TemplateDetailScreen() {
     return Array.from(equipmentSet);
   }, [templateExercises]);
 
+  // Get muscle group coverage
+  const muscleGroupCoverage = useMemo(() => {
+    const coverage: Record<string, { count: number; exercises: string[] }> = {};
+
+    templateExercises.forEach(exercise => {
+      if (!exercise) return;
+
+      // Get primary muscle groups
+      const primaryMuscles = exercise.primaryMuscleGroups?.length
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [];
+
+      primaryMuscles.forEach(muscle => {
+        const displayName = MUSCLE_GROUP_DISPLAY_NAMES[muscle] || muscle;
+        if (!coverage[displayName]) {
+          coverage[displayName] = { count: 0, exercises: [] };
+        }
+        coverage[displayName].count++;
+        coverage[displayName].exercises.push(exercise.name);
+      });
+
+      // Get secondary muscle groups
+      const secondaryMuscles = exercise.secondaryMuscleGroups || [];
+      secondaryMuscles.forEach(muscle => {
+        const displayName = MUSCLE_GROUP_DISPLAY_NAMES[muscle] || muscle;
+        if (!coverage[displayName]) {
+          coverage[displayName] = { count: 0, exercises: [] };
+        }
+        // Add 0.5 for secondary muscles
+        coverage[displayName].count += 0.5;
+      });
+    });
+
+    // Sort by count descending
+    return Object.entries(coverage)
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([muscle, data]) => ({
+        muscle,
+        count: Math.round(data.count * 10) / 10,
+        exercises: data.exercises,
+      }));
+  }, [templateExercises]);
+
   const handleStartWorkout = async () => {
     const workoutId = await startWorkout(template.id);
     navigation.navigate('ActiveWorkout', { workoutId });
@@ -151,6 +196,35 @@ export function TemplateDetailScreen() {
             ))}
           </Card>
         </View>
+
+        {/* Muscle Group Coverage */}
+        {muscleGroupCoverage.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Muscle Coverage</Text>
+            <Card>
+              <View style={styles.coverageGrid}>
+                {muscleGroupCoverage.map(({ muscle, count, exercises }) => (
+                  <View key={muscle} style={styles.coverageItem}>
+                    <View style={styles.coverageHeader}>
+                      <Text style={styles.coverageMuscle}>{muscle}</Text>
+                      <Text style={styles.coverageCount}>
+                        {count} {count === 1 ? 'exercise' : 'exercises'}
+                      </Text>
+                    </View>
+                    <View style={styles.coverageBar}>
+                      <View
+                        style={[
+                          styles.coverageBarFill,
+                          { width: `${Math.min(count / 3 * 100, 100)}%` },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          </View>
+        )}
 
         {/* Actions */}
         <View style={styles.actions}>
@@ -286,6 +360,38 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     marginTop: spacing.md,
+  },
+  // Muscle coverage styles
+  coverageGrid: {
+    gap: spacing.md,
+  },
+  coverageItem: {
+    gap: spacing.xs,
+  },
+  coverageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  coverageMuscle: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  coverageCount: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+  },
+  coverageBar: {
+    height: 6,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  coverageBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 3,
   },
 });
 

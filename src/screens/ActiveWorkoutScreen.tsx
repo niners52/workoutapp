@@ -371,6 +371,56 @@ export function ActiveWorkoutScreen() {
             );
           })}
 
+          {/* Remaining Exercises Summary */}
+          {(() => {
+            const remainingExercises = activeWorkout.exerciseIds
+              .map(id => ({
+                exercise: exercises.find(e => e.id === id),
+                setsLogged: getSetsForExercise(id).length,
+              }))
+              .filter(item => item.exercise && item.setsLogged === 0);
+
+            if (remainingExercises.length === 0) return null;
+
+            // Get unique muscle groups from remaining exercises
+            const remainingMuscles = new Set<string>();
+            remainingExercises.forEach(item => {
+              if (item.exercise) {
+                const primaryMuscles = item.exercise.primaryMuscleGroups?.length
+                  ? item.exercise.primaryMuscleGroups
+                  : item.exercise.primaryMuscleGroup
+                  ? [item.exercise.primaryMuscleGroup]
+                  : [];
+                primaryMuscles.forEach(m => remainingMuscles.add(MUSCLE_GROUP_DISPLAY_NAMES[m] || m));
+              }
+            });
+
+            return (
+              <Card style={styles.remainingCard}>
+                <Text style={styles.remainingTitle}>
+                  {remainingExercises.length} exercise{remainingExercises.length !== 1 ? 's' : ''} remaining
+                </Text>
+                <View style={styles.remainingList}>
+                  {remainingExercises.map(item => (
+                    <TouchableOpacity
+                      key={item.exercise!.id}
+                      style={styles.remainingItem}
+                      onPress={() => toggleExercise(item.exercise!.id)}
+                    >
+                      <Text style={styles.remainingItemText}>{item.exercise!.name}</Text>
+                      <Text style={styles.remainingItemArrow}>→</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {remainingMuscles.size > 0 && (
+                  <Text style={styles.remainingMuscles}>
+                    Still to hit: {Array.from(remainingMuscles).join(', ')}
+                  </Text>
+                )}
+              </Card>
+            );
+          })()}
+
           {/* Add Exercise Button */}
           <TouchableOpacity
             style={styles.addExerciseButton}
@@ -1054,6 +1104,44 @@ const styles = StyleSheet.create({
   },
   cancelSwapButton: {
     marginTop: spacing.md,
+  },
+  // Remaining exercises styles
+  remainingCard: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.backgroundTertiary,
+  },
+  remainingTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.warning,
+    marginBottom: spacing.sm,
+  },
+  remainingList: {
+    gap: spacing.xs,
+  },
+  remainingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.sm,
+  },
+  remainingItemText: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+  },
+  remainingItemArrow: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+  },
+  remainingMuscles: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
   },
 });
 

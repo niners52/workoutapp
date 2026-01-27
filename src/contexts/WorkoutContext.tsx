@@ -112,7 +112,58 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const notificationIdRef = useRef<string | null>(null);
+  const workoutNotificationIdRef = useRef<string | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  // Helper to format seconds as MM:SS
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Update the persistent workout notification
+  const updateWorkoutNotification = useCallback(async (
+    title: string,
+    body: string,
+    isTimerActive: boolean = false
+  ) => {
+    if (Platform.OS === 'web') return;
+
+    try {
+      // Cancel existing workout notification
+      if (workoutNotificationIdRef.current) {
+        await Notifications.dismissNotificationAsync(workoutNotificationIdRef.current);
+      }
+
+      // Show new notification (immediate, not scheduled)
+      const notificationId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: false,
+          sticky: true, // Keep notification visible
+          autoDismiss: false,
+        },
+        trigger: null, // Show immediately
+      });
+      workoutNotificationIdRef.current = notificationId;
+    } catch (error) {
+      console.log('Failed to update workout notification:', error);
+    }
+  }, []);
+
+  // Dismiss the persistent workout notification
+  const dismissWorkoutNotification = useCallback(async () => {
+    if (workoutNotificationIdRef.current) {
+      try {
+        await Notifications.dismissNotificationAsync(workoutNotificationIdRef.current);
+        workoutNotificationIdRef.current = null;
+      } catch (error) {
+        console.log('Failed to dismiss workout notification:', error);
+      }
+    }
+  }, []);
 
   // Load user settings on mount
   useEffect(() => {
@@ -166,18 +217,37 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   // Rest timer logic
   useEffect(() => {
     if (restTimer.isRunning && restTimer.secondsRemaining > 0) {
+      // Update persistent notification with current time
+      if (activeWorkout) {
+        updateWorkoutNotification(
+          'Workout in Progress',
+          `Rest: ${formatTime(restTimer.secondsRemaining)} remaining`
+        );
+      }
+
       timerIntervalRef.current = setInterval(() => {
         setRestTimer(prev => {
           if (prev.secondsRemaining <= 1) {
             // Timer finished
             playTimerEndSound();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            // Cancel notification since timer completed in foreground
+            // Cancel scheduled notification since timer completed in foreground
             if (notificationIdRef.current) {
               Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
               notificationIdRef.current = null;
             }
+            // Update persistent notification to show rest complete
+            if (activeWorkout) {
+              updateWorkoutNotification('Workout in Progress', 'Rest complete! Ready for next set.');
+            }
             return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null };
+          }
+          // Update persistent notification every second
+          if (activeWorkout) {
+            updateWorkoutNotification(
+              'Workout in Progress',
+              `Rest: ${formatTime(prev.secondsRemaining - 1)} remaining`
+            );
           }
           return { ...prev, secondsRemaining: prev.secondsRemaining - 1 };
         });
@@ -251,8 +321,14 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       setLastSessionData(initialLastSessionData);
     }
 
+    // Show persistent workout notification
+    updateWorkoutNotification(
+      'Workout in Progress',
+      `${exerciseIds.length} exercises • Tap to return`
+    );
+
     return workout.id;
-  }, []);
+  }, [updateWorkoutNotification]);
 
   const finishWorkout = useCallback(async () => {
     if (!activeWorkout) return;
@@ -278,7 +354,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     setActiveWorkout(null);
     setLastSessionData(null);
     await stopRestTimer();
-  }, [activeWorkout, stopRestTimer]);
+    await dismissWorkoutNotification();
+  }, [activeWorkout, stopRestTimer, dismissWorkoutNotification]);
 
   const cancelWorkout = useCallback(async () => {
     // Note: We keep the workout and sets in storage even if cancelled
@@ -286,7 +363,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     setActiveWorkout(null);
     setLastSessionData(null);
     await stopRestTimer();
-  }, [stopRestTimer]);
+    await dismissWorkoutNotification();
+  }, [stopRestTimer, dismissWorkoutNotification]);
 
   const setCurrentExercise = useCallback((exerciseId: string) => {
     if (!activeWorkout) return;
