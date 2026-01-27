@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -14,7 +15,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, Equipment } from '../types';
+import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, Equipment, MuscleGroup } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -26,8 +27,42 @@ export function TemplateDetailScreen() {
   const { templateId } = route.params;
   const { templates, exercises, deleteTemplate, getLocationById } = useData();
   const { startWorkout } = useWorkout();
+  const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
+  const [muscleModalVisible, setMuscleModalVisible] = useState(false);
 
   const template = templates.find(t => t.id === templateId);
+
+  // Get exercises for a muscle group (by display name)
+  const getExercisesForMuscle = (muscleDisplayName: string) => {
+    // Find the muscle group key from display name
+    const muscleKey = Object.entries(MUSCLE_GROUP_DISPLAY_NAMES).find(
+      ([, displayName]) => displayName === muscleDisplayName
+    )?.[0] as MuscleGroup | undefined;
+
+    if (!muscleKey) return [];
+
+    return exercises.filter(exercise => {
+      const primaryMuscles = exercise.primaryMuscleGroups?.length
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [];
+      const secondaryMuscles = exercise.secondaryMuscleGroups || [];
+
+      return primaryMuscles.includes(muscleKey) || secondaryMuscles.includes(muscleKey);
+    }).sort((a, b) => {
+      // Sort by whether it's primary (primary first)
+      const aIsPrimary = (a.primaryMuscleGroups?.includes(muscleKey) || a.primaryMuscleGroup === muscleKey) ? 0 : 1;
+      const bIsPrimary = (b.primaryMuscleGroups?.includes(muscleKey) || b.primaryMuscleGroup === muscleKey) ? 0 : 1;
+      if (aIsPrimary !== bIsPrimary) return aIsPrimary - bIsPrimary;
+      return a.name.localeCompare(b.name);
+    });
+  };
+
+  const handleMusclePress = (muscle: string) => {
+    setSelectedMuscle(muscle);
+    setMuscleModalVisible(true);
+  };
 
   if (!template) {
     return (
@@ -201,15 +236,24 @@ export function TemplateDetailScreen() {
         {muscleGroupCoverage.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Muscle Coverage</Text>
+            <Text style={styles.sectionHint}>Tap a muscle to see exercise options</Text>
             <Card>
               <View style={styles.coverageGrid}>
-                {muscleGroupCoverage.map(({ muscle, count, exercises }) => (
-                  <View key={muscle} style={styles.coverageItem}>
+                {muscleGroupCoverage.map(({ muscle, count, exercises: muscleExercises }) => (
+                  <TouchableOpacity
+                    key={muscle}
+                    style={styles.coverageItem}
+                    onPress={() => handleMusclePress(muscle)}
+                    activeOpacity={0.7}
+                  >
                     <View style={styles.coverageHeader}>
                       <Text style={styles.coverageMuscle}>{muscle}</Text>
-                      <Text style={styles.coverageCount}>
-                        {count} {count === 1 ? 'exercise' : 'exercises'}
-                      </Text>
+                      <View style={styles.coverageRight}>
+                        <Text style={styles.coverageCount}>
+                          {count} in routine
+                        </Text>
+                        <Text style={styles.coverageChevron}>›</Text>
+                      </View>
                     </View>
                     <View style={styles.coverageBar}>
                       <View
@@ -219,7 +263,7 @@ export function TemplateDetailScreen() {
                         ]}
                       />
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             </Card>
@@ -243,6 +287,71 @@ export function TemplateDetailScreen() {
           />
         </View>
       </ScrollView>
+
+      {/* Exercise Options Modal */}
+      <Modal
+        visible={muscleModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMuscleModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMuscleModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{selectedMuscle} Exercises</Text>
+            <Text style={styles.modalSubtitle}>
+              {selectedMuscle && getExercisesForMuscle(selectedMuscle).length} exercises available
+            </Text>
+
+            <ScrollView style={styles.exerciseList} showsVerticalScrollIndicator={false}>
+              {selectedMuscle && getExercisesForMuscle(selectedMuscle).map(exercise => {
+                const isInTemplate = template?.exerciseIds.includes(exercise.id);
+                const isPrimary = exercise.primaryMuscleGroups?.some(m =>
+                  MUSCLE_GROUP_DISPLAY_NAMES[m] === selectedMuscle
+                ) || MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup || ''] === selectedMuscle;
+
+                return (
+                  <TouchableOpacity
+                    key={exercise.id}
+                    style={[
+                      styles.exerciseOption,
+                      isInTemplate && styles.exerciseOptionInTemplate,
+                    ]}
+                    onPress={() => {
+                      setMuscleModalVisible(false);
+                      navigation.navigate('ExerciseDetail', { exerciseId: exercise.id });
+                    }}
+                  >
+                    <View style={styles.exerciseOptionLeft}>
+                      <Text style={styles.exerciseOptionName}>{exercise.name}</Text>
+                      <Text style={styles.exerciseOptionMeta}>
+                        {EQUIPMENT_DISPLAY_NAMES[exercise.equipment]}
+                        {!isPrimary && ' • Secondary'}
+                      </Text>
+                    </View>
+                    {isInTemplate && (
+                      <View style={styles.inTemplateBadge}>
+                        <Text style={styles.inTemplateBadgeText}>In Routine</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Button
+              title="Close"
+              onPress={() => setMuscleModalVisible(false)}
+              variant="secondary"
+              fullWidth
+              style={styles.closeButton}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -392,6 +501,92 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.primary,
     borderRadius: 3,
+  },
+  coverageRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  coverageChevron: {
+    fontSize: typography.size.lg,
+    color: colors.textTertiary,
+  },
+  sectionHint: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.backgroundSecondary,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  exerciseList: {
+    maxHeight: 400,
+  },
+  exerciseOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.base,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  exerciseOptionInTemplate: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  exerciseOptionLeft: {
+    flex: 1,
+  },
+  exerciseOptionName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  exerciseOptionMeta: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  inTemplateBadge: {
+    backgroundColor: colors.primaryDim,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    marginLeft: spacing.sm,
+  },
+  inTemplateBadgeText: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  closeButton: {
+    marginTop: spacing.md,
   },
 });
 
