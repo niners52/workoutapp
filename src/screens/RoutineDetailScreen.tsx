@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,6 +19,8 @@ import { RootStackParamList } from '../navigation/types';
 import {
   DAY_NAMES,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  EQUIPMENT_DISPLAY_NAMES,
+  MuscleGroup,
 } from '../types';
 import { calculateProjectedVolumeForRoutine, aggregateIntoCategories } from '../services/analytics';
 
@@ -38,7 +41,47 @@ export function RoutineDetailScreen() {
     deleteRoutine,
   } = useData();
 
+  const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
+  const [muscleModalVisible, setMuscleModalVisible] = useState(false);
+
   const routine = routines.find(r => r.id === routineId);
+
+  // Get all exercise IDs from all templates in this routine
+  const routineExerciseIds = useMemo(() => {
+    const ids = new Set<string>();
+    routine?.daySchedule.forEach(day => {
+      day.templateIds?.forEach(templateId => {
+        const template = templates.find(t => t.id === templateId);
+        template?.exerciseIds.forEach(id => ids.add(id));
+      });
+    });
+    return ids;
+  }, [routine, templates]);
+
+  // Get exercises for a muscle group (by muscle group key)
+  const getExercisesForMuscle = (muscleKey: MuscleGroup) => {
+    return exercises.filter(exercise => {
+      const primaryMuscles = exercise.primaryMuscleGroups?.length
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [];
+      const secondaryMuscles = exercise.secondaryMuscleGroups || [];
+
+      return primaryMuscles.includes(muscleKey) || secondaryMuscles.includes(muscleKey);
+    }).sort((a, b) => {
+      // Sort by whether it's primary (primary first)
+      const aIsPrimary = (a.primaryMuscleGroups?.includes(muscleKey) || a.primaryMuscleGroup === muscleKey) ? 0 : 1;
+      const bIsPrimary = (b.primaryMuscleGroups?.includes(muscleKey) || b.primaryMuscleGroup === muscleKey) ? 0 : 1;
+      if (aIsPrimary !== bIsPrimary) return aIsPrimary - bIsPrimary;
+      return a.name.localeCompare(b.name);
+    });
+  };
+
+  const handleMusclePress = (muscleKey: MuscleGroup) => {
+    setSelectedMuscle(muscleKey);
+    setMuscleModalVisible(true);
+  };
 
   if (!routine) {
     return (
@@ -206,23 +249,43 @@ export function RoutineDetailScreen() {
                       color={progressColor}
                       height={8}
                     />
-                    {/* Individual muscle groups */}
+                    {/* Individual muscle groups - tappable */}
                     {category.muscleGroups
                       .filter(mg => mg.target > 0 || mg.sets > 0)
                       .map(mg => {
                         const mgProgress = mg.target > 0
                           ? Math.round((mg.sets / mg.target) * 100)
                           : 0;
+                        const isShort = mg.sets < mg.target;
 
                         return (
-                          <View key={mg.muscleGroup} style={styles.subVolumeRow}>
-                            <Text style={styles.subVolumeLabel}>
-                              {MUSCLE_GROUP_DISPLAY_NAMES[mg.muscleGroup]}
-                            </Text>
-                            <Text style={styles.subVolumeSets}>
-                              {mg.sets}/{mg.target} ({mgProgress}%)
-                            </Text>
-                          </View>
+                          <TouchableOpacity
+                            key={mg.muscleGroup}
+                            style={styles.subVolumeRow}
+                            onPress={() => handleMusclePress(mg.muscleGroup)}
+                            activeOpacity={0.7}
+                          >
+                            <View style={styles.subVolumeLabelRow}>
+                              <Text style={[
+                                styles.subVolumeLabel,
+                                isShort && styles.subVolumeLabelShort,
+                              ]}>
+                                {MUSCLE_GROUP_DISPLAY_NAMES[mg.muscleGroup]}
+                              </Text>
+                              {isShort && (
+                                <Text style={styles.shortBadge}>short</Text>
+                              )}
+                            </View>
+                            <View style={styles.subVolumeRight}>
+                              <Text style={[
+                                styles.subVolumeSets,
+                                isShort && styles.subVolumeSetsShort,
+                              ]}>
+                                {mg.sets}/{mg.target} ({mgProgress}%)
+                              </Text>
+                              <Text style={styles.subVolumeChevron}>›</Text>
+                            </View>
+                          </TouchableOpacity>
                         );
                       })}
                   </View>
@@ -230,7 +293,7 @@ export function RoutineDetailScreen() {
               })}
           </Card>
           <Text style={styles.hint}>
-            Projections based on 3 sets per exercise
+            Projections based on 3 sets per exercise. Tap a muscle to see exercise options.
           </Text>
         </View>
 
@@ -260,6 +323,72 @@ export function RoutineDetailScreen() {
           />
         </View>
       </ScrollView>
+
+      {/* Exercise Options Modal */}
+      <Modal
+        visible={muscleModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMuscleModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMuscleModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {selectedMuscle ? MUSCLE_GROUP_DISPLAY_NAMES[selectedMuscle as MuscleGroup] : ''} Exercises
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {selectedMuscle && getExercisesForMuscle(selectedMuscle as MuscleGroup).length} exercises available
+            </Text>
+
+            <ScrollView style={styles.exerciseList} showsVerticalScrollIndicator={false}>
+              {selectedMuscle && getExercisesForMuscle(selectedMuscle as MuscleGroup).map(exercise => {
+                const isInRoutine = routineExerciseIds.has(exercise.id);
+                const isPrimary = exercise.primaryMuscleGroups?.includes(selectedMuscle as MuscleGroup)
+                  || exercise.primaryMuscleGroup === selectedMuscle;
+
+                return (
+                  <TouchableOpacity
+                    key={exercise.id}
+                    style={[
+                      styles.exerciseOption,
+                      isInRoutine && styles.exerciseOptionInRoutine,
+                    ]}
+                    onPress={() => {
+                      setMuscleModalVisible(false);
+                      navigation.navigate('ExerciseDetail', { exerciseId: exercise.id });
+                    }}
+                  >
+                    <View style={styles.exerciseOptionLeft}>
+                      <Text style={styles.exerciseOptionName}>{exercise.name}</Text>
+                      <Text style={styles.exerciseOptionMeta}>
+                        {EQUIPMENT_DISPLAY_NAMES[exercise.equipment]}
+                        {!isPrimary && ' • Secondary'}
+                      </Text>
+                    </View>
+                    {isInRoutine && (
+                      <View style={styles.inRoutineBadge}>
+                        <Text style={styles.inRoutineBadgeText}>In Routine</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Button
+              title="Close"
+              onPress={() => setMuscleModalVisible(false)}
+              variant="secondary"
+              fullWidth
+              style={styles.closeButton}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -392,14 +521,43 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingLeft: spacing.md,
+    paddingVertical: spacing.xs,
     marginTop: spacing.xs,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.sm,
+    paddingRight: spacing.sm,
+  },
+  subVolumeLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   subVolumeLabel: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
   },
+  subVolumeLabelShort: {
+    color: colors.warning,
+  },
+  shortBadge: {
+    fontSize: typography.size.xs,
+    color: colors.warning,
+    fontWeight: typography.weight.medium,
+  },
+  subVolumeRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   subVolumeSets: {
     fontSize: typography.size.sm,
+    color: colors.textTertiary,
+  },
+  subVolumeSetsShort: {
+    color: colors.warning,
+  },
+  subVolumeChevron: {
+    fontSize: typography.size.lg,
     color: colors.textTertiary,
   },
   hint: {
@@ -411,6 +569,77 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   actionButton: {
+    marginTop: spacing.md,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.backgroundSecondary,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  exerciseList: {
+    maxHeight: 400,
+  },
+  exerciseOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.base,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  exerciseOptionInRoutine: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  exerciseOptionLeft: {
+    flex: 1,
+  },
+  exerciseOptionName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  exerciseOptionMeta: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  inRoutineBadge: {
+    backgroundColor: colors.primaryDim,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    marginLeft: spacing.sm,
+  },
+  inRoutineBadgeText: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  closeButton: {
     marginTop: spacing.md,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,95 @@ import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { Card } from '../components/common';
+import { Card, Button } from '../components/common';
 
-// Conditionally import HealthKit
-let AppleHealthKit: any = null;
-if (Platform.OS === 'ios') {
-  try {
-    const healthModule = require('react-native-health');
-    AppleHealthKit = healthModule.default || healthModule;
-  } catch (e) {
-    console.log('HealthKit not available:', e);
+// Error Boundary to catch any crashes
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class HealthKitErrorBoundary extends Component<{ children: ReactNode; onReset: () => void }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode; onReset: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.log('HealthKit Error Boundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={commonStyles.safeArea}>
+          <View style={boundaryStyles.container}>
+            <Text style={boundaryStyles.title}>HealthKit Screen Error</Text>
+            <Text style={boundaryStyles.message}>
+              {this.state.error?.message || 'An unexpected error occurred'}
+            </Text>
+            <TouchableOpacity
+              style={boundaryStyles.button}
+              onPress={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onReset();
+              }}
+            >
+              <Text style={boundaryStyles.buttonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const boundaryStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: colors.background,
+  },
+  title: {
+    fontSize: 18,
+    color: colors.error,
+    marginBottom: 10,
+    fontWeight: '600',
+  },
+  message: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  buttonText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+});
+
+// Conditionally import HealthKit - with extra safety
+let AppleHealthKit: any = null;
+try {
+  if (Platform.OS === 'ios') {
+    const healthModule = require('react-native-health');
+    AppleHealthKit = healthModule?.default || healthModule;
+  }
+} catch (e) {
+  console.log('HealthKit not available:', e);
 }
 
 interface DataSection {
@@ -63,18 +141,19 @@ const DATA_TYPES = [
   { title: 'Sugar', type: 'Sugar', unit: 'g' },
 ];
 
-export function HealthKitDataScreen() {
+function HealthKitDataScreenContent() {
   const navigation = useNavigation();
   const [refreshing, setRefreshing] = useState(false);
-  const [healthKitStatus, setHealthKitStatus] = useState<'checking' | 'available' | 'unavailable' | 'error'>('checking');
-  const [statusMessage, setStatusMessage] = useState('');
+  const [healthKitStatus, setHealthKitStatus] = useState<'idle' | 'checking' | 'available' | 'unavailable' | 'error'>('idle');
+  const [statusMessage, setStatusMessage] = useState('Press "Load Data" to fetch HealthKit data');
+  const [hasStartedLoading, setHasStartedLoading] = useState(false);
   const [sections, setSections] = useState<DataSection[]>(
     DATA_TYPES.map(dt => ({
       title: dt.title,
       type: dt.type,
       data: [],
       error: null,
-      loading: true,
+      loading: false,
     }))
   );
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -83,7 +162,7 @@ export function HealthKitDataScreen() {
   const isMountedRef = useRef(true);
 
   // Cleanup on unmount
-  useEffect(() => {
+  React.useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
@@ -91,53 +170,93 @@ export function HealthKitDataScreen() {
   }, []);
 
   const initHealthKit = useCallback(async (): Promise<boolean> => {
-    if (Platform.OS !== 'ios') {
-      setHealthKitStatus('unavailable');
-      setStatusMessage('Not iOS - HealthKit unavailable');
-      return false;
-    }
+    try {
+      if (Platform.OS !== 'ios') {
+        if (isMountedRef.current) {
+          setHealthKitStatus('unavailable');
+          setStatusMessage('Not iOS - HealthKit unavailable');
+        }
+        return false;
+      }
 
-    if (!AppleHealthKit) {
-      setHealthKitStatus('unavailable');
-      setStatusMessage('react-native-health module not loaded');
-      return false;
-    }
+      if (!AppleHealthKit) {
+        if (isMountedRef.current) {
+          setHealthKitStatus('unavailable');
+          setStatusMessage('react-native-health module not loaded');
+        }
+        return false;
+      }
 
-    return new Promise((resolve) => {
-      const permissions = {
-        permissions: {
-          read: [
-            'Workout',
-            'ActiveEnergyBurned',
-            'SleepAnalysis',
-            'Protein',
-            'Carbohydrates',
-            'FatTotal',
-            'EnergyConsumed',
-            'StepCount',
-            'Weight',
-            'HeartRate',
-            'DietaryWater',
-            'Caffeine',
-            'Fiber',
-            'Sugar',
-          ],
-          write: [],
-        },
-      };
+      if (typeof AppleHealthKit.initHealthKit !== 'function') {
+        if (isMountedRef.current) {
+          setHealthKitStatus('unavailable');
+          setStatusMessage('initHealthKit method not available');
+        }
+        return false;
+      }
 
-      AppleHealthKit.initHealthKit(permissions, (error: string) => {
-        if (error) {
-          setHealthKitStatus('error');
-          setStatusMessage(`Init error: ${error}`);
+      return new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+          if (isMountedRef.current) {
+            setHealthKitStatus('error');
+            setStatusMessage('Timeout waiting for HealthKit initialization');
+          }
           resolve(false);
-        } else {
-          setHealthKitStatus('available');
-          setStatusMessage('HealthKit initialized successfully');
-          resolve(true);
+        }, 10000);
+
+        try {
+          const permissions = {
+            permissions: {
+              read: [
+                'Workout',
+                'ActiveEnergyBurned',
+                'SleepAnalysis',
+                'Protein',
+                'Carbohydrates',
+                'FatTotal',
+                'EnergyConsumed',
+                'StepCount',
+                'Weight',
+                'HeartRate',
+                'DietaryWater',
+                'Caffeine',
+                'Fiber',
+                'Sugar',
+              ],
+              write: [],
+            },
+          };
+
+          AppleHealthKit.initHealthKit(permissions, (error: string) => {
+            clearTimeout(timeoutId);
+            if (!isMountedRef.current) return;
+
+            if (error) {
+              setHealthKitStatus('error');
+              setStatusMessage(`Init error: ${error}`);
+              resolve(false);
+            } else {
+              setHealthKitStatus('available');
+              setStatusMessage('HealthKit initialized successfully');
+              resolve(true);
+            }
+          });
+        } catch (e) {
+          clearTimeout(timeoutId);
+          if (isMountedRef.current) {
+            setHealthKitStatus('error');
+            setStatusMessage(`Init exception: ${e}`);
+          }
+          resolve(false);
         }
       });
-    });
+    } catch (e) {
+      if (isMountedRef.current) {
+        setHealthKitStatus('error');
+        setStatusMessage(`Outer init exception: ${e}`);
+      }
+      return false;
+    }
   }, []);
 
   const fetchDataForType = useCallback(async (dataType: typeof DATA_TYPES[0]): Promise<DataSection> => {
@@ -149,11 +268,11 @@ export function HealthKitDataScreen() {
       loading: false,
     };
 
-    if (!AppleHealthKit) {
-      return { ...baseSection, error: 'HealthKit not available' };
-    }
-
     try {
+      if (!AppleHealthKit) {
+        return { ...baseSection, error: 'HealthKit not available' };
+      }
+
       const startDate = startOfDay(subDays(new Date(), daysBack));
       const endDate = endOfDay(new Date());
 
@@ -161,7 +280,7 @@ export function HealthKitDataScreen() {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
         ascending: false,
-        limit: 50, // Reduced limit to prevent memory issues
+        limit: 30,
       };
 
       // Map data types to their specific getter methods
@@ -177,14 +296,16 @@ export function HealthKitDataScreen() {
       };
 
       return new Promise((resolve) => {
-        // Timeout after 5 seconds to prevent hanging
         const timeoutId = setTimeout(() => {
-          resolve({ ...baseSection, error: 'Timeout - no response from HealthKit' });
-        }, 5000);
+          resolve({ ...baseSection, error: 'Timeout' });
+        }, 3000);
 
         const callback = (err: string | null, results: any[]) => {
           clearTimeout(timeoutId);
-          if (!isMountedRef.current) return;
+          if (!isMountedRef.current) {
+            resolve(baseSection);
+            return;
+          }
           if (err) {
             resolve({ ...baseSection, error: String(err) });
           } else {
@@ -193,75 +314,69 @@ export function HealthKitDataScreen() {
         };
 
         try {
-          // Special handling for different data types
           if (dataType.type === 'SleepAnalysis') {
             if (typeof AppleHealthKit.getSleepSamples === 'function') {
               AppleHealthKit.getSleepSamples(options, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getSleepSamples not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else if (dataType.type === 'Workout') {
             if (typeof AppleHealthKit.getSamples === 'function') {
               AppleHealthKit.getSamples({ ...options, type: 'Workout' }, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getSamples not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else if (dataType.type === 'StepCount') {
             if (typeof AppleHealthKit.getDailyStepCountSamples === 'function') {
               AppleHealthKit.getDailyStepCountSamples(options, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getDailyStepCountSamples not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else if (dataType.type === 'Weight') {
             if (typeof AppleHealthKit.getWeightSamples === 'function') {
               AppleHealthKit.getWeightSamples(options, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getWeightSamples not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else if (dataType.type === 'HeartRate') {
             if (typeof AppleHealthKit.getHeartRateSamples === 'function') {
               AppleHealthKit.getHeartRateSamples(options, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getHeartRateSamples not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else if (dataType.type === 'ActiveEnergyBurned') {
             if (typeof AppleHealthKit.getActiveEnergyBurned === 'function') {
               AppleHealthKit.getActiveEnergyBurned(options, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getActiveEnergyBurned not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else if (nutritionMethods[dataType.type]) {
-            // Use specific nutrition method if available
             const methodName = nutritionMethods[dataType.type];
             if (typeof AppleHealthKit[methodName] === 'function') {
               AppleHealthKit[methodName](options, callback);
+            } else if (typeof AppleHealthKit.getSamples === 'function') {
+              AppleHealthKit.getSamples({ ...options, type: dataType.type }, callback);
             } else {
-              // Fallback to getSamples with type
-              if (typeof AppleHealthKit.getSamples === 'function') {
-                AppleHealthKit.getSamples({ ...options, type: dataType.type }, callback);
-              } else {
-                clearTimeout(timeoutId);
-                resolve({ ...baseSection, error: `${methodName} not available` });
-              }
+              clearTimeout(timeoutId);
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           } else {
-            // Generic fallback
             if (typeof AppleHealthKit.getSamples === 'function') {
               AppleHealthKit.getSamples({ ...options, type: dataType.type }, callback);
             } else {
               clearTimeout(timeoutId);
-              resolve({ ...baseSection, error: 'getSamples not available' });
+              resolve({ ...baseSection, error: 'Method not available' });
             }
           }
         } catch (innerError) {
           clearTimeout(timeoutId);
-          resolve({ ...baseSection, error: `Call error: ${innerError}` });
+          resolve({ ...baseSection, error: `Error: ${innerError}` });
         }
       });
     } catch (error) {
@@ -270,14 +385,19 @@ export function HealthKitDataScreen() {
   }, [daysBack]);
 
   const loadAllData = useCallback(async () => {
-    // Prevent multiple simultaneous loads
     if (isLoadingRef.current) {
-      console.log('Already loading, skipping...');
       return;
     }
     isLoadingRef.current = true;
 
     try {
+      if (isMountedRef.current) {
+        setHasStartedLoading(true);
+        setHealthKitStatus('checking');
+        setStatusMessage('Initializing HealthKit...');
+        setSections(prev => prev.map(s => ({ ...s, loading: true, error: null, data: [] })));
+      }
+
       const initialized = await initHealthKit();
       if (!isMountedRef.current) return;
 
@@ -286,24 +406,29 @@ export function HealthKitDataScreen() {
         return;
       }
 
-      // Load data for all types sequentially to avoid overwhelming the system
+      // Load data one at a time with delays
       const results: DataSection[] = [];
-      for (const dt of DATA_TYPES) {
+      for (let i = 0; i < DATA_TYPES.length; i++) {
         if (!isMountedRef.current) break;
 
+        const dt = DATA_TYPES[i];
         try {
           const result = await fetchDataForType(dt);
           results.push(result);
-          // Update sections incrementally so user sees progress
+
           if (isMountedRef.current) {
-            setSections([...results, ...DATA_TYPES.slice(results.length).map(d => ({
+            const remaining = DATA_TYPES.slice(i + 1).map(d => ({
               title: d.title,
               type: d.type,
               data: [],
               error: null,
               loading: true,
-            }))]);
+            }));
+            setSections([...results, ...remaining]);
           }
+
+          // Small delay between requests
+          await new Promise(r => setTimeout(r, 100));
         } catch (error) {
           results.push({
             title: dt.title,
@@ -314,82 +439,90 @@ export function HealthKitDataScreen() {
           });
         }
       }
+
       if (isMountedRef.current) {
         setSections(results);
       }
     } catch (error) {
       console.log('loadAllData error:', error);
       if (isMountedRef.current) {
-        setSections(prev => prev.map(s => ({ ...s, loading: false, error: `Load error: ${error}` })));
+        setStatusMessage(`Load error: ${error}`);
+        setSections(prev => prev.map(s => ({ ...s, loading: false, error: `Load error` })));
       }
     } finally {
       isLoadingRef.current = false;
     }
   }, [initHealthKit, fetchDataForType]);
 
-  // Load data on mount only
-  useEffect(() => {
-    loadAllData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    isLoadingRef.current = false; // Allow a new load
+    isLoadingRef.current = false;
     await loadAllData();
     if (isMountedRef.current) {
       setRefreshing(false);
     }
   }, [loadAllData]);
 
-  // Reload when daysBack changes
-  useEffect(() => {
-    // Skip the initial mount (handled by the other useEffect)
-    if (daysBack !== 7) {
-      isLoadingRef.current = false; // Allow a new load
-      setSections(prev => prev.map(s => ({ ...s, loading: true })));
-      loadAllData();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [daysBack]);
+  const handleLoadData = useCallback(() => {
+    isLoadingRef.current = false;
+    loadAllData();
+  }, [loadAllData]);
 
   const toggleSection = (type: string) => {
     setExpandedSection(prev => prev === type ? null : type);
   };
 
   const formatSampleValue = (sample: RawSample, type: string): string => {
-    if (type === 'SleepAnalysis') {
-      return sample.value || 'Unknown stage';
+    try {
+      if (type === 'SleepAnalysis') {
+        return String(sample.value || 'Unknown');
+      }
+      if (type === 'Workout') {
+        return (sample as any).activityName || 'Workout';
+      }
+      if (sample.value !== undefined && sample.value !== null) {
+        return Number(sample.value).toFixed(1);
+      }
+      return 'N/A';
+    } catch {
+      return 'N/A';
     }
-    if (type === 'Workout') {
-      return (sample as any).activityName || 'Workout';
-    }
-    if (sample.value !== undefined) {
-      return sample.value.toFixed(1);
-    }
-    return 'N/A';
   };
 
   const formatDate = (dateStr: string): string => {
     try {
+      if (!dateStr) return 'Unknown';
       return format(new Date(dateStr), 'MMM d, h:mm a');
     } catch {
-      return dateStr;
+      return String(dateStr);
     }
   };
 
   const getSourceSummary = (data: any[]): Map<string, number> => {
     const sources = new Map<string, number>();
-    data.forEach(sample => {
-      const source = sample.sourceName || 'Unknown';
-      sources.set(source, (sources.get(source) || 0) + 1);
-    });
+    try {
+      if (Array.isArray(data)) {
+        data.forEach(sample => {
+          const source = sample?.sourceName || 'Unknown';
+          sources.set(source, (sources.get(source) || 0) + 1);
+        });
+      }
+    } catch {
+      // ignore
+    }
     return sources;
   };
 
   const getTotalValue = (data: any[]): number => {
-    return data.reduce((sum, sample) => sum + (sample.value || 0), 0);
+    try {
+      if (!Array.isArray(data)) return 0;
+      return data.reduce((sum, sample) => sum + (Number(sample?.value) || 0), 0);
+    } catch {
+      return 0;
+    }
   };
+
+  const isAnyLoading = sections.some(s => s.loading);
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
@@ -397,11 +530,13 @@ export function HealthKitDataScreen() {
         style={styles.container}
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.text}
-          />
+          hasStartedLoading ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.text}
+            />
+          ) : undefined
         }
       >
         {/* Header */}
@@ -422,10 +557,11 @@ export function HealthKitDataScreen() {
               healthKitStatus === 'available' && styles.statusDotGreen,
               healthKitStatus === 'unavailable' && styles.statusDotRed,
               healthKitStatus === 'error' && styles.statusDotYellow,
-              healthKitStatus === 'checking' && styles.statusDotGray,
+              (healthKitStatus === 'checking' || healthKitStatus === 'idle') && styles.statusDotGray,
             ]} />
             <Text style={styles.statusText}>
-              {healthKitStatus === 'checking' ? 'Checking...' :
+              {healthKitStatus === 'idle' ? 'Not Started' :
+               healthKitStatus === 'checking' ? 'Checking...' :
                healthKitStatus === 'available' ? 'Connected' :
                healthKitStatus === 'unavailable' ? 'Unavailable' : 'Error'}
             </Text>
@@ -434,26 +570,43 @@ export function HealthKitDataScreen() {
           <Text style={styles.platformInfo}>Platform: {Platform.OS}</Text>
         </Card>
 
-        {/* Days Selector */}
-        <Card>
-          <Text style={styles.cardTitle}>Date Range</Text>
-          <View style={styles.daysRow}>
-            {[1, 3, 7, 14, 30].map(days => (
-              <TouchableOpacity
-                key={days}
-                style={[styles.dayButton, daysBack === days && styles.dayButtonActive]}
-                onPress={() => setDaysBack(days)}
-              >
-                <Text style={[styles.dayButtonText, daysBack === days && styles.dayButtonTextActive]}>
-                  {days}d
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Card>
+        {/* Load Data Button - only show if not started or has error */}
+        {(!hasStartedLoading || healthKitStatus === 'error') && !isAnyLoading && (
+          <Button
+            title="Load HealthKit Data"
+            onPress={handleLoadData}
+            fullWidth
+            style={{ marginBottom: spacing.md }}
+          />
+        )}
 
-        {/* Data Sections */}
-        {sections.map(section => {
+        {/* Days Selector - only show after loading has started */}
+        {hasStartedLoading && (
+          <Card>
+            <Text style={styles.cardTitle}>Date Range</Text>
+            <View style={styles.daysRow}>
+              {[1, 3, 7, 14, 30].map(days => (
+                <TouchableOpacity
+                  key={days}
+                  style={[styles.dayButton, daysBack === days && styles.dayButtonActive]}
+                  onPress={() => {
+                    setDaysBack(days);
+                    isLoadingRef.current = false;
+                    loadAllData();
+                  }}
+                  disabled={isAnyLoading}
+                >
+                  <Text style={[styles.dayButtonText, daysBack === days && styles.dayButtonTextActive]}>
+                    {days}d
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Card>
+        )}
+
+        {/* Data Sections - only show after loading has started */}
+        {hasStartedLoading && sections.map(section => {
           const isExpanded = expandedSection === section.type;
           const dataType = DATA_TYPES.find(dt => dt.type === section.type);
           const sourceSummary = getSourceSummary(section.data);
@@ -498,7 +651,6 @@ export function HealthKitDataScreen() {
 
               {isExpanded && !section.loading && !section.error && (
                 <View style={styles.sectionContent}>
-                  {/* Source Summary */}
                   {sourceSummary.size > 0 && (
                     <View style={styles.sourcesSummary}>
                       <Text style={styles.sourcesLabel}>Sources:</Text>
@@ -510,22 +662,21 @@ export function HealthKitDataScreen() {
                     </View>
                   )}
 
-                  {/* Sample List */}
                   {section.data.length === 0 ? (
                     <Text style={styles.noDataText}>No data found for this period</Text>
                   ) : (
                     section.data.slice(0, 20).map((sample, index) => (
-                      <View key={sample.id || index} style={styles.sampleRow}>
+                      <View key={sample?.id || index} style={styles.sampleRow}>
                         <View style={styles.sampleInfo}>
                           <Text style={styles.sampleValue}>
                             {formatSampleValue(sample, section.type)} {dataType?.unit}
                           </Text>
                           <Text style={styles.sampleDate}>
-                            {formatDate(sample.startDate || sample.start)}
+                            {formatDate(sample?.startDate || sample?.start)}
                           </Text>
                         </View>
                         <Text style={styles.sampleSource} numberOfLines={1}>
-                          {sample.sourceName || 'Unknown'}
+                          {sample?.sourceName || 'Unknown'}
                         </Text>
                       </View>
                     ))
@@ -550,12 +701,32 @@ export function HealthKitDataScreen() {
           </Text>
           {AppleHealthKit && (
             <Text style={styles.debugText}>
-              Available methods: {Object.keys(AppleHealthKit).filter(k => typeof AppleHealthKit[k] === 'function').length}
+              Methods: {(() => {
+                try {
+                  return Object.keys(AppleHealthKit).filter(k => typeof AppleHealthKit[k] === 'function').length;
+                } catch {
+                  return 'Error counting';
+                }
+              })()}
             </Text>
           )}
         </Card>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// Wrap in error boundary
+export function HealthKitDataScreen() {
+  const [resetKey, setResetKey] = useState(0);
+
+  return (
+    <HealthKitErrorBoundary
+      key={resetKey}
+      onReset={() => setResetKey(k => k + 1)}
+    >
+      <HealthKitDataScreenContent />
+    </HealthKitErrorBoundary>
   );
 }
 
