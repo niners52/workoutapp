@@ -3,6 +3,7 @@ import { AppState, AppStateStatus, Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
+import { liveActivityService } from '../services/liveActivity';
 
 // Generate UUID using expo-crypto (uuid library crashes on React Native)
 const generateId = () => Crypto.randomUUID();
@@ -50,6 +51,7 @@ interface RestTimerState {
   secondsRemaining: number;
   totalSeconds: number;
   endTime: number | null; // Unix timestamp when timer should end (for background support)
+  liveActivityId: string | null; // ID of the Live Activity if running on iOS 16.2+
 }
 
 interface LastSessionData {
@@ -105,7 +107,9 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     secondsRemaining: 0,
     totalSeconds: 90,
     endTime: null,
+    liveActivityId: null,
   });
+  const liveActivitySupportedRef = useRef<boolean | null>(null);
   const [lastSessionData, setLastSessionData] = useState<LastSessionData | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
@@ -170,6 +174,16 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     getUserSettings().then(setUserSettings);
   }, []);
 
+  // Check Live Activity support on mount
+  useEffect(() => {
+    const checkLiveActivitySupport = async () => {
+      const supported = await liveActivityService.isSupported();
+      liveActivitySupportedRef.current = supported;
+      console.log('Live Activities supported:', supported);
+    };
+    checkLiveActivitySupport();
+  }, []);
+
   // Request notification permissions on mount
   useEffect(() => {
     const requestPermissions = async () => {
@@ -214,40 +228,40 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Rest timer logic
+  // Rest timer logic - counts down for UI updates, Live Activity handles visual display
   useEffect(() => {
     if (restTimer.isRunning && restTimer.secondsRemaining > 0) {
-      // Update persistent notification with current time
-      if (activeWorkout) {
-        updateWorkoutNotification(
-          'Workout in Progress',
-          `Rest: ${formatTime(restTimer.secondsRemaining)} remaining`
-        );
-      }
-
       timerIntervalRef.current = setInterval(() => {
         setRestTimer(prev => {
           if (prev.secondsRemaining <= 1) {
             // Timer finished
             playTimerEndSound();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
             // Cancel scheduled notification since timer completed in foreground
             if (notificationIdRef.current) {
               Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
               notificationIdRef.current = null;
             }
-            // Update persistent notification to show rest complete
-            if (activeWorkout) {
-              updateWorkoutNotification('Workout in Progress', 'Rest complete! Ready for next set.');
+
+            // End the Live Activity with completion state
+            if (prev.liveActivityId) {
+              liveActivityService.endTimerWithAlert();
             }
-            return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null };
-          }
-          // Update persistent notification every second
-          if (activeWorkout) {
-            updateWorkoutNotification(
-              'Workout in Progress',
-              `Rest: ${formatTime(prev.secondsRemaining - 1)} remaining`
-            );
+
+            // Send a single completion notification (for devices without Live Activity)
+            if (!liveActivitySupportedRef.current) {
+              Notifications.scheduleNotificationAsync({
+                content: {
+                  title: 'Rest Timer Complete',
+                  body: 'Time to start your next set!',
+                  sound: true,
+                },
+                trigger: null, // Immediate
+              });
+            }
+
+            return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null, liveActivityId: null };
           }
           return { ...prev, secondsRemaining: prev.secondsRemaining - 1 };
         });
@@ -564,7 +578,14 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
     }
 
-    // Schedule notification for when timer ends
+    // Try to start a Live Activity (iOS 16.2+)
+    let liveActivityId: string | null = null;
+    if (liveActivitySupportedRef.current) {
+      liveActivityId = await liveActivityService.startTimer(timerSeconds);
+    }
+
+    // Schedule a backup notification for when timer ends
+    // This is for: 1) devices without Live Activity support, 2) if app is terminated
     try {
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
@@ -587,6 +608,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       secondsRemaining: timerSeconds,
       totalSeconds: timerSeconds,
       endTime,
+      liveActivityId,
     });
   }, [userSettings]);
 
@@ -599,7 +621,9 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
       notificationIdRef.current = null;
     }
-    setRestTimer(prev => ({ ...prev, isRunning: false, endTime: null }));
+    // Stop the Live Activity
+    await liveActivityService.stopTimer();
+    setRestTimer(prev => ({ ...prev, isRunning: false, endTime: null, liveActivityId: null }));
   }, []);
 
   const resetRestTimer = useCallback(async () => {
@@ -611,11 +635,14 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
       notificationIdRef.current = null;
     }
+    // Stop the Live Activity
+    await liveActivityService.stopTimer();
     setRestTimer(prev => ({
       isRunning: false,
       secondsRemaining: prev.totalSeconds,
       totalSeconds: prev.totalSeconds,
       endTime: null,
+      liveActivityId: null,
     }));
   }, []);
 
