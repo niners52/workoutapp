@@ -3,30 +3,20 @@ const {
   withEntitlementsPlist,
   withInfoPlist,
   withDangerousMod,
-  IOSConfig,
 } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
 /**
  * Config plugin to add Live Activities support to an Expo project.
- *
- * This plugin:
- * 1. Adds required entitlements for Live Activities
- * 2. Adds NSSupportsLiveActivities to Info.plist
- * 3. Copies native module files for the React Native bridge
- *
- * Note: The Widget Extension target needs to be added manually in Xcode
- * after running `expo prebuild`. See the README for instructions.
+ * Fully automated - no manual Xcode work required.
  */
 
 // Add entitlements
 const withLiveActivityEntitlements = (config) => {
   return withEntitlementsPlist(config, (config) => {
-    // Enable Live Activities push type
     config.modResults['com.apple.developer.push-type.liveactivity'] = true;
 
-    // Add app groups for sharing data between app and widget
     const bundleId = config.ios?.bundleIdentifier || 'com.app.identifier';
     const existingGroups = config.modResults['com.apple.security.application-groups'] || [];
     const appGroup = `group.${bundleId}`;
@@ -47,79 +37,62 @@ const withLiveActivityInfoPlist = (config) => {
   });
 };
 
-// Copy native module files to the iOS project
-const withLiveActivityNativeModule = (config) => {
+// Copy files and create widget extension
+const withLiveActivityFiles = (config) => {
   return withDangerousMod(config, [
     'ios',
     async (config) => {
       const projectRoot = config.modRequest.projectRoot;
       const platformProjectRoot = config.modRequest.platformProjectRoot;
       const projectName = config.modRequest.projectName;
+      const bundleId = config.ios?.bundleIdentifier || 'com.app.identifier';
 
-      // Source directory for native module files
-      const pluginDir = path.join(projectRoot, 'plugins', 'live-activities', 'native-module');
-
-      // Destination directory (main app target)
+      // Copy native module files to main app
+      const pluginDir = path.join(projectRoot, 'plugins', 'live-activities');
       const destDir = path.join(platformProjectRoot, projectName);
 
-      // Ensure destination directory exists
       if (!fs.existsSync(destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
       }
 
       // Copy native module files
-      const filesToCopy = ['LiveActivityModule.swift', 'LiveActivityModule.m'];
-
-      for (const file of filesToCopy) {
-        const sourcePath = path.join(pluginDir, file);
-        const destPath = path.join(destDir, file);
-
-        if (fs.existsSync(sourcePath)) {
-          fs.copyFileSync(sourcePath, destPath);
-          console.log(`Copied ${file} to ${destDir}`);
-        } else {
-          console.warn(`Warning: ${file} not found at ${sourcePath}`);
+      const nativeModuleFiles = ['LiveActivityModule.swift', 'LiveActivityModule.m'];
+      for (const file of nativeModuleFiles) {
+        const src = path.join(pluginDir, 'native-module', file);
+        const dest = path.join(destDir, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, dest);
         }
       }
 
-      // Copy the shared RestTimerAttributes.swift to the main app
-      const attributesSource = path.join(
-        projectRoot,
-        'plugins',
-        'live-activities',
-        'swift',
-        'RestTimerAttributes.swift'
-      );
-      const attributesDest = path.join(destDir, 'RestTimerAttributes.swift');
-
-      if (fs.existsSync(attributesSource)) {
-        fs.copyFileSync(attributesSource, attributesDest);
-        console.log(`Copied RestTimerAttributes.swift to ${destDir}`);
+      // Copy RestTimerAttributes to main app
+      const attrSrc = path.join(pluginDir, 'swift', 'RestTimerAttributes.swift');
+      const attrDest = path.join(destDir, 'RestTimerAttributes.swift');
+      if (fs.existsSync(attrSrc)) {
+        fs.copyFileSync(attrSrc, attrDest);
       }
 
-      // Create Widget Extension directory and copy widget files
+      // Create Widget Extension directory
       const widgetDir = path.join(platformProjectRoot, 'RestTimerWidget');
       if (!fs.existsSync(widgetDir)) {
         fs.mkdirSync(widgetDir, { recursive: true });
       }
 
+      // Copy widget Swift files
       const widgetFiles = [
         'RestTimerAttributes.swift',
         'RestTimerWidgetBundle.swift',
         'RestTimerWidgetLiveActivity.swift',
       ];
-
       for (const file of widgetFiles) {
-        const sourcePath = path.join(projectRoot, 'plugins', 'live-activities', 'swift', file);
-        const destPath = path.join(widgetDir, file);
-
-        if (fs.existsSync(sourcePath)) {
-          fs.copyFileSync(sourcePath, destPath);
-          console.log(`Copied ${file} to widget directory`);
+        const src = path.join(pluginDir, 'swift', file);
+        const dest = path.join(widgetDir, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, dest);
         }
       }
 
-      // Create Info.plist for widget extension
+      // Create widget Info.plist
       const widgetInfoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -151,8 +124,7 @@ const withLiveActivityNativeModule = (config) => {
 </plist>`;
       fs.writeFileSync(path.join(widgetDir, 'Info.plist'), widgetInfoPlist);
 
-      // Create entitlements for widget
-      const bundleId = config.ios?.bundleIdentifier || 'com.app.identifier';
+      // Create widget entitlements
       const widgetEntitlements = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -170,37 +142,122 @@ const withLiveActivityNativeModule = (config) => {
   ]);
 };
 
-// Add Swift files to Xcode project
-const withLiveActivityXcodeProject = (config) => {
+// Add widget extension target to Xcode project
+const withWidgetExtensionTarget = (config) => {
   return withXcodeProject(config, (config) => {
     const project = config.modResults;
     const projectName = config.modRequest.projectName;
+    const bundleId = config.ios?.bundleIdentifier || 'com.app.identifier';
+    const widgetBundleId = `${bundleId}.RestTimerWidget`;
 
-    // Get the main target
+    // Add source files to main app target
     const mainTarget = project.getFirstTarget();
-    if (!mainTarget) {
-      console.warn('Could not find main target');
-      return config;
-    }
-
-    // Find or create the main app group
     const mainGroupKey = project.getFirstProject().firstProject.mainGroup;
 
-    // Add Swift files to the project
-    const swiftFiles = [
+    const mainAppFiles = [
       'LiveActivityModule.swift',
       'LiveActivityModule.m',
       'RestTimerAttributes.swift',
     ];
 
-    for (const file of swiftFiles) {
+    for (const file of mainAppFiles) {
       const filePath = `${projectName}/${file}`;
-
-      // Check if file already exists in project
-      const existingFile = project.getFile(filePath);
-      if (!existingFile) {
+      if (!project.hasFile(filePath)) {
         project.addSourceFile(filePath, { target: mainTarget.uuid }, mainGroupKey);
-        console.log(`Added ${file} to Xcode project`);
+      }
+    }
+
+    // Check if widget target already exists
+    const existingTargets = project.pbxNativeTargetSection();
+    let widgetTargetExists = false;
+    for (const key in existingTargets) {
+      if (existingTargets[key].name === 'RestTimerWidgetExtension') {
+        widgetTargetExists = true;
+        break;
+      }
+    }
+
+    if (!widgetTargetExists) {
+      // Create widget extension target
+      const widgetTarget = project.addTarget(
+        'RestTimerWidgetExtension',
+        'app_extension',
+        'RestTimerWidget',
+        widgetBundleId
+      );
+
+      if (widgetTarget) {
+        const widgetTargetUuid = widgetTarget.uuid;
+
+        // Create a group for widget files
+        const widgetGroup = project.addPbxGroup(
+          [
+            'RestTimerAttributes.swift',
+            'RestTimerWidgetBundle.swift',
+            'RestTimerWidgetLiveActivity.swift',
+            'Info.plist',
+          ],
+          'RestTimerWidget',
+          'RestTimerWidget'
+        );
+
+        // Add widget group to main project
+        project.addToPbxGroup(widgetGroup.uuid, mainGroupKey);
+
+        // Add Swift files to widget target
+        const widgetSwiftFiles = [
+          'RestTimerWidget/RestTimerAttributes.swift',
+          'RestTimerWidget/RestTimerWidgetBundle.swift',
+          'RestTimerWidget/RestTimerWidgetLiveActivity.swift',
+        ];
+
+        for (const file of widgetSwiftFiles) {
+          project.addSourceFile(file, { target: widgetTargetUuid }, widgetGroup.uuid);
+        }
+
+        // Configure build settings for widget target
+        const configurations = project.pbxXCBuildConfigurationSection();
+        for (const key in configurations) {
+          const config = configurations[key];
+          if (config.buildSettings && config.baseConfigurationReference === undefined) {
+            // Check if this configuration belongs to widget target
+            const targetName = config.buildSettings.PRODUCT_NAME;
+            if (targetName === '"$(TARGET_NAME)"' || targetName === 'RestTimerWidgetExtension') {
+              config.buildSettings.ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = 'AccentColor';
+              config.buildSettings.ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = 'WidgetBackground';
+              config.buildSettings.CODE_SIGN_ENTITLEMENTS = 'RestTimerWidget/RestTimerWidgetExtension.entitlements';
+              config.buildSettings.CODE_SIGN_STYLE = 'Automatic';
+              config.buildSettings.CURRENT_PROJECT_VERSION = '1';
+              config.buildSettings.GENERATE_INFOPLIST_FILE = 'YES';
+              config.buildSettings.INFOPLIST_FILE = 'RestTimerWidget/Info.plist';
+              config.buildSettings.INFOPLIST_KEY_CFBundleDisplayName = 'Rest Timer';
+              config.buildSettings.INFOPLIST_KEY_NSHumanReadableCopyright = '""';
+              config.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = '16.2';
+              config.buildSettings.LD_RUNPATH_SEARCH_PATHS = '"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"';
+              config.buildSettings.MARKETING_VERSION = '1.0';
+              config.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = widgetBundleId;
+              config.buildSettings.PRODUCT_NAME = '"$(TARGET_NAME)"';
+              config.buildSettings.SKIP_INSTALL = 'YES';
+              config.buildSettings.SWIFT_EMIT_LOC_STRINGS = 'YES';
+              config.buildSettings.SWIFT_VERSION = '5.0';
+              config.buildSettings.TARGETED_DEVICE_FAMILY = '"1,2"';
+            }
+          }
+        }
+
+        // Add embed extension build phase to main target
+        const embedPhase = project.addBuildPhase(
+          ['RestTimerWidgetExtension.appex'],
+          'PBXCopyFilesBuildPhase',
+          'Embed Foundation Extensions',
+          mainTarget.uuid,
+          'app_extension'
+        );
+
+        if (embedPhase) {
+          // Set destination to PlugIns folder (13)
+          embedPhase.buildPhase.dstSubfolderSpec = 13;
+        }
       }
     }
 
@@ -208,13 +265,12 @@ const withLiveActivityXcodeProject = (config) => {
   });
 };
 
-// Main plugin function
+// Main plugin
 const withLiveActivities = (config) => {
   config = withLiveActivityEntitlements(config);
   config = withLiveActivityInfoPlist(config);
-  config = withLiveActivityNativeModule(config);
-  config = withLiveActivityXcodeProject(config);
-
+  config = withLiveActivityFiles(config);
+  config = withWidgetExtensionTarget(config);
   return config;
 };
 
