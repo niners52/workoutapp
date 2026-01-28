@@ -18,7 +18,7 @@ import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastSetsForExercise } from '../services/storage';
-import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
+import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -48,7 +48,7 @@ interface ExerciseHistory {
 
 export function ActiveWorkoutScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings } = useData();
+  const { exercises, templates, userSettings, locations } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -73,6 +73,9 @@ export function ActiveWorkoutScreen() {
   const [customRestTime, setCustomRestTime] = useState(userSettings?.restTimerSeconds || 90);
   const [swapModalVisible, setSwapModalVisible] = useState(false);
   const [exerciseToSwap, setExerciseToSwap] = useState<Exercise | null>(null);
+  const [suggestModalVisible, setSuggestModalVisible] = useState(false);
+  const [suggestStep, setSuggestStep] = useState<'location' | 'exercises'>('location');
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
   // Load history for all exercises when workout starts
   useEffect(() => {
@@ -186,6 +189,29 @@ export function ActiveWorkoutScreen() {
     navigation.navigate('ExercisePicker', {
       workoutId: activeWorkout.workout.id,
     });
+  };
+
+  const handleOpenSuggestModal = () => {
+    setSuggestStep('location');
+    setSelectedLocationId(null);
+    setSuggestModalVisible(true);
+  };
+
+  const handleSelectLocation = (locationId: string) => {
+    setSelectedLocationId(locationId);
+    setSuggestStep('exercises');
+  };
+
+  const handleAddSuggestedExercise = async (exerciseId: string) => {
+    await addExerciseToWorkout(exerciseId);
+    // Keep modal open so user can add more exercises
+  };
+
+  // Get exercises for selected location
+  const getExercisesForLocation = (locationId: string): Exercise[] => {
+    return exercises.filter(exercise => {
+      return exercise.locationIds?.includes(locationId);
+    }).sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const handleOpenSwapModal = (exercise: Exercise) => {
@@ -429,6 +455,14 @@ export function ActiveWorkoutScreen() {
             <Text style={styles.addExerciseText}>+ Add Exercise</Text>
           </TouchableOpacity>
 
+          {/* Suggested Exercises Button */}
+          <TouchableOpacity
+            style={styles.suggestExerciseButton}
+            onPress={handleOpenSuggestModal}
+          >
+            <Text style={styles.suggestExerciseText}>Suggested Exercises</Text>
+          </TouchableOpacity>
+
           {/* Spacer for button */}
           <View style={styles.buttonSpacer} />
         </ScrollView>
@@ -535,6 +569,114 @@ export function ActiveWorkoutScreen() {
                 fullWidth
                 style={styles.cancelSwapButton}
               />
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Suggested Exercises Modal */}
+        <Modal
+          visible={suggestModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSuggestModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setSuggestModalVisible(false)}
+          >
+            <View style={[styles.modalContent, styles.suggestModalContent]}>
+              {suggestStep === 'location' ? (
+                <>
+                  <Text style={styles.modalTitle}>Select Location</Text>
+                  <Text style={styles.suggestModalSubtitle}>
+                    Choose where you're working out
+                  </Text>
+
+                  <ScrollView style={styles.locationList}>
+                    {locations.map(location => (
+                      <TouchableOpacity
+                        key={location.id}
+                        style={styles.locationOption}
+                        onPress={() => handleSelectLocation(location.id)}
+                      >
+                        <Text style={styles.locationOptionName}>{location.name}</Text>
+                        <Text style={styles.locationOptionChevron}>›</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  <Button
+                    title="Cancel"
+                    onPress={() => setSuggestModalVisible(false)}
+                    variant="secondary"
+                    fullWidth
+                    style={styles.cancelSuggestButton}
+                  />
+                </>
+              ) : (
+                <>
+                  <View style={styles.suggestHeader}>
+                    <TouchableOpacity onPress={() => setSuggestStep('location')}>
+                      <Text style={styles.suggestBackButton}>‹ Back</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.modalTitle}>
+                      {locations.find(l => l.id === selectedLocationId)?.name}
+                    </Text>
+                  </View>
+                  <Text style={styles.suggestModalSubtitle}>
+                    Tap an exercise to add it to your workout
+                  </Text>
+
+                  <ScrollView style={styles.suggestExerciseList}>
+                    {selectedLocationId && getExercisesForLocation(selectedLocationId).map(exercise => {
+                      const isInWorkout = activeWorkout.exerciseIds.includes(exercise.id);
+                      return (
+                        <TouchableOpacity
+                          key={exercise.id}
+                          style={[
+                            styles.suggestExerciseOption,
+                            isInWorkout && styles.suggestExerciseOptionAdded,
+                          ]}
+                          onPress={() => !isInWorkout && handleAddSuggestedExercise(exercise.id)}
+                          disabled={isInWorkout}
+                        >
+                          <View style={styles.suggestExerciseLeft}>
+                            <Text style={styles.suggestExerciseName}>{exercise.name}</Text>
+                            <Text style={styles.suggestExerciseMeta}>
+                              {EQUIPMENT_DISPLAY_NAMES[exercise.equipment]}
+                              {exercise.primaryMuscleGroups?.length
+                                ? ' • ' + exercise.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ')
+                                : exercise.primaryMuscleGroup
+                                ? ' • ' + MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]
+                                : ''}
+                            </Text>
+                          </View>
+                          {isInWorkout ? (
+                            <View style={styles.addedBadge}>
+                              <Text style={styles.addedBadgeText}>Added</Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.addExerciseIcon}>+</Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {selectedLocationId && getExercisesForLocation(selectedLocationId).length === 0 && (
+                      <Text style={styles.noExercisesText}>
+                        No exercises found for this location
+                      </Text>
+                    )}
+                  </ScrollView>
+
+                  <Button
+                    title="Done"
+                    onPress={() => setSuggestModalVisible(false)}
+                    fullWidth
+                    style={styles.doneSuggestButton}
+                  />
+                </>
+              )}
             </View>
           </TouchableOpacity>
         </Modal>
@@ -1012,6 +1154,18 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     color: colors.primary,
   },
+  suggestExerciseButton: {
+    padding: spacing.base,
+    alignItems: 'center',
+    backgroundColor: colors.primaryDim,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.sm,
+  },
+  suggestExerciseText: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
   buttonSpacer: {
     height: 80,
   },
@@ -1103,6 +1257,104 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   cancelSwapButton: {
+    marginTop: spacing.md,
+  },
+  // Suggested exercises modal styles
+  suggestModalContent: {
+    maxHeight: '80%',
+  },
+  suggestModalSubtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: -spacing.md,
+    marginBottom: spacing.lg,
+  },
+  locationList: {
+    maxHeight: 300,
+  },
+  locationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.base,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  locationOptionName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  locationOptionChevron: {
+    fontSize: typography.size.xl,
+    color: colors.textSecondary,
+  },
+  cancelSuggestButton: {
+    marginTop: spacing.md,
+  },
+  suggestHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  suggestBackButton: {
+    fontSize: typography.size.lg,
+    color: colors.primary,
+    marginRight: spacing.sm,
+  },
+  suggestExerciseList: {
+    maxHeight: 350,
+  },
+  suggestExerciseOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.base,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
+  suggestExerciseOptionAdded: {
+    opacity: 0.5,
+  },
+  suggestExerciseLeft: {
+    flex: 1,
+  },
+  suggestExerciseName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  suggestExerciseMeta: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  addedBadge: {
+    backgroundColor: colors.success + '30',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  addedBadgeText: {
+    fontSize: typography.size.xs,
+    color: colors.success,
+    fontWeight: typography.weight.medium,
+  },
+  addExerciseIcon: {
+    fontSize: typography.size.xl,
+    color: colors.primary,
+    fontWeight: typography.weight.bold,
+  },
+  noExercisesText: {
+    fontSize: typography.size.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    padding: spacing.xl,
+  },
+  doneSuggestButton: {
     marginTop: spacing.md,
   },
   // Remaining exercises styles

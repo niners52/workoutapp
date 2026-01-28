@@ -475,13 +475,21 @@ function HealthKitDataScreenContent() {
   const formatSampleValue = (sample: RawSample, type: string): string => {
     try {
       if (type === 'SleepAnalysis') {
-        return String(sample.value || 'Unknown');
+        // Sleep has value like "CORE", "REM", "DEEP", "AWAKE", "INBED"
+        const sleepValue = (sample as any).value;
+        if (typeof sleepValue === 'string') {
+          return sleepValue.charAt(0).toUpperCase() + sleepValue.slice(1).toLowerCase();
+        }
+        return 'Sleep';
       }
       if (type === 'Workout') {
-        return (sample as any).activityName || 'Workout';
+        return String((sample as any).activityName || 'Workout');
       }
       if (sample.value !== undefined && sample.value !== null) {
-        return Number(sample.value).toFixed(1);
+        const numVal = Number(sample.value);
+        if (!isNaN(numVal)) {
+          return numVal.toFixed(1);
+        }
       }
       return 'N/A';
     } catch {
@@ -503,7 +511,11 @@ function HealthKitDataScreenContent() {
     try {
       if (Array.isArray(data)) {
         data.forEach(sample => {
-          const source = sample?.sourceName || 'Unknown';
+          // Ensure source is a string
+          let source = sample?.sourceName;
+          if (typeof source !== 'string') {
+            source = 'Unknown';
+          }
           sources.set(source, (sources.get(source) || 0) + 1);
         });
       }
@@ -513,12 +525,26 @@ function HealthKitDataScreenContent() {
     return sources;
   };
 
-  const getTotalValue = (data: any[]): number => {
+  const getTotalValue = (data: any[], type: string): number | null => {
     try {
-      if (!Array.isArray(data)) return 0;
-      return data.reduce((sum, sample) => sum + (Number(sample?.value) || 0), 0);
+      // These types don't have numeric totals that make sense
+      if (['SleepAnalysis', 'Workout'].includes(type)) {
+        return null;
+      }
+      if (!Array.isArray(data) || data.length === 0) return null;
+
+      let total = 0;
+      let hasValidValue = false;
+      data.forEach(sample => {
+        const val = Number(sample?.value);
+        if (!isNaN(val)) {
+          total += val;
+          hasValidValue = true;
+        }
+      });
+      return hasValidValue ? total : null;
     } catch {
-      return 0;
+      return null;
     }
   };
 
@@ -610,7 +636,7 @@ function HealthKitDataScreenContent() {
           const isExpanded = expandedSection === section.type;
           const dataType = DATA_TYPES.find(dt => dt.type === section.type);
           const sourceSummary = getSourceSummary(section.data);
-          const totalValue = getTotalValue(section.data);
+          const totalValue = getTotalValue(section.data, section.type);
 
           return (
             <Card key={section.type} padding="none">
@@ -628,7 +654,7 @@ function HealthKitDataScreenContent() {
                   </Text>
                 </View>
                 <View style={styles.sectionHeaderRight}>
-                  {!section.loading && !section.error && section.data.length > 0 && (
+                  {!section.loading && !section.error && totalValue !== null && (
                     <Text style={styles.sectionTotal}>
                       {totalValue.toFixed(0)} {dataType?.unit}
                     </Text>
@@ -665,21 +691,28 @@ function HealthKitDataScreenContent() {
                   {section.data.length === 0 ? (
                     <Text style={styles.noDataText}>No data found for this period</Text>
                   ) : (
-                    section.data.slice(0, 20).map((sample, index) => (
-                      <View key={sample?.id || index} style={styles.sampleRow}>
-                        <View style={styles.sampleInfo}>
-                          <Text style={styles.sampleValue}>
-                            {formatSampleValue(sample, section.type)} {dataType?.unit}
-                          </Text>
-                          <Text style={styles.sampleDate}>
-                            {formatDate(sample?.startDate || sample?.start)}
+                    section.data.slice(0, 20).map((sample, index) => {
+                      // Ensure sourceName is a string
+                      const sourceName = typeof sample?.sourceName === 'string'
+                        ? sample.sourceName
+                        : 'Unknown';
+
+                      return (
+                        <View key={sample?.id || index} style={styles.sampleRow}>
+                          <View style={styles.sampleInfo}>
+                            <Text style={styles.sampleValue}>
+                              {formatSampleValue(sample, section.type)} {dataType?.unit}
+                            </Text>
+                            <Text style={styles.sampleDate}>
+                              {formatDate(sample?.startDate || sample?.start)}
+                            </Text>
+                          </View>
+                          <Text style={styles.sampleSource} numberOfLines={1}>
+                            {sourceName}
                           </Text>
                         </View>
-                        <Text style={styles.sampleSource} numberOfLines={1}>
-                          {sample?.sourceName || 'Unknown'}
-                        </Text>
-                      </View>
-                    ))
+                      );
+                    })
                   )}
 
                   {section.data.length > 20 && (

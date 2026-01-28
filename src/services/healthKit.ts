@@ -266,38 +266,53 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     endDate: endOfDayDate.toISOString(),
   };
 
-  // Helper to fetch nutrition samples
-  const fetchNutritionSample = (type: string): Promise<number> => {
+  // Helper to fetch nutrition samples using specific getter methods
+  const fetchNutritionSample = (methodName: string): Promise<number> => {
     return new Promise((resolve) => {
-      const sampleOptions = {
-        ...options,
-        type,
-      };
-      AppleHealthKit.getSamples(sampleOptions, (err: string, results: any[]) => {
-        if (err) {
-          console.log(`Error fetching ${type}:`, err);
-          resolve(0);
-          return;
-        }
-        if (!results || results.length === 0) {
-          console.log(`No ${type} data found`);
-          resolve(0);
-          return;
-        }
-        const total = results.reduce((sum: number, sample: any) => sum + (sample.value || 0), 0);
-        console.log(`${type} total:`, total);
-        resolve(Math.round(total));
-      });
+      // Check if the method exists
+      if (typeof AppleHealthKit[methodName] !== 'function') {
+        console.log(`${methodName} not available`);
+        resolve(0);
+        return;
+      }
+
+      // Use a timeout to prevent hanging
+      const timeoutId = setTimeout(() => {
+        console.log(`${methodName} timed out`);
+        resolve(0);
+      }, 5000);
+
+      try {
+        AppleHealthKit[methodName](options, (err: string, results: any[]) => {
+          clearTimeout(timeoutId);
+          if (err) {
+            console.log(`Error fetching ${methodName}:`, err);
+            resolve(0);
+            return;
+          }
+          if (!results || results.length === 0) {
+            console.log(`No ${methodName} data found`);
+            resolve(0);
+            return;
+          }
+          const total = results.reduce((sum: number, sample: any) => sum + (Number(sample.value) || 0), 0);
+          console.log(`${methodName} total:`, total);
+          resolve(Math.round(total));
+        });
+      } catch (e) {
+        clearTimeout(timeoutId);
+        console.log(`${methodName} exception:`, e);
+        resolve(0);
+      }
     });
   };
 
-  // Fetch all nutrition data in parallel
-  // Using react-native-health permission names
+  // Fetch all nutrition data in parallel using specific getter methods
   const [protein, carbs, fat, calories] = await Promise.all([
-    fetchNutritionSample('Protein'),
-    fetchNutritionSample('Carbohydrates'),
-    fetchNutritionSample('FatTotal'),
-    fetchNutritionSample('EnergyConsumed'),
+    fetchNutritionSample('getProteinSamples'),
+    fetchNutritionSample('getCarbohydratesSamples'),
+    fetchNutritionSample('getTotalFatSamples'),
+    fetchNutritionSample('getEnergyConsumedSamples'),
   ]);
 
   // Only return data if we have at least some nutrition logged
