@@ -14,8 +14,7 @@
           "isClinicalDataEnabled": false
         }
       ],
-      "@react-native-community/datetimepicker",
-      "./plugins/live-activities/withLiveActivities"
+      "@react-native-community/datetimepicker"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
