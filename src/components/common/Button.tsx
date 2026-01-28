@@ -58,7 +58,7 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator
-          color={variant === 'primary' ? colors.text : colors.primary}
+          color={variant === 'primary' ? colors.textOnPrimary : colors.primary}
           size="small"
         />
       ) : (
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.semibold,
   },
   primaryText: {
-    color: colors.text,
+    color: colors.textOnPrimary, // Dark text on gold buttons
     fontSize: typography.size.md,
   },
   secondaryText: {

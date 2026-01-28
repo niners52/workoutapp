@@ -1,60 +1,61 @@
 import { StyleSheet } from 'react-native';
 
-// Color palette - Dark theme inspired by fitness apps
+// Color palette - Milwaukee Brewers theme
 export const colors = {
-  // Primary colors
-  primary: '#007AFF', // iOS blue
-  primaryLight: '#4DA2FF',
-  primaryDark: '#0055B3',
-  primaryDim: 'rgba(0, 122, 255, 0.15)', // Dimmed primary for badges
+  // Primary colors (Gold)
+  primary: '#B6922E', // Gold - buttons, progress bars, active states, accents
+  primaryLight: '#D4A843', // Lighter gold for highlights
+  primaryDark: '#8A6F23', // Darker gold - pressed states
+  primaryDim: 'rgba(182, 146, 46, 0.15)', // Dimmed gold for badges
 
-  // Background colors
-  background: '#000000',
-  backgroundSecondary: '#1C1C1E',
-  backgroundTertiary: '#2C2C2E',
-  backgroundElevated: '#3A3A3C',
+  // Background colors (Navy)
+  background: '#0A1628', // Near-black with navy tint (main app background)
+  backgroundSecondary: '#12284B', // Navy (cards, modals, input backgrounds)
+  backgroundTertiary: '#1A3A5C', // Lighter navy (hover states, borders, dividers)
+  backgroundElevated: '#234875', // Even lighter navy for elevated elements
 
   // Text colors
-  text: '#FFFFFF',
-  textSecondary: '#8E8E93',
-  textTertiary: '#636366',
+  text: '#FFFFFF', // White (headings, primary text)
+  textSecondary: '#A0A0A0', // Gray (secondary text, labels)
+  textTertiary: '#6B7280', // Darker gray (placeholders, disabled text)
+  textOnPrimary: '#0A1628', // Dark text on gold buttons
 
   // Status colors
-  success: '#34C759',
-  warning: '#FF9500',
-  error: '#FF3B30',
+  success: '#B6922E', // Gold (completed workouts, goals met)
+  warning: '#D97706', // Amber (approaching limits)
+  error: '#DC2626', // Red (errors, delete actions)
 
-  // Chart colors
-  chartTraining: '#007AFF',
-  chartProtein: '#34C759',
-  chartSleep: '#AF52DE',
+  // Chart colors (Gold-accented)
+  chartTraining: '#B6922E', // Gold for training
+  chartProtein: '#D4A843', // Lighter gold for protein
+  chartSleep: '#8A6F23', // Darker gold for sleep
 
-  // Muscle group colors (for variety in charts)
+  // Muscle group colors (Gold/Navy variations with complementary colors)
   muscleColors: {
-    chest: '#FF6B6B',
-    lats: '#4ECDC4',
-    upper_back: '#45B7D1',
-    front_delts: '#96CEB4',
-    side_delts: '#FFEAA7',
-    rear_delts: '#DDA0DD',
-    triceps: '#98D8C8',
-    biceps: '#F7DC6F',
-    quads: '#BB8FCE',
-    hamstrings: '#85C1E9',
-    glutes: '#F8B500',
-    calves: '#00CED1',
-    abs: '#FF6F61',
-    forearms: '#88D8B0',
-    lower_back: '#FFCC5C',
-    miscellaneous: '#C0C0C0',
+    chest: '#B6922E', // Gold
+    lats: '#4A7C9B', // Steel blue
+    upper_back: '#5B8BA8', // Light steel blue
+    front_delts: '#D4A843', // Light gold
+    side_delts: '#E8C35A', // Bright gold
+    rear_delts: '#9B7A2F', // Muted gold
+    triceps: '#6B9AB8', // Soft blue
+    biceps: '#C9A227', // Medium gold
+    quads: '#3D6B8C', // Navy blue
+    hamstrings: '#7BACC4', // Light blue
+    glutes: '#A68523', // Dark gold
+    calves: '#4E8FAB', // Teal blue
+    abs: '#DDB640', // Bright gold
+    forearms: '#5C95B0', // Medium blue
+    lower_back: '#8B7322', // Bronze
+    miscellaneous: '#708090', // Slate gray
   },
 
   // Border and separator
-  border: '#38383A',
-  separator: '#38383A',
+  border: '#1A3A5C', // Lighter navy
+  separator: '#1A3A5C',
 
   // Overlay
-  overlay: 'rgba(0, 0, 0, 0.5)',
+  overlay: 'rgba(10, 22, 40, 0.7)',
 };
 
 // Typography
@@ -179,7 +180,7 @@ export const commonStyles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
-  // Buttons
+  // Buttons - Gold with dark text for primary actions
   buttonPrimary: {
     backgroundColor: colors.primary,
     paddingVertical: spacing.md,
@@ -189,7 +190,7 @@ export const commonStyles = StyleSheet.create({
     justifyContent: 'center' as const,
   },
   buttonPrimaryText: {
-    color: colors.text,
+    color: colors.textOnPrimary, // Dark text on gold
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
   },
@@ -202,7 +203,7 @@ export const commonStyles = StyleSheet.create({
     justifyContent: 'center' as const,
   },
   buttonSecondaryText: {
-    color: colors.primary,
+    color: colors.primary, // Gold text
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
   },
@@ -215,7 +216,7 @@ export const commonStyles = StyleSheet.create({
     justifyContent: 'center' as const,
   },
 
-  // Inputs
+  // Inputs - Navy background with gold focus
   input: {
     backgroundColor: colors.backgroundTertiary,
     borderRadius: borderRadius.md,
@@ -223,6 +224,8 @@ export const commonStyles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     fontSize: typography.size.md,
     color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 
   // Rows
