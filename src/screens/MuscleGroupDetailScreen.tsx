@@ -9,11 +9,15 @@ import {
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, parseISO, addDays } from 'date-fns';
+import { format, parseISO, addDays, formatDistanceToNow } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card, ProgressBar } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { getExerciseVolumeForMuscleGroup } from '../services/analytics';
+import {
+  getExerciseVolumeForMuscleGroup,
+  getExerciseHistoryForMuscleGroup,
+  ExerciseHistoryEntry,
+} from '../services/analytics';
 import {
   MUSCLE_GROUP_DISPLAY_NAMES,
   PrimaryMuscleGroup,
@@ -32,6 +36,7 @@ export function MuscleGroupDetailScreen() {
   const [exerciseVolume, setExerciseVolume] = useState<
     { exerciseId: string; exerciseName: string; sets: number }[]
   >([]);
+  const [exerciseHistory, setExerciseHistory] = useState<ExerciseHistoryEntry[]>([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -44,6 +49,13 @@ export function MuscleGroupDetailScreen() {
         endDate
       );
       setExerciseVolume(volume);
+
+      // Load exercise history (last 3 months)
+      const history = await getExerciseHistoryForMuscleGroup(
+        muscleGroup as PrimaryMuscleGroup,
+        3
+      );
+      setExerciseHistory(history);
     };
 
     loadData();
@@ -86,9 +98,19 @@ export function MuscleGroupDetailScreen() {
           </Text>
         </Card>
 
-        {/* Exercise Breakdown */}
+        {/* Tips */}
+        {target > 0 && progress < 100 && (
+          <Card style={styles.tipCard}>
+            <Text style={styles.tipTitle}>Tip</Text>
+            <Text style={styles.tipText}>
+              You need {target - totalSets} more sets this week to hit your target.
+            </Text>
+          </Card>
+        )}
+
+        {/* Exercise Breakdown (this week) */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Exercise Breakdown</Text>
+          <Text style={styles.sectionTitle}>This Week's Exercises</Text>
           {exerciseVolume.length === 0 ? (
             <Card>
               <Text style={styles.emptyText}>No exercises logged this week</Text>
@@ -118,15 +140,51 @@ export function MuscleGroupDetailScreen() {
           )}
         </View>
 
-        {/* Tips */}
-        {target > 0 && progress < 100 && (
-          <Card style={styles.tipCard}>
-            <Text style={styles.tipTitle}>Tip</Text>
-            <Text style={styles.tipText}>
-              You need {target - totalSets} more sets this week to hit your target.
-            </Text>
-          </Card>
-        )}
+        {/* Exercise History (last 3 months) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Exercises You've Done</Text>
+          <Text style={styles.sectionSubtitle}>Last 3 months</Text>
+          {exerciseHistory.length === 0 ? (
+            <Card>
+              <Text style={styles.emptyText}>No exercises found for this muscle group</Text>
+            </Card>
+          ) : (
+            <Card padding="none">
+              {exerciseHistory.map((entry, index) => (
+                <TouchableOpacity
+                  key={entry.exerciseId}
+                  style={[
+                    styles.historyRow,
+                    index === 0 && styles.exerciseRowFirst,
+                    index === exerciseHistory.length - 1 && styles.exerciseRowLast,
+                    index < exerciseHistory.length - 1 && styles.exerciseRowBorder,
+                  ]}
+                  onPress={() => handleExercisePress(entry.exerciseId)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.historyInfo}>
+                    <View style={styles.historyNameRow}>
+                      <Text style={styles.exerciseName}>{entry.exerciseName}</Text>
+                      {!entry.isPrimary && (
+                        <Text style={styles.secondaryBadge}>secondary</Text>
+                      )}
+                    </View>
+                    <View style={styles.historyDetails}>
+                      <Text style={styles.historyDate}>
+                        {formatDistanceToNow(parseISO(entry.lastPerformed), { addSuffix: true })}
+                      </Text>
+                      <Text style={styles.historyDot}>•</Text>
+                      <Text style={styles.historyBest}>
+                        Best: {entry.bestWeight}lb × {entry.bestReps}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </TouchableOpacity>
+              ))}
+            </Card>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -185,6 +243,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  sectionSubtitle: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
     marginBottom: spacing.md,
   },
   emptyText: {
@@ -230,6 +293,7 @@ const styles = StyleSheet.create({
   },
   tipCard: {
     backgroundColor: colors.backgroundTertiary,
+    marginBottom: spacing.lg,
   },
   tipTitle: {
     fontSize: typography.size.sm,
@@ -240,6 +304,47 @@ const styles = StyleSheet.create({
   tipText: {
     fontSize: typography.size.base,
     color: colors.text,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  secondaryBadge: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    backgroundColor: colors.backgroundTertiary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  historyDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  historyDate: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  historyDot: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+    marginHorizontal: spacing.sm,
+  },
+  historyBest: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
   },
 });
 

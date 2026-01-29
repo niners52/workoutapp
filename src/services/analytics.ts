@@ -13,6 +13,7 @@ import {
   AnalyticsCategory,
   getParentMuscleGroup,
   ALL_TRACKABLE_MUSCLE_GROUPS,
+  MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
 import { getSetsInDateRange, getExercises, getUserSettings } from './storage';
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
@@ -385,4 +386,197 @@ export function getTemplatesForDay(
 ): string[] {
   const daySchedule = routine.daySchedule.find(d => d.day === dayOfWeek);
   return daySchedule?.templateIds || [];
+}
+
+// Weekly shortfall calculation
+export interface MuscleGroupShortfall {
+  muscleGroup: PrimaryMuscleGroup;
+  displayName: string;
+  currentSets: number;
+  targetSets: number;
+  projectedSets: number; // From remaining scheduled workouts
+  shortfall: number; // target - (current + projected)
+}
+
+// Calculate muscle groups that won't hit targets even with remaining scheduled workouts
+export async function calculateWeeklyShortfalls(
+  routine: Routine | undefined,
+  templates: Template[],
+  exercises: Exercise[],
+  userSettings: UserSettings
+): Promise<MuscleGroupShortfall[]> {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0-6 (Sunday-Saturday)
+
+  // Get current week's volume
+  const currentWeekVolume = await getWeeklyVolume(today);
+
+  // Build maps for quick lookups
+  const exerciseMap = new Map<string, Exercise>(
+    exercises.map(e => [e.id, e])
+  );
+  const templateMap = new Map<string, Template>(
+    templates.map(t => [t.id, t])
+  );
+
+  // Calculate projected volume from remaining days in the week
+  const projectedVolumeMap = new Map<PrimaryMuscleGroup, number>();
+  ALL_TRACKABLE_MUSCLE_GROUPS.forEach(mg => projectedVolumeMap.set(mg, 0));
+
+  if (routine) {
+    // Get remaining days based on week start preference
+    const weekStartsOn = userSettings.weekStartDay === 'sunday' ? 0 : 1;
+
+    // Calculate which days remain in the week (including today)
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const checkDate = addDays(today, dayOffset);
+      const checkDayOfWeek = checkDate.getDay();
+
+      // Check if we've passed the end of the week
+      if (dayOffset > 0) {
+        // For Monday start: week ends on Sunday (0)
+        // For Sunday start: week ends on Saturday (6)
+        if (checkDayOfWeek === weekStartsOn) break; // New week started
+      }
+
+      // Get templates for this day
+      const daySchedule = routine.daySchedule.find(d => d.day === checkDayOfWeek);
+      if (!daySchedule || daySchedule.templateIds.length === 0) continue;
+
+      // Process each template
+      daySchedule.templateIds.forEach(templateId => {
+        const template = templateMap.get(templateId);
+        if (!template) return;
+
+        // Process each exercise
+        template.exerciseIds.forEach(exerciseId => {
+          const exercise = exerciseMap.get(exerciseId);
+          if (!exercise) return;
+
+          // Get primary muscle groups
+          const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+            ? exercise.primaryMuscleGroups
+            : exercise.primaryMuscleGroup
+            ? [exercise.primaryMuscleGroup]
+            : [];
+
+          // Add projected sets (3 sets per exercise is standard assumption)
+          primaryMuscleGroups.forEach(mg => {
+            const current = projectedVolumeMap.get(mg) || 0;
+            projectedVolumeMap.set(mg, current + 3);
+          });
+        });
+      });
+    }
+  }
+
+  // Calculate shortfalls
+  const shortfalls: MuscleGroupShortfall[] = [];
+
+  ALL_TRACKABLE_MUSCLE_GROUPS.forEach(mg => {
+    const target = userSettings.muscleGroupTargets[mg] || 0;
+    if (target === 0) return; // Skip muscle groups without targets
+
+    const currentVolume = currentWeekVolume.muscleGroups.find(v => v.muscleGroup === mg);
+    const currentSets = currentVolume?.sets || 0;
+    const projectedSets = projectedVolumeMap.get(mg) || 0;
+    const totalExpected = currentSets + projectedSets;
+    const shortfall = target - totalExpected;
+
+    if (shortfall > 0) {
+      shortfalls.push({
+        muscleGroup: mg,
+        displayName: MUSCLE_GROUP_DISPLAY_NAMES[mg],
+        currentSets,
+        targetSets: target,
+        projectedSets,
+        shortfall,
+      });
+    }
+  });
+
+  // Sort by shortfall (most severe first)
+  return shortfalls.sort((a, b) => b.shortfall - a.shortfall);
+}
+
+// Exercise history for a muscle group
+export interface ExerciseHistoryEntry {
+  exerciseId: string;
+  exerciseName: string;
+  lastPerformed: string;
+  bestWeight: number;
+  bestReps: number;
+  isPrimary: boolean; // true if this muscle is primary for the exercise
+}
+
+// Get exercises that target a muscle group (primary or secondary) with history
+export async function getExerciseHistoryForMuscleGroup(
+  muscleGroup: PrimaryMuscleGroup,
+  months: number = 3
+): Promise<ExerciseHistoryEntry[]> {
+  const endDate = new Date();
+  const startDate = subWeeks(endDate, months * 4); // Approximate months to weeks
+
+  const sets = await getSetsInDateRange(startDate, endDate);
+  const exercises = await getExercises();
+
+  // Build exercise map
+  const exerciseMap = new Map<string, Exercise>(
+    exercises.map(e => [e.id, e])
+  );
+
+  // Track exercise history
+  const historyMap = new Map<string, {
+    exerciseId: string;
+    exerciseName: string;
+    lastPerformed: string;
+    bestWeight: number;
+    bestReps: number;
+    isPrimary: boolean;
+  }>();
+
+  sets.forEach(set => {
+    const exercise = exerciseMap.get(set.exerciseId);
+    if (!exercise) return;
+
+    // Get primary muscle groups
+    const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+      ? exercise.primaryMuscleGroups
+      : exercise.primaryMuscleGroup
+      ? [exercise.primaryMuscleGroup]
+      : [];
+
+    const isPrimary = primaryMuscleGroups.includes(muscleGroup);
+    const isSecondary = (exercise.secondaryMuscleGroups || []).includes(muscleGroup);
+
+    if (!isPrimary && !isSecondary) return;
+
+    const existing = historyMap.get(exercise.id);
+
+    if (!existing) {
+      historyMap.set(exercise.id, {
+        exerciseId: exercise.id,
+        exerciseName: exercise.name,
+        lastPerformed: set.loggedAt,
+        bestWeight: set.weight,
+        bestReps: set.reps,
+        isPrimary,
+      });
+    } else {
+      // Update last performed if this set is more recent
+      if (new Date(set.loggedAt) > new Date(existing.lastPerformed)) {
+        existing.lastPerformed = set.loggedAt;
+      }
+      // Update best set (highest weight, or if same weight, highest reps)
+      if (set.weight > existing.bestWeight ||
+          (set.weight === existing.bestWeight && set.reps > existing.bestReps)) {
+        existing.bestWeight = set.weight;
+        existing.bestReps = set.reps;
+      }
+    }
+  });
+
+  // Convert to array and sort by last performed (most recent first)
+  return Array.from(historyMap.values())
+    .sort((a, b) => new Date(b.lastPerformed).getTime() - new Date(a.lastPerformed).getTime());
 }

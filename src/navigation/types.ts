@@ -23,6 +23,13 @@ export type RootStackParamList = {
   CreateRoutine: undefined;
   EditRoutine: { routineId: string };
   HealthKitData: undefined;
+  WorkoutSummary: {
+    workoutId: string;
+    startedAt: string;
+    completedAt: string;
+    totalSets: number;
+    muscleGroupSets: { muscleGroup: string; sets: number; isSecondary: boolean }[];
+  };
 };
 
 // Bottom Tab Navigator

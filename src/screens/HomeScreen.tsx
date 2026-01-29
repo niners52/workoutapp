@@ -12,7 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { Button, Card } from '../components/common';
+import { Button, Card, ProgressBar } from '../components/common';
 import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../components/goals';
 import { SupplementCheckbox } from '../components/supplements';
 import { useData } from '../contexts/DataContext';
@@ -26,6 +26,10 @@ import {
   StreakCounts,
   WeeklySummary,
 } from '../services/streaks';
+import {
+  calculateWeeklyShortfalls,
+  MuscleGroupShortfall,
+} from '../services/analytics';
 import { DAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
@@ -41,6 +45,7 @@ export function HomeScreen() {
     supplementIntakes,
     toggleSupplementIntake,
     templates,
+    exercises,
     getActiveRoutine,
   } = useData();
   const { isWorkoutActive } = useWorkout();
@@ -58,25 +63,30 @@ export function HomeScreen() {
     dayLabels: string[];
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
+  const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
+
+  const activeRoutine = getActiveRoutine();
 
   const loadData = useCallback(async () => {
     try {
       // Load all goals data
-      const [status, streakCounts, gridData, summary] = await Promise.all([
+      const [status, streakCounts, gridData, summary, shortfallData] = await Promise.all([
         getTodayGoalStatus(userSettings),
         calculateStreaks(userSettings),
         getWeeklyGridData(userSettings),
         getWeeklySummary(userSettings),
+        calculateWeeklyShortfalls(activeRoutine, templates, exercises, userSettings),
       ]);
 
       setTodayStatus(status);
       setStreaks(streakCounts);
       setWeeklyGridData(gridData);
       setWeeklySummary(summary);
+      setShortfalls(shortfallData);
     } catch (error) {
       console.error('Failed to load home data:', error);
     }
-  }, [userSettings]);
+  }, [userSettings, activeRoutine, templates, exercises]);
 
   useFocusEffect(
     useCallback(() => {
@@ -99,7 +109,6 @@ export function HomeScreen() {
   const weekEnd = endOfWeek(today, { weekStartsOn: dayOffset as 0 | 1 });
 
   // Get today's planned workouts from active routine
-  const activeRoutine = getActiveRoutine();
   const todayDayOfWeek = today.getDay(); // 0-6 (Sunday-Saturday)
   const todayPlannedTemplateIds =
     activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek)?.templateIds || [];
@@ -117,6 +126,13 @@ export function HomeScreen() {
 
   const handleStartPlannedWorkout = (templateId: string) => {
     navigation.navigate('TemplateDetail', { templateId });
+  };
+
+  const handleMuscleGroupPress = (muscleGroup: string) => {
+    navigation.navigate('MuscleGroupDetail', {
+      muscleGroup,
+      weekStart: format(weekStart, 'yyyy-MM-dd'),
+    });
   };
 
   return (
@@ -174,6 +190,61 @@ export function HomeScreen() {
             dailyGoals={userSettings.dailyGoals}
           />
         )}
+
+        {/* Weekly Shortfalls */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Muscle Groups Needing Attention</Text>
+          {shortfalls.length === 0 ? (
+            <Card style={styles.onTrackCard}>
+              <Text style={styles.onTrackEmoji}>💪</Text>
+              <Text style={styles.onTrackText}>You're on track this week!</Text>
+              <Text style={styles.onTrackSubtext}>
+                All muscle groups are projected to hit their targets.
+              </Text>
+            </Card>
+          ) : (
+            <Card padding="none">
+              {shortfalls.slice(0, 5).map((item, index) => {
+                const progress = item.targetSets > 0
+                  ? (item.currentSets / item.targetSets) * 100
+                  : 0;
+                return (
+                  <TouchableOpacity
+                    key={item.muscleGroup}
+                    style={[
+                      styles.shortfallRow,
+                      index === 0 && styles.shortfallRowFirst,
+                      index === Math.min(shortfalls.length - 1, 4) && styles.shortfallRowLast,
+                      index < Math.min(shortfalls.length - 1, 4) && styles.shortfallRowBorder,
+                    ]}
+                    onPress={() => handleMuscleGroupPress(item.muscleGroup)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.shortfallInfo}>
+                      <View style={styles.shortfallHeader}>
+                        <Text style={styles.shortfallName}>{item.displayName}</Text>
+                        <Text style={styles.shortfallStats}>
+                          {item.currentSets}/{item.targetSets} sets
+                        </Text>
+                      </View>
+                      <ProgressBar
+                        progress={progress}
+                        height={6}
+                        color={colors.warning}
+                        style={styles.shortfallProgress}
+                      />
+                      <Text style={styles.shortfallNote}>
+                        Need {item.shortfall} more sets
+                        {item.projectedSets > 0 && ` (${item.projectedSets} scheduled)`}
+                      </Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </Card>
+          )}
+        </View>
 
         {/* Today's Planned Workouts */}
         {activeRoutine && (
@@ -358,6 +429,68 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  // Shortfall styles
+  onTrackCard: {
+    alignItems: 'center',
+  },
+  onTrackEmoji: {
+    fontSize: 32,
+    marginBottom: spacing.sm,
+  },
+  onTrackText: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.success,
+  },
+  onTrackSubtext: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  shortfallRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+  },
+  shortfallRowFirst: {
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+  },
+  shortfallRowLast: {
+    borderBottomLeftRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
+  },
+  shortfallRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  shortfallInfo: {
+    flex: 1,
+  },
+  shortfallHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  shortfallName: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
+  },
+  shortfallStats: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  shortfallProgress: {
+    marginVertical: spacing.xs,
+  },
+  shortfallNote: {
+    fontSize: typography.size.xs,
+    color: colors.warning,
   },
 });
 

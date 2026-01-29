@@ -159,8 +159,68 @@ export function ActiveWorkoutScreen() {
         {
           text: 'Finish',
           onPress: async () => {
+            // Calculate muscle group breakdown before finishing
+            const muscleGroupSetsMap = new Map<string, { sets: number; isSecondary: boolean }>();
+
+            activeWorkout.sets.forEach(set => {
+              const exercise = exercises.find(e => e.id === set.exerciseId);
+              if (!exercise) return;
+
+              // Primary muscle groups
+              const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+                ? exercise.primaryMuscleGroups
+                : exercise.primaryMuscleGroup
+                ? [exercise.primaryMuscleGroup]
+                : [];
+
+              primaryMuscleGroups.forEach(mg => {
+                const existing = muscleGroupSetsMap.get(mg);
+                muscleGroupSetsMap.set(mg, {
+                  sets: (existing?.sets || 0) + 1,
+                  isSecondary: false,
+                });
+              });
+
+              // Secondary muscle groups
+              (exercise.secondaryMuscleGroups || []).forEach(mg => {
+                const existing = muscleGroupSetsMap.get(mg);
+                // Only add as secondary if not already primary
+                if (!existing || existing.isSecondary) {
+                  muscleGroupSetsMap.set(mg, {
+                    sets: (existing?.sets || 0) + 1,
+                    isSecondary: true,
+                  });
+                }
+              });
+            });
+
+            const muscleGroupSets = Array.from(muscleGroupSetsMap.entries())
+              .map(([muscleGroup, data]) => ({
+                muscleGroup,
+                sets: data.sets,
+                isSecondary: data.isSecondary,
+              }))
+              .sort((a, b) => {
+                // Primary first, then by sets descending
+                if (a.isSecondary !== b.isSecondary) {
+                  return a.isSecondary ? 1 : -1;
+                }
+                return b.sets - a.sets;
+              });
+
+            const startedAt = activeWorkout.workout.startedAt;
+            const completedAt = new Date().toISOString();
+            const totalSets = activeWorkout.sets.length;
+
             await finishWorkout();
-            navigation.goBack();
+
+            navigation.replace('WorkoutSummary', {
+              workoutId: activeWorkout.workout.id,
+              startedAt,
+              completedAt,
+              totalSets,
+              muscleGroupSets,
+            });
           },
         },
       ]

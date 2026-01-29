@@ -28,6 +28,7 @@ import {
   CreateRoutineScreen,
   RoutineDetailScreen,
   HealthKitDataScreen,
+  WorkoutSummaryScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -273,6 +274,15 @@ export function AppNavigator() {
           options={{
             title: 'HealthKit Data',
             headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="WorkoutSummary"
+          component={WorkoutSummaryScreen}
+          options={{
+            title: 'Workout Complete',
+            headerShown: false,
+            gestureEnabled: false,
           }}
         />
       </Stack.Navigator>
