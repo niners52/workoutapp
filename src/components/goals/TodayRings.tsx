@@ -21,12 +21,19 @@ export function TodayRings({ status, dailyGoals }: TodayRingsProps) {
     ? (status.protein.grams / dailyGoals.proteinGrams) * 100
     : 0;
 
-  const creatineProgress = status.creatine.taken ? 100 : 0;
+  const supplementsProgress = status.supplements.total > 0
+    ? (status.supplements.taken / status.supplements.total) * 100
+    : 0;
+
   const trainingProgress = status.training.completed ? 100 : 0;
 
   // Format display values
   const sleepValue = `${status.sleep.hours.toFixed(1)}/${dailyGoals.sleepHours}`;
   const proteinValue = `${Math.round(status.protein.grams)}/${dailyGoals.proteinGrams}`;
+  const supplementsValue = `${status.supplements.taken}/${status.supplements.total}`;
+
+  // Only show supplements ring if there are active supplements
+  const showSupplementsRing = status.supplements.total > 0;
 
   return (
     <Card style={styles.card}>
@@ -44,11 +51,11 @@ export function TodayRings({ status, dailyGoals }: TodayRingsProps) {
           value={proteinValue}
           color={colors.chartProtein}
         />
-        {dailyGoals.trackCreatine && (
+        {showSupplementsRing && (
           <ProgressRing
-            progress={creatineProgress}
-            label="Creatine"
-            isBoolean
+            progress={supplementsProgress}
+            label="Supps"
+            value={supplementsValue}
             color={colors.primary}
           />
         )}

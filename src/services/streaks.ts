@@ -1,7 +1,7 @@
 import { format, subDays, startOfWeek, addDays, isSameDay, isAfter, isBefore, startOfDay } from 'date-fns';
 import { getSleepData, getNutritionData } from './healthKit';
-import { getWorkouts, getSupplementIntakesForDate, getUserSettings } from './storage';
-import { DailyGoals, WeeklyGoals, UserSettings, Workout, SupplementIntake } from '../types';
+import { getWorkouts, getSupplementIntakesForDate, getUserSettings, getSupplements } from './storage';
+import { DailyGoals, WeeklyGoals, UserSettings, Workout, SupplementIntake, Supplement } from '../types';
 
 // Status for a single day's goal
 export interface DailyGoalStatus {
@@ -14,8 +14,10 @@ export interface DailyGoalStatus {
     grams: number;
     met: boolean;
   };
-  creatine: {
-    taken: boolean;
+  supplements: {
+    taken: number;
+    total: number;
+    allTaken: boolean;
   };
   training: {
     completed: boolean;
@@ -45,7 +47,8 @@ export async function getDailyGoalStatus(
   date: Date,
   settings: UserSettings,
   workouts?: Workout[],
-  supplementIntakes?: SupplementIntake[]
+  supplementIntakes?: SupplementIntake[],
+  activeSupplements?: Supplement[]
 ): Promise<DailyGoalStatus> {
   const dateStr = format(date, 'yyyy-MM-dd');
   const { dailyGoals } = settings;
@@ -60,12 +63,14 @@ export async function getDailyGoalStatus(
   const proteinGrams = nutritionData?.protein || 0;
   const proteinMet = proteinGrams >= dailyGoals.proteinGrams;
 
-  // Get creatine status (check supplement intakes)
-  let creatineTaken = false;
-  if (dailyGoals.trackCreatine && settings.creatineSupplementId) {
-    const intakes = supplementIntakes || await getSupplementIntakesForDate(dateStr);
-    creatineTaken = intakes.some(i => i.supplementId === settings.creatineSupplementId);
-  }
+  // Get supplements status (count how many active supplements were taken)
+  const intakes = supplementIntakes || await getSupplementIntakesForDate(dateStr);
+  const allSupplements = activeSupplements || (await getSupplements()).filter(s => s.isActive);
+  const totalSupplements = allSupplements.length;
+  const takenSupplements = allSupplements.filter(s =>
+    intakes.some(i => i.supplementId === s.id)
+  ).length;
+  const allSupplementsTaken = totalSupplements > 0 && takenSupplements === totalSupplements;
 
   // Get training status (check if any completed workout exists for this date)
   let trainingCompleted = false;
@@ -82,14 +87,14 @@ export async function getDailyGoalStatus(
   const perfectDay =
     sleepMet &&
     proteinMet &&
-    (!dailyGoals.trackCreatine || creatineTaken) &&
+    (totalSupplements === 0 || allSupplementsTaken) &&
     (!dailyGoals.trackTraining || trainingCompleted);
 
   return {
     date: dateStr,
     sleep: { hours: sleepHours, met: sleepMet },
     protein: { grams: proteinGrams, met: proteinMet },
-    creatine: { taken: creatineTaken },
+    supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken },
     training: { completed: trainingCompleted },
     perfectDay,
   };
@@ -143,7 +148,7 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
   // Count today if goals are met
   if (todayStatus.sleep.met) sleepStreak++;
   if (todayStatus.protein.met) proteinStreak++;
-  if (todayStatus.creatine.taken) creatineStreak++;
+  if (todayStatus.supplements.allTaken) creatineStreak++;
   if (todayStatus.training.completed) trainingStreak++;
   if (todayStatus.perfectDay) perfectStreak++;
 
@@ -170,7 +175,7 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
     }
 
     if (settings.dailyGoals.trackCreatine) {
-      if (creatineStreak === i + (todayStatus.creatine.taken ? 1 : 0) && status.creatine.taken) {
+      if (creatineStreak === i + (todayStatus.supplements.allTaken ? 1 : 0) && status.supplements.allTaken) {
         creatineStreak++;
         anyContinued = true;
       }
@@ -233,7 +238,7 @@ export async function getWeeklyGridData(
         date: dateStr,
         sleep: { hours: 0, met: false },
         protein: { grams: 0, met: false },
-        creatine: { taken: false },
+        supplements: { taken: 0, total: 0, allTaken: false },
         training: { completed: false },
         perfectDay: false,
       });
@@ -280,7 +285,7 @@ export async function getWeeklySummary(settings: UserSettings): Promise<WeeklySu
 
     sleepHours += status.sleep.hours;
     if (status.protein.met) proteinDays++;
-    if (status.creatine.taken) creatineDays++;
+    if (status.supplements.allTaken) creatineDays++;
     if (status.training.completed) trainingDays++;
   }
 
@@ -293,10 +298,14 @@ export async function getWeeklySummary(settings: UserSettings): Promise<WeeklySu
 }
 
 // Get today's goal status (convenience function)
-export async function getTodayGoalStatus(settings: UserSettings): Promise<DailyGoalStatus> {
+export async function getTodayGoalStatus(
+  settings: UserSettings,
+  activeSupplements?: Supplement[]
+): Promise<DailyGoalStatus> {
   const today = new Date();
   const workouts = await getWorkouts();
   const dateStr = format(today, 'yyyy-MM-dd');
   const intakes = await getSupplementIntakesForDate(dateStr);
-  return getDailyGoalStatus(today, settings, workouts, intakes);
+  const supplements = activeSupplements || (await getSupplements()).filter(s => s.isActive);
+  return getDailyGoalStatus(today, settings, workouts, intakes, supplements);
 }

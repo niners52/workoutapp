@@ -71,7 +71,7 @@ export function HomeScreen() {
     try {
       // Load all goals data
       const [status, streakCounts, gridData, summary, shortfallData] = await Promise.all([
-        getTodayGoalStatus(userSettings),
+        getTodayGoalStatus(userSettings, activeSupplements),
         calculateStreaks(userSettings),
         getWeeklyGridData(userSettings),
         getWeeklySummary(userSettings),
@@ -86,7 +86,7 @@ export function HomeScreen() {
     } catch (error) {
       console.error('Failed to load home data:', error);
     }
-  }, [userSettings, activeRoutine, templates, exercises]);
+  }, [userSettings, activeRoutine, templates, exercises, activeSupplements]);
 
   useFocusEffect(
     useCallback(() => {

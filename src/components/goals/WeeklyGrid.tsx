@@ -75,9 +75,10 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
     return day.protein.met ? 'met' : 'missed';
   };
 
-  const getCreatineStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
+  const getSupplementsStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
     if (isFutureDay) return 'future';
-    return day.creatine.taken ? 'met' : 'missed';
+    if (day.supplements.total === 0) return 'na';
+    return day.supplements.allTaken ? 'met' : 'missed';
   };
 
   const getTrainingStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
@@ -126,9 +127,9 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
       />
       {dailyGoals.trackCreatine && (
         <GridRow
-          label="Creatine"
+          label="Supps"
           days={days}
-          getStatus={getCreatineStatus}
+          getStatus={getSupplementsStatus}
           todayIndex={todayIndex}
         />
       )}
