@@ -10,12 +10,12 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, isSameDay, startOfMonth, endOfMonth } from 'date-fns';
+import { format, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, isAfter, startOfDay } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
-import { CalendarView } from '../components/calendar';
+import { CalendarView, GoalStatusMap } from '../components/calendar';
 import { useData } from '../contexts/DataContext';
-import { getWorkoutDatesInMonth } from '../services/storage';
+import { getDailyGoalStatus } from '../services/streaks';
 import { Workout } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
@@ -23,45 +23,72 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function CalendarScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { workouts, templates, userSettings, refreshWorkouts } = useData();
+  const { workouts, templates, userSettings, supplements, refreshWorkouts } = useData();
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [workoutDates, setWorkoutDates] = useState<string[]>([]);
+  const [goalStatusMap, setGoalStatusMap] = useState<GoalStatusMap>({});
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadWorkoutDates = useCallback(async () => {
-    const dates = await getWorkoutDatesInMonth(
-      currentMonth.getFullYear(),
-      currentMonth.getMonth()
-    );
-    setWorkoutDates(dates);
-  }, [currentMonth]);
+  const activeSupplements = useMemo(
+    () => supplements.filter(s => s.isActive),
+    [supplements]
+  );
+
+  const loadGoalStatus = useCallback(async () => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const today = startOfDay(new Date());
+
+    // Get all days in the month
+    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+    const statusMap: GoalStatusMap = {};
+
+    // Load goal status for each day (skip future days)
+    for (const day of days) {
+      if (isAfter(startOfDay(day), today)) continue;
+
+      const dateStr = format(day, 'yyyy-MM-dd');
+      const status = await getDailyGoalStatus(day, userSettings, workouts, undefined, activeSupplements);
+
+      // Count goals met (0-4)
+      let goalsMetCount = 0;
+      if (status.sleep.met) goalsMetCount++;
+      if (status.protein.met) goalsMetCount++;
+      if (status.supplements.total === 0 || status.supplements.allTaken) goalsMetCount++;
+      if (status.training.completed) goalsMetCount++;
+
+      statusMap[dateStr] = goalsMetCount;
+    }
+
+    setGoalStatusMap(statusMap);
+  }, [currentMonth, userSettings, workouts, activeSupplements]);
 
   useFocusEffect(
     useCallback(() => {
       refreshWorkouts();
-      loadWorkoutDates();
-    }, [loadWorkoutDates, refreshWorkouts])
+      loadGoalStatus();
+    }, [loadGoalStatus, refreshWorkouts])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshWorkouts();
-    await loadWorkoutDates();
+    await loadGoalStatus();
     setRefreshing(false);
-  }, [refreshWorkouts, loadWorkoutDates]);
+  }, [refreshWorkouts, loadGoalStatus]);
 
   const handleMonthChange = useCallback((date: Date) => {
     setCurrentMonth(date);
     setSelectedDate(null);
   }, []);
 
-  // When month changes, reload workout dates
+  // When month changes, reload goal status
   useFocusEffect(
     useCallback(() => {
-      loadWorkoutDates();
-    }, [loadWorkoutDates])
+      loadGoalStatus();
+    }, [loadGoalStatus])
   );
 
   const handleDayPress = useCallback((date: Date) => {
@@ -107,7 +134,7 @@ export function CalendarScreen() {
         <CalendarView
           currentMonth={currentMonth}
           onMonthChange={handleMonthChange}
-          workoutDates={workoutDates}
+          goalStatusMap={goalStatusMap}
           onDayPress={handleDayPress}
           weekStartDay={userSettings.weekStartDay}
         />
@@ -152,7 +179,7 @@ export function CalendarScreen() {
           </View>
         )}
 
-        {/* Workout Stats for Month */}
+        {/* Goal Stats for Month */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
             {format(currentMonth, 'MMMM')} Summary
@@ -160,8 +187,22 @@ export function CalendarScreen() {
           <Card>
             <View style={styles.statsRow}>
               <View style={styles.stat}>
-                <Text style={styles.statValue}>{workoutDates.length}</Text>
-                <Text style={styles.statLabel}>Workout Days</Text>
+                <Text style={styles.statValue}>
+                  {Object.values(goalStatusMap).filter(g => g === 4).length}
+                </Text>
+                <Text style={styles.statLabel}>Perfect Days</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>
+                  {Object.values(goalStatusMap).filter(g => g >= 3).length}
+                </Text>
+                <Text style={styles.statLabel}>3+ Goals</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>
+                  {Object.keys(goalStatusMap).length}
+                </Text>
+                <Text style={styles.statLabel}>Days Tracked</Text>
               </View>
             </View>
           </Card>

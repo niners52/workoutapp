@@ -11,15 +11,22 @@ import {
   isSameDay,
   addMonths,
   subMonths,
+  isAfter,
+  startOfDay,
 } from 'date-fns';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { CalendarDay } from './CalendarDay';
 import { WeekStartDay } from '../../types';
 
+// Map of date string to goals met count (0-4)
+export interface GoalStatusMap {
+  [dateStr: string]: number;
+}
+
 interface CalendarViewProps {
   currentMonth: Date;
   onMonthChange: (date: Date) => void;
-  workoutDates: string[]; // Array of 'YYYY-MM-DD' strings
+  goalStatusMap: GoalStatusMap; // Map of 'YYYY-MM-DD' to goals met count
   onDayPress: (date: Date) => void;
   weekStartDay: WeekStartDay;
 }
@@ -27,11 +34,11 @@ interface CalendarViewProps {
 export function CalendarView({
   currentMonth,
   onMonthChange,
-  workoutDates,
+  goalStatusMap,
   onDayPress,
   weekStartDay,
 }: CalendarViewProps) {
-  const today = new Date();
+  const today = startOfDay(new Date());
   const weekStartsOn = weekStartDay === 'sunday' ? 0 : 1;
 
   // Get day headers based on week start
@@ -53,9 +60,6 @@ export function CalendarView({
 
     return eachDayOfInterval({ start: calendarStart, end: calendarEnd });
   }, [currentMonth, weekStartsOn]);
-
-  // Create a Set for quick lookup
-  const workoutDateSet = useMemo(() => new Set(workoutDates), [workoutDates]);
 
   const handlePreviousMonth = () => {
     onMonthChange(subMonths(currentMonth, 1));
@@ -104,9 +108,10 @@ export function CalendarView({
           <View key={weekIndex} style={styles.weekRow}>
             {week.map((date) => {
               const dateStr = format(date, 'yyyy-MM-dd');
-              const hasWorkout = workoutDateSet.has(dateStr);
               const isCurrentMonth = isSameMonth(date, currentMonth);
               const isToday = isSameDay(date, today);
+              const isFuture = isAfter(startOfDay(date), today);
+              const goalsMetCount = goalStatusMap[dateStr] ?? 0;
 
               return (
                 <CalendarDay
@@ -114,7 +119,8 @@ export function CalendarView({
                   date={date}
                   isCurrentMonth={isCurrentMonth}
                   isToday={isToday}
-                  hasWorkout={hasWorkout && isCurrentMonth}
+                  isFuture={isFuture}
+                  goalsMetCount={goalsMetCount}
                   onPress={() => onDayPress(date)}
                 />
               );
