@@ -2,11 +2,12 @@ import { StyleSheet } from 'react-native';
 
 // Color palette - Milwaukee Brewers theme
 export const colors = {
-  // Primary colors (Gold)
-  primary: '#B6922E', // Gold - buttons, progress bars, active states, accents
-  primaryLight: '#D4A843', // Lighter gold for highlights
-  primaryDark: '#8A6F23', // Darker gold - pressed states
-  primaryDim: 'rgba(182, 146, 46, 0.15)', // Dimmed gold for badges
+  // Primary colors (Brewers Yellow)
+  primary: '#FFC52F', // Bright yellow - buttons, progress bars, active states, accents
+  primaryLight: '#FFD65A', // Lighter yellow for highlights
+  primaryMuted: '#D9A825', // Slightly darker yellow - pressed states
+  primaryDark: '#D9A825', // Alias for primaryMuted
+  primaryDim: 'rgba(255, 197, 47, 0.15)', // Dimmed yellow for badges
 
   // Background colors (Navy)
   background: '#0A1628', // Near-black with navy tint (main app background)
@@ -18,35 +19,35 @@ export const colors = {
   text: '#FFFFFF', // White (headings, primary text)
   textSecondary: '#A0A0A0', // Gray (secondary text, labels)
   textTertiary: '#6B7280', // Darker gray (placeholders, disabled text)
-  textOnPrimary: '#0A1628', // Dark text on gold buttons
+  textOnPrimary: '#0A1628', // Dark text on yellow buttons
 
   // Status colors
-  success: '#B6922E', // Gold (completed workouts, goals met)
+  success: '#FFC52F', // Yellow (completed workouts, goals met)
   warning: '#D97706', // Amber (approaching limits)
   error: '#DC2626', // Red (errors, delete actions)
 
-  // Chart colors (Gold-accented)
-  chartTraining: '#B6922E', // Gold for training
-  chartProtein: '#D4A843', // Lighter gold for protein
-  chartSleep: '#8A6F23', // Darker gold for sleep
+  // Chart colors (Yellow-accented)
+  chartTraining: '#FFC52F', // Yellow for training
+  chartProtein: '#FFD65A', // Lighter yellow for protein
+  chartSleep: '#D9A825', // Muted yellow for sleep
 
-  // Muscle group colors (Gold/Navy variations with complementary colors)
+  // Muscle group colors (Yellow/Navy variations with complementary colors)
   muscleColors: {
-    chest: '#B6922E', // Gold
+    chest: '#FFC52F', // Yellow
     lats: '#4A7C9B', // Steel blue
     upper_back: '#5B8BA8', // Light steel blue
-    front_delts: '#D4A843', // Light gold
-    side_delts: '#E8C35A', // Bright gold
-    rear_delts: '#9B7A2F', // Muted gold
+    front_delts: '#FFD65A', // Light yellow
+    side_delts: '#FFE082', // Bright yellow
+    rear_delts: '#D9A825', // Muted yellow
     triceps: '#6B9AB8', // Soft blue
-    biceps: '#C9A227', // Medium gold
+    biceps: '#E6B422', // Medium yellow
     quads: '#3D6B8C', // Navy blue
     hamstrings: '#7BACC4', // Light blue
-    glutes: '#A68523', // Dark gold
+    glutes: '#C9A825', // Dark yellow
     calves: '#4E8FAB', // Teal blue
-    abs: '#DDB640', // Bright gold
+    abs: '#FFD54F', // Bright yellow
     forearms: '#5C95B0', // Medium blue
-    lower_back: '#8B7322', // Bronze
+    lower_back: '#BFA730', // Bronze yellow
     miscellaneous: '#708090', // Slate gray
   },
 
