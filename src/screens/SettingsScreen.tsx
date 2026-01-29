@@ -270,33 +270,179 @@ export function SettingsScreen() {
           </Card>
         </View>
 
-        {/* Goals */}
+        {/* Daily Goals */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Daily Goals</Text>
           <Card padding="none">
             <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Protein Goal (g)</Text>
+              <Text style={styles.settingLabel}>Sleep (hours)</Text>
               <NumberInput
-                value={userSettings.proteinGoal}
-                onChangeValue={(value) => updateUserSettings({ proteinGoal: value })}
-                min={50}
-                max={400}
-                step={10}
-              />
-            </View>
-            <View style={[styles.settingRow, styles.settingRowLast]}>
-              <Text style={styles.settingLabel}>Sleep Goal (hours)</Text>
-              <NumberInput
-                value={userSettings.sleepGoal}
-                onChangeValue={(value) => updateUserSettings({ sleepGoal: value })}
+                value={userSettings.dailyGoals?.sleepHours ?? userSettings.sleepGoal}
+                onChangeValue={(value) => {
+                  const dailyGoals = { ...(userSettings.dailyGoals || {}), sleepHours: value };
+                  updateUserSettings({ dailyGoals, sleepGoal: value });
+                }}
                 min={4}
                 max={12}
                 step={0.5}
                 allowDecimals
               />
             </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Protein (grams)</Text>
+              <NumberInput
+                value={userSettings.dailyGoals?.proteinGrams ?? userSettings.proteinGoal}
+                onChangeValue={(value) => {
+                  const dailyGoals = { ...(userSettings.dailyGoals || {}), proteinGrams: value };
+                  updateUserSettings({ dailyGoals, proteinGoal: value });
+                }}
+                min={50}
+                max={400}
+                step={10}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Track Creatine</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.dailyGoals?.trackCreatine && styles.toggleActive,
+                ]}
+                onPress={() => {
+                  const dailyGoals = {
+                    ...(userSettings.dailyGoals || {}),
+                    trackCreatine: !userSettings.dailyGoals?.trackCreatine,
+                  };
+                  updateUserSettings({ dailyGoals });
+                }}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.dailyGoals?.trackCreatine && styles.toggleTextActive,
+                ]}>
+                  {userSettings.dailyGoals?.trackCreatine ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <Text style={styles.settingLabel}>Track Training</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.dailyGoals?.trackTraining && styles.toggleActive,
+                ]}
+                onPress={() => {
+                  const dailyGoals = {
+                    ...(userSettings.dailyGoals || {}),
+                    trackTraining: !userSettings.dailyGoals?.trackTraining,
+                  };
+                  updateUserSettings({ dailyGoals });
+                }}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.dailyGoals?.trackTraining && styles.toggleTextActive,
+                ]}>
+                  {userSettings.dailyGoals?.trackTraining ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Card>
         </View>
+
+        {/* Weekly Goals */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Weekly Goals</Text>
+          <Card padding="none">
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Total Sleep (hours)</Text>
+              <NumberInput
+                value={userSettings.weeklyGoals?.sleepHours ?? 49}
+                onChangeValue={(value) => {
+                  const weeklyGoals = { ...(userSettings.weeklyGoals || {}), sleepHours: value };
+                  updateUserSettings({ weeklyGoals });
+                }}
+                min={28}
+                max={84}
+                step={1}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Protein Days</Text>
+              <NumberInput
+                value={userSettings.weeklyGoals?.proteinDays ?? 6}
+                onChangeValue={(value) => {
+                  const weeklyGoals = { ...(userSettings.weeklyGoals || {}), proteinDays: value };
+                  updateUserSettings({ weeklyGoals });
+                }}
+                min={1}
+                max={7}
+                step={1}
+              />
+            </View>
+            {userSettings.dailyGoals?.trackCreatine && (
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Creatine Days</Text>
+                <NumberInput
+                  value={userSettings.weeklyGoals?.creatineDays ?? 7}
+                  onChangeValue={(value) => {
+                    const weeklyGoals = { ...(userSettings.weeklyGoals || {}), creatineDays: value };
+                    updateUserSettings({ weeklyGoals });
+                  }}
+                  min={1}
+                  max={7}
+                  step={1}
+                />
+              </View>
+            )}
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <Text style={styles.settingLabel}>Training Days</Text>
+              <NumberInput
+                value={userSettings.weeklyGoals?.trainingDays ?? 5}
+                onChangeValue={(value) => {
+                  const weeklyGoals = { ...(userSettings.weeklyGoals || {}), trainingDays: value };
+                  updateUserSettings({ weeklyGoals });
+                }}
+                min={1}
+                max={7}
+                step={1}
+              />
+            </View>
+          </Card>
+        </View>
+
+        {/* Creatine Supplement Selection */}
+        {userSettings.dailyGoals?.trackCreatine && supplements.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Creatine Tracking</Text>
+            <Card padding="none">
+              {supplements.map((supplement, index) => (
+                <TouchableOpacity
+                  key={supplement.id}
+                  style={[
+                    styles.creatineOption,
+                    index === supplements.length - 1 && styles.creatineOptionLast,
+                    userSettings.creatineSupplementId === supplement.id && styles.creatineOptionSelected,
+                  ]}
+                  onPress={() => updateUserSettings({ creatineSupplementId: supplement.id })}
+                >
+                  <Text style={[
+                    styles.creatineOptionText,
+                    userSettings.creatineSupplementId === supplement.id && styles.creatineOptionTextSelected,
+                  ]}>
+                    {supplement.name}
+                  </Text>
+                  {userSettings.creatineSupplementId === supplement.id && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </Card>
+            <Text style={styles.hint}>
+              Select which supplement to track as your creatine for streak counting
+            </Text>
+          </View>
+        )}
 
         {/* Location Management */}
         <View style={styles.section}>
@@ -777,6 +923,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: borderRadius.sm,
+  },
+  toggle: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  toggleActive: {
+    backgroundColor: colors.primary,
+  },
+  toggleText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.weight.medium,
+  },
+  toggleTextActive: {
+    color: colors.textOnPrimary,
+  },
+  creatineOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  creatineOptionLast: {
+    borderBottomWidth: 0,
+  },
+  creatineOptionSelected: {
+    backgroundColor: colors.primary + '10',
+  },
+  creatineOptionText: {
+    fontSize: typography.size.md,
+    color: colors.text,
+  },
+  creatineOptionTextSelected: {
+    fontWeight: typography.weight.medium,
+  },
+  checkmark: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+    fontWeight: typography.weight.bold,
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,23 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, startOfWeek, endOfWeek, isWithinInterval, subDays } from 'date-fns';
+import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
-import { WeeklyBarChart } from '../components/charts';
+import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../components/goals';
 import { SupplementCheckbox } from '../components/supplements';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { getWeeklyVolume, calculateTrainingScore } from '../services/analytics';
-import { getWeeklyNutritionAverage, getWeeklySleepAverage } from '../services/healthKit';
-import { Workout, WeeklyVolume, DAY_NAMES } from '../types';
+import {
+  getTodayGoalStatus,
+  calculateStreaks,
+  getWeeklyGridData,
+  getWeeklySummary,
+  DailyGoalStatus,
+  StreakCounts,
+  WeeklySummary,
+} from '../services/streaks';
+import { DAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 
@@ -27,7 +34,15 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { workouts, userSettings, refreshWorkouts, supplements, supplementIntakes, toggleSupplementIntake, templates, getActiveRoutine } = useData();
+  const {
+    userSettings,
+    refreshWorkouts,
+    supplements,
+    supplementIntakes,
+    toggleSupplementIntake,
+    templates,
+    getActiveRoutine,
+  } = useData();
   const { isWorkoutActive } = useWorkout();
 
   // Get today's date string for supplements
@@ -35,41 +50,33 @@ export function HomeScreen() {
   const activeSupplements = supplements.filter(s => s.isActive);
 
   const [refreshing, setRefreshing] = useState(false);
-  const [weeklyVolume, setWeeklyVolume] = useState<WeeklyVolume | null>(null);
-  const [weeklyNutrition, setWeeklyNutrition] = useState<{
-    avgProtein: number;
-    days: number;
+  const [todayStatus, setTodayStatus] = useState<DailyGoalStatus | null>(null);
+  const [streaks, setStreaks] = useState<StreakCounts | null>(null);
+  const [weeklyGridData, setWeeklyGridData] = useState<{
+    days: DailyGoalStatus[];
+    todayIndex: number;
+    dayLabels: string[];
   } | null>(null);
-  const [weeklySleep, setWeeklySleep] = useState<{
-    avgHours: number;
-    days: number;
-  } | null>(null);
+  const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const today = new Date();
+      // Load all goals data
+      const [status, streakCounts, gridData, summary] = await Promise.all([
+        getTodayGoalStatus(userSettings),
+        calculateStreaks(userSettings),
+        getWeeklyGridData(userSettings),
+        getWeeklySummary(userSettings),
+      ]);
 
-      // Load weekly volume
-      const volume = await getWeeklyVolume(today);
-      setWeeklyVolume(volume);
-
-      // Load weekly nutrition
-      const nutrition = await getWeeklyNutritionAverage(today);
-      setWeeklyNutrition({
-        avgProtein: nutrition.avgProtein,
-        days: nutrition.days,
-      });
-
-      // Load weekly sleep
-      const sleep = await getWeeklySleepAverage(today);
-      setWeeklySleep({
-        avgHours: sleep.avgHours,
-        days: sleep.days,
-      });
+      setTodayStatus(status);
+      setStreaks(streakCounts);
+      setWeeklyGridData(gridData);
+      setWeeklySummary(summary);
     } catch (error) {
       console.error('Failed to load home data:', error);
     }
-  }, []);
+  }, [userSettings]);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,65 +92,23 @@ export function HomeScreen() {
     setRefreshing(false);
   }, [refreshWorkouts, loadData]);
 
-  // Get this week's workouts
+  // Week dates for header
   const today = new Date();
   const dayOffset = userSettings.weekStartDay === 'sunday' ? 0 : 1;
   const weekStart = startOfWeek(today, { weekStartsOn: dayOffset as 0 | 1 });
   const weekEnd = endOfWeek(today, { weekStartsOn: dayOffset as 0 | 1 });
 
-  const thisWeeksWorkouts = workouts.filter(w =>
-    w.completedAt &&
-    isWithinInterval(new Date(w.startedAt), { start: weekStart, end: weekEnd })
-  );
-
-  // Calculate chart data
-  const trainingScore = weeklyVolume
-    ? calculateTrainingScore(weeklyVolume.muscleGroups)
-    : 0;
-
-  const proteinScore = weeklyNutrition
-    ? Math.round((weeklyNutrition.avgProtein / userSettings.proteinGoal) * 100)
-    : 0;
-
-  const sleepScore = weeklySleep
-    ? Math.round((weeklySleep.avgHours / userSettings.sleepGoal) * 100)
-    : 0;
-
-  const chartData = [
-    {
-      label: 'Training',
-      value: trainingScore,
-      maxValue: 100,
-      color: colors.chartTraining,
-      onPress: () => navigation.navigate('MainTabs', { screen: 'Analytics' }),
-    },
-    {
-      label: 'Protein',
-      value: weeklyNutrition?.avgProtein || 0,
-      maxValue: userSettings.proteinGoal,
-      color: colors.chartProtein,
-      onPress: () => navigation.navigate('MainTabs', { screen: 'Analytics' }),
-    },
-    {
-      label: 'Sleep',
-      value: weeklySleep?.avgHours || 0,
-      maxValue: userSettings.sleepGoal,
-      color: colors.chartSleep,
-      onPress: () => navigation.navigate('MainTabs', { screen: 'Analytics' }),
-    },
-  ];
-
   // Get today's planned workouts from active routine
   const activeRoutine = getActiveRoutine();
   const todayDayOfWeek = today.getDay(); // 0-6 (Sunday-Saturday)
-  const todayPlannedTemplateIds = activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek)?.templateIds || [];
+  const todayPlannedTemplateIds =
+    activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek)?.templateIds || [];
   const todayPlannedTemplates = todayPlannedTemplateIds
     .map(id => templates.find(t => t.id === id))
     .filter((t): t is NonNullable<typeof t> => t !== undefined);
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) {
-      // Resume active workout
       navigation.navigate('ActiveWorkout', { workoutId: '' });
     } else {
       navigation.navigate('StartWorkout');
@@ -152,10 +117,6 @@ export function HomeScreen() {
 
   const handleStartPlannedWorkout = (templateId: string) => {
     navigation.navigate('TemplateDetail', { templateId });
-  };
-
-  const handleWorkoutPress = (workoutId: string) => {
-    navigation.navigate('WorkoutDetail', { workoutId });
   };
 
   return (
@@ -179,17 +140,47 @@ export function HomeScreen() {
           </Text>
         </View>
 
-        {/* Weekly Overview Chart */}
-        <WeeklyBarChart
-          data={chartData}
-          title="This Week"
-          height={140}
-        />
+        {/* Today's Rings */}
+        {todayStatus && userSettings.dailyGoals && (
+          <TodayRings
+            status={todayStatus}
+            dailyGoals={userSettings.dailyGoals}
+          />
+        )}
+
+        {/* Streaks */}
+        {streaks && userSettings.dailyGoals && (
+          <StreakCounters
+            streaks={streaks}
+            dailyGoals={userSettings.dailyGoals}
+          />
+        )}
+
+        {/* Weekly Grid */}
+        {weeklyGridData && userSettings.dailyGoals && (
+          <WeeklyGrid
+            days={weeklyGridData.days}
+            todayIndex={weeklyGridData.todayIndex}
+            dayLabels={weeklyGridData.dayLabels}
+            dailyGoals={userSettings.dailyGoals}
+          />
+        )}
+
+        {/* Weekly Totals */}
+        {weeklySummary && userSettings.weeklyGoals && userSettings.dailyGoals && (
+          <WeeklyTotals
+            summary={weeklySummary}
+            weeklyGoals={userSettings.weeklyGoals}
+            dailyGoals={userSettings.dailyGoals}
+          />
+        )}
 
         {/* Today's Planned Workouts */}
         {activeRoutine && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today's Plan ({DAY_NAMES[todayDayOfWeek]})</Text>
+            <Text style={styles.sectionTitle}>
+              Today's Plan ({DAY_NAMES[todayDayOfWeek]})
+            </Text>
             <Card padding={todayPlannedTemplates.length > 0 ? 'none' : undefined}>
               {todayPlannedTemplates.length > 0 ? (
                 todayPlannedTemplates.map((template, index) => (
@@ -198,8 +189,10 @@ export function HomeScreen() {
                     style={[
                       styles.plannedWorkout,
                       index === 0 && styles.plannedWorkoutFirst,
-                      index === todayPlannedTemplates.length - 1 && styles.plannedWorkoutLast,
-                      index < todayPlannedTemplates.length - 1 && styles.plannedWorkoutBorder,
+                      index === todayPlannedTemplates.length - 1 &&
+                        styles.plannedWorkoutLast,
+                      index < todayPlannedTemplates.length - 1 &&
+                        styles.plannedWorkoutBorder,
                     ]}
                     onPress={() => handleStartPlannedWorkout(template.id)}
                     activeOpacity={0.7}
@@ -226,26 +219,6 @@ export function HomeScreen() {
           </View>
         )}
 
-        {/* Quick Stats */}
-        <View style={styles.statsRow}>
-          <Card style={styles.statCard}>
-            <Text style={styles.statValue}>{thisWeeksWorkouts.length}</Text>
-            <Text style={styles.statLabel}>Workouts</Text>
-          </Card>
-          <Card style={styles.statCard}>
-            <Text style={styles.statValue}>
-              {weeklyVolume?.totalSets || 0}
-            </Text>
-            <Text style={styles.statLabel}>Total Sets</Text>
-          </Card>
-          <Card style={styles.statCard}>
-            <Text style={styles.statValue}>
-              {weeklyNutrition?.avgProtein || 0}g
-            </Text>
-            <Text style={styles.statLabel}>Avg Protein</Text>
-          </Card>
-        </View>
-
         {/* Today's Supplements */}
         {activeSupplements.length > 0 && (
           <View style={styles.section}>
@@ -270,28 +243,6 @@ export function HomeScreen() {
           </View>
         )}
 
-        {/* This Week's Workouts */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>This Week's Workouts</Text>
-          {thisWeeksWorkouts.length === 0 ? (
-            <Card>
-              <Text style={styles.emptyText}>No workouts yet this week</Text>
-            </Card>
-          ) : (
-            <Card padding="none">
-              {thisWeeksWorkouts.map((workout, index) => (
-                <WorkoutListItem
-                  key={workout.id}
-                  workout={workout}
-                  onPress={() => handleWorkoutPress(workout.id)}
-                  isFirst={index === 0}
-                  isLast={index === thisWeeksWorkouts.length - 1}
-                />
-              ))}
-            </Card>
-          )}
-        </View>
-
         {/* Spacer for button */}
         <View style={styles.buttonSpacer} />
       </ScrollView>
@@ -309,49 +260,6 @@ export function HomeScreen() {
   );
 }
 
-interface WorkoutListItemProps {
-  workout: Workout;
-  onPress: () => void;
-  isFirst: boolean;
-  isLast: boolean;
-}
-
-function WorkoutListItem({ workout, onPress, isFirst, isLast }: WorkoutListItemProps) {
-  const { templates } = useData();
-  const template = workout.templateId
-    ? templates.find(t => t.id === workout.templateId)
-    : null;
-
-  const workoutDate = new Date(workout.startedAt);
-  const dateStr = format(workoutDate, 'EEEE, MMM d');
-  const timeStr = format(workoutDate, 'h:mm a');
-
-  return (
-    <TouchableOpacity
-      style={[
-        styles.workoutItem,
-        isFirst && styles.workoutItemFirst,
-        isLast && styles.workoutItemLast,
-        !isLast && styles.workoutItemBorder,
-      ]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.workoutHeader}>
-        <View style={styles.workoutHeaderLeft}>
-          <Text style={styles.workoutTitle}>
-            {template?.name || 'Custom Workout'}
-          </Text>
-          <Text style={styles.workoutDate}>
-            {dateStr} at {timeStr}
-          </Text>
-        </View>
-        <Text style={styles.chevron}>›</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -362,7 +270,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   header: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   title: {
     fontSize: typography.size.xxxl,
@@ -374,77 +282,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
-  statsRow: {
-    flexDirection: 'row',
-    marginTop: spacing.base,
-    gap: spacing.sm,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: typography.size.xl,
-    fontWeight: typography.weight.bold,
-    color: colors.text,
-  },
-  statLabel: {
-    fontSize: typography.size.xs,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
   section: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
   sectionTitle: {
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
     color: colors.text,
     marginBottom: spacing.md,
-  },
-  emptyText: {
-    fontSize: typography.size.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  workoutItem: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-  },
-  workoutItemFirst: {
-    borderTopLeftRadius: borderRadius.lg,
-    borderTopRightRadius: borderRadius.lg,
-  },
-  workoutItemLast: {
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  workoutItemBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
-  },
-  workoutHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  workoutHeaderLeft: {
-    flex: 1,
-  },
-  workoutTitle: {
-    fontSize: typography.size.base,
-    fontWeight: typography.weight.medium,
-    color: colors.text,
-  },
-  workoutDate: {
-    fontSize: typography.size.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  chevron: {
-    fontSize: typography.size.xl,
-    color: colors.textTertiary,
-    marginLeft: spacing.sm,
   },
   buttonSpacer: {
     height: 80,
@@ -490,6 +335,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  chevron: {
+    fontSize: typography.size.xl,
+    color: colors.textTertiary,
+    marginLeft: spacing.sm,
   },
   restDayContainer: {
     alignItems: 'center',

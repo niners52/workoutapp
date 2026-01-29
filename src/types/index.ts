@@ -273,12 +273,45 @@ export interface MuscleGroupTargets {
   [key: string]: number; // muscle group id -> target sets per week
 }
 
+// Daily Goals - what you aim for each day
+export interface DailyGoals {
+  sleepHours: number;        // e.g., 7
+  proteinGrams: number;      // e.g., 150
+  trackCreatine: boolean;    // true = track it (just needs to be taken)
+  trackTraining: boolean;    // true = track it (any workout counts)
+}
+
+// Weekly Goals - aggregate targets for the week
+export interface WeeklyGoals {
+  sleepHours: number;        // e.g., 49 (7 * 7)
+  proteinDays: number;       // e.g., 6 (days hitting daily goal)
+  creatineDays: number;      // e.g., 7
+  trainingDays: number;      // e.g., 5
+}
+
+export const DEFAULT_DAILY_GOALS: DailyGoals = {
+  sleepHours: 7,
+  proteinGrams: 150,
+  trackCreatine: true,
+  trackTraining: true,
+};
+
+export const DEFAULT_WEEKLY_GOALS: WeeklyGoals = {
+  sleepHours: 49,      // 7 hours * 7 days
+  proteinDays: 6,
+  creatineDays: 7,
+  trainingDays: 5,
+};
+
 export interface UserSettings {
   weekStartDay: WeekStartDay;
-  proteinGoal: number; // grams
-  sleepGoal: number; // hours
+  proteinGoal: number; // grams - legacy, use dailyGoals.proteinGrams
+  sleepGoal: number; // hours - legacy, use dailyGoals.sleepHours
   restTimerSeconds: number;
   muscleGroupTargets: MuscleGroupTargets;
+  dailyGoals: DailyGoals;
+  weeklyGoals: WeeklyGoals;
+  creatineSupplementId?: string; // ID of the supplement to track as "creatine" for streaks
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -305,6 +338,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     lower_back: 0,
     miscellaneous: 0,
   },
+  dailyGoals: DEFAULT_DAILY_GOALS,
+  weeklyGoals: DEFAULT_WEEKLY_GOALS,
 };
 
 // Apple Health Data Types

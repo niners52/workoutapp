@@ -1,0 +1,223 @@
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { Card } from '../common';
+import { colors, typography, spacing, borderRadius } from '../../theme';
+import { DailyGoalStatus } from '../../services/streaks';
+import { DailyGoals } from '../../types';
+import { isFuture, parseISO } from 'date-fns';
+
+interface WeeklyGridProps {
+  days: DailyGoalStatus[];
+  todayIndex: number;
+  dayLabels: string[];
+  dailyGoals: DailyGoals;
+}
+
+type GoalStatus = 'met' | 'missed' | 'future' | 'na';
+
+function StatusIcon({ status }: { status: GoalStatus }) {
+  switch (status) {
+    case 'met':
+      return <Text style={styles.checkmark}>✓</Text>;
+    case 'missed':
+      return <Text style={styles.xmark}>✗</Text>;
+    case 'future':
+      return <Text style={styles.dash}>-</Text>;
+    case 'na':
+      return <Text style={styles.dash}>-</Text>;
+  }
+}
+
+function GridRow({
+  label,
+  days,
+  getStatus,
+  todayIndex,
+}: {
+  label: string;
+  days: DailyGoalStatus[];
+  getStatus: (day: DailyGoalStatus, isFutureDay: boolean) => GoalStatus;
+  todayIndex: number;
+}) {
+  return (
+    <View style={styles.gridRow}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <View style={styles.rowCells}>
+        {days.map((day, index) => {
+          const isFutureDay = isFuture(parseISO(day.date));
+          const isToday = index === todayIndex;
+          const status = getStatus(day, isFutureDay);
+
+          return (
+            <View
+              key={day.date}
+              style={[styles.cell, isToday && styles.cellToday]}
+            >
+              <StatusIcon status={status} />
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGridProps) {
+  const getSleepStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
+    if (isFutureDay) return 'future';
+    if (day.sleep.hours === 0) return 'na';
+    return day.sleep.met ? 'met' : 'missed';
+  };
+
+  const getProteinStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
+    if (isFutureDay) return 'future';
+    if (day.protein.grams === 0) return 'na';
+    return day.protein.met ? 'met' : 'missed';
+  };
+
+  const getCreatineStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
+    if (isFutureDay) return 'future';
+    return day.creatine.taken ? 'met' : 'missed';
+  };
+
+  const getTrainingStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
+    if (isFutureDay) return 'future';
+    return day.training.completed ? 'met' : 'na'; // na for rest days
+  };
+
+  return (
+    <Card style={styles.card}>
+      <Text style={styles.title}>Weekly Progress</Text>
+
+      {/* Day headers */}
+      <View style={styles.headerRow}>
+        <Text style={styles.headerLabel} />
+        <View style={styles.rowCells}>
+          {dayLabels.map((label, index) => (
+            <View
+              key={index}
+              style={[styles.headerCell, index === todayIndex && styles.headerCellToday]}
+            >
+              <Text
+                style={[
+                  styles.headerText,
+                  index === todayIndex && styles.headerTextToday,
+                ]}
+              >
+                {label}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Data rows */}
+      <GridRow
+        label="Sleep"
+        days={days}
+        getStatus={getSleepStatus}
+        todayIndex={todayIndex}
+      />
+      <GridRow
+        label="Protein"
+        days={days}
+        getStatus={getProteinStatus}
+        todayIndex={todayIndex}
+      />
+      {dailyGoals.trackCreatine && (
+        <GridRow
+          label="Creatine"
+          days={days}
+          getStatus={getCreatineStatus}
+          todayIndex={todayIndex}
+        />
+      )}
+      {dailyGoals.trackTraining && (
+        <GridRow
+          label="Training"
+          days={days}
+          getStatus={getTrainingStatus}
+          todayIndex={todayIndex}
+        />
+      )}
+    </Card>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    marginTop: spacing.md,
+  },
+  title: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  headerLabel: {
+    width: 70,
+  },
+  headerCell: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  headerCellToday: {
+    backgroundColor: colors.primary + '20',
+    borderRadius: borderRadius.sm,
+  },
+  headerText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.medium,
+    color: colors.textSecondary,
+  },
+  headerTextToday: {
+    color: colors.primary,
+    fontWeight: typography.weight.bold,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+  },
+  rowLabel: {
+    width: 70,
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  rowCells: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  cell: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  cellToday: {
+    backgroundColor: colors.primary + '10',
+    borderRadius: borderRadius.sm,
+  },
+  checkmark: {
+    fontSize: typography.size.sm,
+    color: colors.success,
+    fontWeight: typography.weight.bold,
+  },
+  xmark: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+  },
+  dash: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+  },
+});
+
+export default WeeklyGrid;

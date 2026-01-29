@@ -11,6 +11,8 @@ import {
   Routine,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
+  DEFAULT_DAILY_GOALS,
+  DEFAULT_WEEKLY_GOALS,
 } from '../types';
 import { SEED_EXERCISES } from '../data/exercises';
 import { SEED_TEMPLATES } from '../data/templates';
@@ -34,7 +36,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 6;
+const CURRENT_MIGRATION_VERSION = 7;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -112,6 +114,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 6) {
     await migrateToV6();
+  }
+
+  if (currentVersion < 7) {
+    await migrateToV7();
   }
 
   // Update migration version
@@ -302,6 +308,39 @@ async function migrateToV6(): Promise<void> {
 
   await setItem(STORAGE_KEYS.EXERCISES, updatedExercises);
   console.log('Migration to V6 complete - converted to primaryMuscleGroups array');
+}
+
+// Migration V7: Add dailyGoals and weeklyGoals to user settings
+async function migrateToV7(): Promise<void> {
+  console.log('Running migration to V7 - adding daily and weekly goals...');
+
+  const settings = await getItem<any>(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
+
+  // If settings already has dailyGoals, it's already migrated
+  if (settings.dailyGoals) {
+    console.log('Settings already have dailyGoals, skipping migration');
+    return;
+  }
+
+  // Add dailyGoals based on existing proteinGoal and sleepGoal
+  const updatedSettings = {
+    ...settings,
+    dailyGoals: {
+      sleepHours: settings.sleepGoal || DEFAULT_DAILY_GOALS.sleepHours,
+      proteinGrams: settings.proteinGoal || DEFAULT_DAILY_GOALS.proteinGrams,
+      trackCreatine: DEFAULT_DAILY_GOALS.trackCreatine,
+      trackTraining: DEFAULT_DAILY_GOALS.trackTraining,
+    },
+    weeklyGoals: {
+      sleepHours: (settings.sleepGoal || DEFAULT_DAILY_GOALS.sleepHours) * 7,
+      proteinDays: DEFAULT_WEEKLY_GOALS.proteinDays,
+      creatineDays: DEFAULT_WEEKLY_GOALS.creatineDays,
+      trainingDays: DEFAULT_WEEKLY_GOALS.trainingDays,
+    },
+  };
+
+  await setItem(STORAGE_KEYS.USER_SETTINGS, updatedSettings);
+  console.log('Migration to V7 complete - added daily and weekly goals');
 }
 
 // Reset storage (for debugging/testing)
