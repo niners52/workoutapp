@@ -1,7 +1,7 @@
 import { format, subDays, startOfWeek, addDays, isSameDay, isAfter, isBefore, startOfDay } from 'date-fns';
 import { getSleepData, getNutritionData } from './healthKit';
-import { getWorkouts, getSupplementIntakesForDate, getUserSettings, getSupplements } from './storage';
-import { DailyGoals, WeeklyGoals, UserSettings, Workout, SupplementIntake, Supplement } from '../types';
+import { getWorkouts, getSupplementIntakesForDate, getUserSettings, getSupplements, getActiveRoutine } from './storage';
+import { DailyGoals, WeeklyGoals, UserSettings, Workout, SupplementIntake, Supplement, Routine } from '../types';
 
 // Status for a single day's goal
 export interface DailyGoalStatus {
@@ -125,6 +125,29 @@ export async function getDailyGoalStatusRange(
   return statuses;
 }
 
+// Helper function to check if a day is a scheduled training day
+function isScheduledTrainingDay(date: Date, activeRoutine: Routine | undefined): boolean {
+  // If no active routine, treat every day as a potential training day (default behavior)
+  if (!activeRoutine) {
+    return true;
+  }
+
+  // Get the day of week (0 = Sunday, 1 = Monday, etc.)
+  const dayOfWeek = date.getDay();
+
+  // Find the schedule for this day of week
+  const daySchedule = activeRoutine.daySchedule.find(d => d.day === dayOfWeek);
+
+  // If no schedule found, assume it's a training day (default to stricter requirement)
+  if (!daySchedule) {
+    return true;
+  }
+
+  // If templateIds array is empty, it's a rest day
+  // If templateIds has items, it's a scheduled training day
+  return daySchedule.templateIds.length > 0;
+}
+
 // Calculate streak counts (looking backward from yesterday)
 export async function calculateStreaks(settings: UserSettings): Promise<StreakCounts> {
   const today = startOfDay(new Date());
@@ -132,6 +155,7 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
 
   // Pre-fetch data
   const workouts = await getWorkouts();
+  const activeRoutine = await getActiveRoutine();
 
   // Track streaks going backward
   let sleepStreak = 0;
@@ -149,7 +173,12 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
   if (todayStatus.sleep.met) sleepStreak++;
   if (todayStatus.protein.met) proteinStreak++;
   if (todayStatus.supplements.allTaken) creatineStreak++;
-  if (todayStatus.training.completed) trainingStreak++;
+
+  // For training streak, check if today is a rest day or if workout was completed
+  const isTodayScheduledTrainingDay = isScheduledTrainingDay(today, activeRoutine);
+  const todayTrainingMet = !isTodayScheduledTrainingDay || todayStatus.training.completed;
+  if (todayTrainingMet) trainingStreak++;
+
   if (todayStatus.perfectDay) perfectStreak++;
 
   // Look backward from yesterday (max 365 days)
@@ -182,7 +211,15 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
     }
 
     if (settings.dailyGoals.trackTraining) {
-      if (trainingStreak === i + (todayStatus.training.completed ? 1 : 0) && status.training.completed) {
+      // Check if this day was a scheduled training day
+      const wasScheduledTrainingDay = isScheduledTrainingDay(currentDate, activeRoutine);
+
+      // Streak continues if:
+      // - It's a rest day (regardless of workout), OR
+      // - It's a scheduled training day AND there was a workout
+      const shouldContinueTrainingStreak = !wasScheduledTrainingDay || status.training.completed;
+
+      if (trainingStreak === i + (todayTrainingMet ? 1 : 0) && shouldContinueTrainingStreak) {
         trainingStreak++;
         anyContinued = true;
       }
