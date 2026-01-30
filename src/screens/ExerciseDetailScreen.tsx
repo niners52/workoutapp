@@ -23,6 +23,7 @@ import {
   WorkoutLocation,
   CABLE_ACCESSORY_DISPLAY_NAMES,
   MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
+  EQUIPMENT_DISPLAY_NAMES,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { format } from 'date-fns';
@@ -210,7 +211,7 @@ export function ExerciseDetailScreen() {
           <ListItem
             title="Equipment"
             rightElement={
-              <Text style={styles.detailValue}>{exercise.equipment}</Text>
+              <Text style={styles.detailValue}>{EQUIPMENT_DISPLAY_NAMES[exercise.equipment]}</Text>
             }
             isFirst
             isLast={!exercise.cableAccessory && !exercise.machineWeightType && !getLocationDisplay()}

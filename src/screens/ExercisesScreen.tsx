@@ -13,7 +13,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { SearchBar, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, PrimaryMuscleGroup, ALL_TRACKABLE_MUSCLE_GROUPS } from '../types';
+import {
+  Exercise,
+  MUSCLE_GROUP_DISPLAY_NAMES,
+  PrimaryMuscleGroup,
+  ALL_TRACKABLE_MUSCLE_GROUPS,
+  CABLE_ACCESSORY_DISPLAY_NAMES,
+  MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
+  EQUIPMENT_DISPLAY_NAMES,
+} from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -37,6 +45,23 @@ export function ExercisesScreen() {
     return exercise.primaryMuscleGroup ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup] : 'Unknown';
   };
 
+  // Helper to format equipment details with accessories/weight type
+  const getEquipmentText = (exercise: Exercise): string => {
+    const equipmentName = EQUIPMENT_DISPLAY_NAMES[exercise.equipment];
+
+    // Add cable accessory if applicable
+    if (exercise.equipment === 'cable' && exercise.cableAccessory) {
+      return `${equipmentName} - ${CABLE_ACCESSORY_DISPLAY_NAMES[exercise.cableAccessory]}`;
+    }
+
+    // Add machine weight type if applicable
+    if (exercise.equipment === 'machine' && exercise.machineWeightType) {
+      return `${equipmentName} - ${MACHINE_WEIGHT_TYPE_DISPLAY_NAMES[exercise.machineWeightType]}`;
+    }
+
+    return equipmentName;
+  };
+
   const filteredExercises = useMemo(() => {
     let result = exercises;
 
@@ -55,7 +80,7 @@ export function ExercisesScreen() {
         e =>
           e.name.toLowerCase().includes(query) ||
           getPrimaryMusclesText(e).toLowerCase().includes(query) ||
-          e.equipment.toLowerCase().includes(query)
+          getEquipmentText(e).toLowerCase().includes(query)
       );
     }
 
@@ -107,7 +132,7 @@ export function ExercisesScreen() {
       <View style={styles.exerciseInfo}>
         <Text style={styles.exerciseName}>{exercise.name}</Text>
         <Text style={styles.exerciseDetail}>
-          {exercise.equipment} • {exercise.location === 'both' ? 'Gym & Home' : exercise.location}
+          {getEquipmentText(exercise)} | {getPrimaryMusclesText(exercise)}
         </Text>
       </View>
       {exercise.isCustom && (
