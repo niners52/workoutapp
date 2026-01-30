@@ -22,6 +22,7 @@ import {
   MUSCLE_GROUP_DISPLAY_NAMES,
   WorkoutLocation,
   CABLE_ACCESSORY_DISPLAY_NAMES,
+  MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { format } from 'date-fns';
@@ -212,7 +213,7 @@ export function ExerciseDetailScreen() {
               <Text style={styles.detailValue}>{exercise.equipment}</Text>
             }
             isFirst
-            isLast={!exercise.cableAccessory && !getLocationDisplay()}
+            isLast={!exercise.cableAccessory && !exercise.machineWeightType && !getLocationDisplay()}
           />
           {exercise.cableAccessory && (
             <ListItem
@@ -220,6 +221,17 @@ export function ExerciseDetailScreen() {
               rightElement={
                 <Text style={styles.detailValue}>
                   {CABLE_ACCESSORY_DISPLAY_NAMES[exercise.cableAccessory]}
+                </Text>
+              }
+              isLast={!getLocationDisplay()}
+            />
+          )}
+          {exercise.machineWeightType && (
+            <ListItem
+              title="Weight Type"
+              rightElement={
+                <Text style={styles.detailValue}>
+                  {MACHINE_WEIGHT_TYPE_DISPLAY_NAMES[exercise.machineWeightType]}
                 </Text>
               }
               isLast={!getLocationDisplay()}

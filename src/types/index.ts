@@ -227,6 +227,15 @@ export const ALL_CABLE_ACCESSORIES: CableAccessory[] = [
   'other',
 ];
 
+export type MachineWeightType = 'plate_loaded' | 'selectorized';
+
+export const MACHINE_WEIGHT_TYPE_DISPLAY_NAMES: Record<MachineWeightType, string> = {
+  plate_loaded: 'Plate Loaded',
+  selectorized: 'Weight Stack (Pin)',
+};
+
+export const ALL_MACHINE_WEIGHT_TYPES: MachineWeightType[] = ['plate_loaded', 'selectorized'];
+
 // Exercise
 export interface Exercise {
   id: string;
@@ -236,6 +245,7 @@ export interface Exercise {
   secondaryMuscleGroups: PrimaryMuscleGroup[];
   equipment: Equipment;
   cableAccessory?: CableAccessory; // Only used when equipment is 'cable'
+  machineWeightType?: MachineWeightType; // Only used when equipment is 'machine'
   location?: ExerciseLocation; // Deprecated: kept for backward compatibility
   locationIds?: string[]; // References WorkoutLocation.id - exercises available at these locations
   isCustom?: boolean;

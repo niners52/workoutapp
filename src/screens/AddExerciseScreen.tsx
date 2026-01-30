@@ -26,6 +26,9 @@ import {
   CableAccessory,
   ALL_CABLE_ACCESSORIES,
   CABLE_ACCESSORY_DISPLAY_NAMES,
+  MachineWeightType,
+  ALL_MACHINE_WEIGHT_TYPES,
+  MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
@@ -55,6 +58,7 @@ export function AddExerciseScreen() {
   const [name, setName] = useState('');
   const [equipment, setEquipment] = useState<Equipment>('dumbbell');
   const [cableAccessory, setCableAccessory] = useState<CableAccessory | undefined>(undefined);
+  const [machineWeightType, setMachineWeightType] = useState<MachineWeightType | undefined>(undefined);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [primaryMuscles, setPrimaryMuscles] = useState<PrimaryMuscleGroup[]>(['chest']);
   const [secondaryMuscles, setSecondaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
@@ -65,6 +69,7 @@ export function AddExerciseScreen() {
       setName(existingExercise.name);
       setEquipment(existingExercise.equipment);
       setCableAccessory(existingExercise.cableAccessory);
+      setMachineWeightType(existingExercise.machineWeightType);
       // Load primaryMuscleGroups array, with fallback to deprecated single field
       if (existingExercise.primaryMuscleGroups && existingExercise.primaryMuscleGroups.length > 0) {
         setPrimaryMuscles(existingExercise.primaryMuscleGroups);
@@ -119,6 +124,7 @@ export function AddExerciseScreen() {
         name: name.trim(),
         equipment,
         cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
+        machineWeightType: equipment === 'machine' ? machineWeightType : undefined,
         locationIds: selectedLocationIds,
         primaryMuscleGroups: primaryMuscles,
         secondaryMuscleGroups: secondaryMuscles,
@@ -134,6 +140,7 @@ export function AddExerciseScreen() {
         name: name.trim(),
         equipment,
         cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
+        machineWeightType: equipment === 'machine' ? machineWeightType : undefined,
         locationIds: selectedLocationIds,
         primaryMuscleGroups: primaryMuscles,
         secondaryMuscleGroups: secondaryMuscles,
@@ -249,6 +256,34 @@ export function AddExerciseScreen() {
                     ]}
                   >
                     {CABLE_ACCESSORY_DISPLAY_NAMES[accessory]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Card>
+        )}
+
+        {/* Machine Weight Type - Only show when equipment is machine */}
+        {equipment === 'machine' && (
+          <Card style={styles.section}>
+            <Text style={styles.label}>Weight Type (optional)</Text>
+            <View style={styles.optionsRow}>
+              {ALL_MACHINE_WEIGHT_TYPES.map(weightType => (
+                <TouchableOpacity
+                  key={weightType}
+                  style={[
+                    styles.option,
+                    machineWeightType === weightType && styles.optionSelected,
+                  ]}
+                  onPress={() => setMachineWeightType(machineWeightType === weightType ? undefined : weightType)}
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      machineWeightType === weightType && styles.optionTextSelected,
+                    ]}
+                  >
+                    {MACHINE_WEIGHT_TYPE_DISPLAY_NAMES[weightType]}
                   </Text>
                 </TouchableOpacity>
               ))}
