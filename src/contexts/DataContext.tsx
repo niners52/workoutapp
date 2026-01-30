@@ -296,20 +296,37 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     );
 
     if (existing) {
-      // Remove the intake
-      await deleteSupplementIntakeBySupplementAndDate(supplementId, date);
+      // Optimistic update: remove from state immediately
+      setSupplementIntakes(prev => prev.filter(i => i.id !== existing.id));
+
+      // Save to storage in background
+      try {
+        await deleteSupplementIntakeBySupplementAndDate(supplementId, date);
+      } catch (error) {
+        // Revert on error
+        console.error('Failed to delete supplement intake:', error);
+        setSupplementIntakes(prev => [...prev, existing]);
+      }
     } else {
-      // Add the intake
+      // Optimistic update: add to state immediately
       const intake: SupplementIntake = {
         id: `intake-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         supplementId,
         date,
         takenAt: new Date().toISOString(),
       };
-      await addSupplementIntakeToStorage(intake);
+      setSupplementIntakes(prev => [...prev, intake]);
+
+      // Save to storage in background
+      try {
+        await addSupplementIntakeToStorage(intake);
+      } catch (error) {
+        // Revert on error
+        console.error('Failed to add supplement intake:', error);
+        setSupplementIntakes(prev => prev.filter(i => i.id !== intake.id));
+      }
     }
-    await refreshSupplementIntakes();
-  }, [supplementIntakes, refreshSupplementIntakes]);
+  }, [supplementIntakes]);
 
   // Routine CRUD
   const addRoutine = useCallback(async (routine: Routine) => {

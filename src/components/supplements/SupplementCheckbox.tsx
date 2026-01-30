@@ -28,6 +28,7 @@ export function SupplementCheckbox({
       ]}
       onPress={onToggle}
       activeOpacity={0.7}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
       <View style={[styles.checkbox, isTaken && styles.checkboxChecked]}>
         {isTaken && <Text style={styles.checkmark}>✓</Text>}
