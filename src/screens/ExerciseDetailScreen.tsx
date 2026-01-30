@@ -255,14 +255,23 @@ export function ExerciseDetailScreen() {
           </Card>
         )}
 
-        {/* Edit Button - placed above charts/history for easy access */}
-        <Button
-          title="Edit Exercise"
-          onPress={handleEdit}
-          variant="secondary"
-          fullWidth
-          style={styles.editButton}
-        />
+        {/* Action Buttons */}
+        <View style={styles.buttonGroup}>
+          <Button
+            title="View Full History"
+            onPress={() => navigation.navigate('ExerciseHistory', { exerciseId })}
+            variant="primary"
+            fullWidth
+            style={styles.actionButton}
+          />
+          <Button
+            title="Edit Exercise"
+            onPress={handleEdit}
+            variant="secondary"
+            fullWidth
+            style={styles.actionButton}
+          />
+        </View>
 
         {/* Weight Progression Chart */}
         {chartSessions.length > 1 && (
@@ -601,6 +610,13 @@ const styles = StyleSheet.create({
   setDetail: {
     fontSize: typography.size.md,
     color: colors.text,
+  },
+  buttonGroup: {
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  actionButton: {
+    marginBottom: 0,
   },
   editButton: {
     marginBottom: spacing.lg,

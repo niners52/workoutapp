@@ -5,6 +5,7 @@ export { ActiveWorkoutScreen } from './ActiveWorkoutScreen';
 export { ExercisePickerScreen } from './ExercisePickerScreen';
 export { ExercisesScreen } from './ExercisesScreen';
 export { ExerciseDetailScreen } from './ExerciseDetailScreen';
+export { ExerciseHistoryScreen } from './ExerciseHistoryScreen';
 export { AddExerciseScreen } from './AddExerciseScreen';
 export { TemplatesScreen } from './TemplatesScreen';
 export { TemplateDetailScreen } from './TemplateDetailScreen';

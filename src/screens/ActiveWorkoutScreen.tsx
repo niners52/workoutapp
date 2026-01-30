@@ -17,7 +17,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { getLastSetsForExercise } from '../services/storage';
+import { getLastWorkoutForExercise } from '../services/workoutService';
 import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
@@ -84,11 +84,11 @@ export function ActiveWorkoutScreen() {
 
       const histories: Record<string, ExerciseHistory> = {};
       for (const exerciseId of activeWorkout.exerciseIds) {
-        const lastSets = await getLastSetsForExercise(exerciseId, 10);
+        const lastWorkout = await getLastWorkoutForExercise(exerciseId);
         histories[exerciseId] = {
           exerciseId,
-          sets: lastSets,
-          date: lastSets.length > 0 ? lastSets[0].loggedAt : null,
+          sets: lastWorkout?.sets || [],
+          date: lastWorkout?.date || null,
         };
       }
       setExerciseHistories(histories);
@@ -447,6 +447,7 @@ export function ActiveWorkoutScreen() {
                 onRemove={() => handleRemoveExercise(exercise)}
                 onOpenRestTimer={() => setRestTimerModalVisible(true)}
                 onSwap={() => handleOpenSwapModal(exercise)}
+                onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
                 hasSwapOptions={swapOptions.length > 0}
                 weight={weight}
                 setWeight={setWeight}
@@ -800,6 +801,7 @@ interface ExerciseCardProps {
   onRemove: () => void;
   onOpenRestTimer: () => void;
   onSwap: () => void;
+  onViewHistory: (exerciseId: string) => void;
   hasSwapOptions: boolean;
   weight: number;
   setWeight: (w: number) => void;
@@ -819,6 +821,7 @@ function ExerciseCard({
   onRemove,
   onOpenRestTimer,
   onSwap,
+  onViewHistory,
   hasSwapOptions,
   weight,
   setWeight,
@@ -872,9 +875,15 @@ function ExerciseCard({
         <View style={styles.exerciseContent}>
           {/* Last Session History */}
           {history && history.sets.length > 0 && (
-            <View style={styles.historySection}>
+            <TouchableOpacity
+              style={styles.historySection}
+              onPress={() => onViewHistory(exercise.id)}
+              activeOpacity={0.7}
+            >
               <Text style={styles.historyTitle}>
                 Last session ({history.date ? format(new Date(history.date), 'MMM d') : 'N/A'})
+                {' '}
+                <Text style={styles.viewHistoryLink}>View all →</Text>
               </Text>
               <View style={styles.historyRow}>
                 {history.sets.slice(0, 5).map((set, idx) => (
@@ -887,7 +896,7 @@ function ExerciseCard({
                   <Text style={styles.historyMore}>+{history.sets.length - 5} more</Text>
                 )}
               </View>
-            </View>
+            </TouchableOpacity>
           )}
 
           {/* Current Session Sets */}
@@ -1114,6 +1123,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.textSecondary,
     marginBottom: spacing.xs,
+  },
+  viewHistoryLink: {
+    color: colors.primary,
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.medium,
   },
   historyRow: {
     flexDirection: 'row',

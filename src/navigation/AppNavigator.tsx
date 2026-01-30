@@ -14,6 +14,7 @@ import {
   ExercisePickerScreen,
   ExercisesScreen,
   ExerciseDetailScreen,
+  ExerciseHistoryScreen,
   AddExerciseScreen,
   TemplatesScreen,
   TemplateDetailScreen,
@@ -159,6 +160,13 @@ export function AppNavigator() {
           component={ExerciseDetailScreen}
           options={{
             title: 'Exercise',
+          }}
+        />
+        <Stack.Screen
+          name="ExerciseHistory"
+          component={ExerciseHistoryScreen}
+          options={{
+            title: 'Exercise History',
           }}
         />
         <Stack.Screen
