@@ -1,5 +1,5 @@
 import { format, subDays, startOfWeek, addDays, isSameDay, isAfter, isBefore, startOfDay } from 'date-fns';
-import { getSleepData, getNutritionData } from './healthKit';
+import { getSleepData, getNutritionData } from './healthKitCache'; // Use cached version
 import { getWorkouts, getSupplementIntakesForDate, getUserSettings, getSupplements, getActiveRoutine } from './storage';
 import { DailyGoals, WeeklyGoals, UserSettings, Workout, SupplementIntake, Supplement, Routine } from '../types';
 
@@ -181,9 +181,10 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
 
   if (todayStatus.perfectDay) perfectStreak++;
 
-  // Look backward from yesterday (max 365 days)
+  // Look backward from yesterday (max 90 days for performance)
+  // Most people won't have streaks longer than 90 days anyway
   let currentDate = yesterday;
-  const maxLookback = 365;
+  const maxLookback = 90;
 
   for (let i = 0; i < maxLookback; i++) {
     const dateStr = format(currentDate, 'yyyy-MM-dd');

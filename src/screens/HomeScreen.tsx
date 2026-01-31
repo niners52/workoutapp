@@ -68,24 +68,34 @@ export function HomeScreen() {
   const activeRoutine = getActiveRoutine();
 
   const loadData = useCallback(async () => {
+    console.time('[HomeScreen] Total load time');
+
     try {
-      // Load all goals data
-      const [status, streakCounts, gridData, summary, shortfallData] = await Promise.all([
-        getTodayGoalStatus(userSettings, activeSupplements),
+      // Phase 1: Load critical data first (Today's status)
+      console.time('[HomeScreen] Phase 1: Critical data');
+      const status = await getTodayGoalStatus(userSettings, activeSupplements);
+      setTodayStatus(status);
+      console.timeEnd('[HomeScreen] Phase 1: Critical data');
+
+      // Phase 2: Load non-critical data in parallel
+      console.time('[HomeScreen] Phase 2: Non-critical data');
+      const [streakCounts, gridData, summary, shortfallData] = await Promise.all([
         calculateStreaks(userSettings),
         getWeeklyGridData(userSettings),
         getWeeklySummary(userSettings),
         calculateWeeklyShortfalls(activeRoutine, templates, exercises, userSettings),
       ]);
 
-      setTodayStatus(status);
       setStreaks(streakCounts);
       setWeeklyGridData(gridData);
       setWeeklySummary(summary);
       setShortfalls(shortfallData);
+      console.timeEnd('[HomeScreen] Phase 2: Non-critical data');
     } catch (error) {
       console.error('Failed to load home data:', error);
     }
+
+    console.timeEnd('[HomeScreen] Total load time');
   }, [userSettings, activeRoutine, templates, exercises, activeSupplements]);
 
   useFocusEffect(
@@ -157,38 +167,54 @@ export function HomeScreen() {
         </View>
 
         {/* Today's Rings */}
-        {todayStatus && userSettings.dailyGoals && (
+        {todayStatus && userSettings.dailyGoals ? (
           <TodayRings
             status={todayStatus}
             dailyGoals={userSettings.dailyGoals}
           />
+        ) : (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading today's progress...</Text>
+          </Card>
         )}
 
         {/* Streaks */}
-        {streaks && userSettings.dailyGoals && (
+        {streaks && userSettings.dailyGoals ? (
           <StreakCounters
             streaks={streaks}
             dailyGoals={userSettings.dailyGoals}
           />
+        ) : (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading streaks...</Text>
+          </Card>
         )}
 
         {/* Weekly Grid */}
-        {weeklyGridData && userSettings.dailyGoals && (
+        {weeklyGridData && userSettings.dailyGoals ? (
           <WeeklyGrid
             days={weeklyGridData.days}
             todayIndex={weeklyGridData.todayIndex}
             dayLabels={weeklyGridData.dayLabels}
             dailyGoals={userSettings.dailyGoals}
           />
+        ) : (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading weekly data...</Text>
+          </Card>
         )}
 
         {/* Weekly Totals */}
-        {weeklySummary && userSettings.weeklyGoals && userSettings.dailyGoals && (
+        {weeklySummary && userSettings.weeklyGoals && userSettings.dailyGoals ? (
           <WeeklyTotals
             summary={weeklySummary}
             weeklyGoals={userSettings.weeklyGoals}
             dailyGoals={userSettings.dailyGoals}
           />
+        ) : (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading weekly totals...</Text>
+          </Card>
         )}
 
         {/* Weekly Shortfalls */}
@@ -491,6 +517,15 @@ const styles = StyleSheet.create({
   shortfallNote: {
     fontSize: typography.size.xs,
     color: colors.warning,
+  },
+  loadingCard: {
+    marginTop: spacing.md,
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  loadingText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
   },
 });
 
