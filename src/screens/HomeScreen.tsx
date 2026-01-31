@@ -55,6 +55,7 @@ export function HomeScreen() {
   const activeSupplements = supplements.filter(s => s.isActive);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [todayStatus, setTodayStatus] = useState<DailyGoalStatus | null>(null);
   const [streaks, setStreaks] = useState<StreakCounts | null>(null);
   const [weeklyGridData, setWeeklyGridData] = useState<{
@@ -87,7 +88,11 @@ export function HomeScreen() {
 
   const loadData = useCallback(async () => {
     console.log('[HomeScreen] ========== loadData START ==========');
+    console.log('[HomeScreen] userSettings:', userSettings);
+    console.log('[HomeScreen] activeSupplements:', activeSupplements);
     console.time('[HomeScreen] Total load time');
+
+    setLoading(true);
 
     try {
       // Phase 1: Load critical data first (Today's status)
@@ -102,7 +107,7 @@ export function HomeScreen() {
 
       if (status) {
         setTodayStatus(status);
-        console.log('[HomeScreen] Phase 1: getTodayGoalStatus SUCCESS');
+        console.log('[HomeScreen] Phase 1: getTodayGoalStatus SUCCESS', status);
       } else {
         console.warn('[HomeScreen] Phase 1: getTodayGoalStatus returned null');
       }
@@ -149,28 +154,28 @@ export function HomeScreen() {
 
       if (streakCounts) {
         setStreaks(streakCounts);
-        console.log('[HomeScreen] Phase 2: calculateStreaks SUCCESS');
+        console.log('[HomeScreen] Phase 2: calculateStreaks SUCCESS', streakCounts);
       } else {
         console.warn('[HomeScreen] Phase 2: calculateStreaks returned null');
       }
 
       if (gridData) {
         setWeeklyGridData(gridData);
-        console.log('[HomeScreen] Phase 2: getWeeklyGridData SUCCESS');
+        console.log('[HomeScreen] Phase 2: getWeeklyGridData SUCCESS', gridData);
       } else {
         console.warn('[HomeScreen] Phase 2: getWeeklyGridData returned null');
       }
 
       if (summary) {
         setWeeklySummary(summary);
-        console.log('[HomeScreen] Phase 2: getWeeklySummary SUCCESS');
+        console.log('[HomeScreen] Phase 2: getWeeklySummary SUCCESS', summary);
       } else {
         console.warn('[HomeScreen] Phase 2: getWeeklySummary returned null');
       }
 
       if (shortfallData) {
         setShortfalls(shortfallData);
-        console.log('[HomeScreen] Phase 2: calculateWeeklyShortfalls SUCCESS');
+        console.log('[HomeScreen] Phase 2: calculateWeeklyShortfalls SUCCESS', shortfallData);
       } else {
         console.warn('[HomeScreen] Phase 2: calculateWeeklyShortfalls returned null');
       }
@@ -178,6 +183,9 @@ export function HomeScreen() {
       console.timeEnd('[HomeScreen] Phase 2: Non-critical data');
     } catch (error) {
       console.error('[HomeScreen] Failed to load home data:', error);
+    } finally {
+      setLoading(false);
+      console.log('[HomeScreen] setLoading(false) - loading complete');
     }
 
     console.timeEnd('[HomeScreen] Total load time');
@@ -253,31 +261,43 @@ export function HomeScreen() {
         </View>
 
         {/* Today's Rings */}
-        {todayStatus && userSettings.dailyGoals ? (
+        {loading ? (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading today's progress...</Text>
+          </Card>
+        ) : todayStatus && userSettings.dailyGoals ? (
           <TodayRings
             status={todayStatus}
             dailyGoals={userSettings.dailyGoals}
           />
         ) : (
           <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading today's progress...</Text>
+            <Text style={styles.loadingText}>No daily goals configured</Text>
           </Card>
         )}
 
         {/* Streaks */}
-        {streaks && userSettings.dailyGoals ? (
+        {loading ? (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading streaks...</Text>
+          </Card>
+        ) : streaks && userSettings.dailyGoals ? (
           <StreakCounters
             streaks={streaks}
             dailyGoals={userSettings.dailyGoals}
           />
         ) : (
           <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading streaks...</Text>
+            <Text style={styles.loadingText}>No streak data</Text>
           </Card>
         )}
 
         {/* Weekly Grid */}
-        {weeklyGridData && userSettings.dailyGoals ? (
+        {loading ? (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading weekly data...</Text>
+          </Card>
+        ) : weeklyGridData && userSettings.dailyGoals ? (
           <WeeklyGrid
             days={weeklyGridData.days}
             todayIndex={weeklyGridData.todayIndex}
@@ -286,12 +306,16 @@ export function HomeScreen() {
           />
         ) : (
           <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading weekly data...</Text>
+            <Text style={styles.loadingText}>No weekly data</Text>
           </Card>
         )}
 
         {/* Weekly Totals */}
-        {weeklySummary && userSettings.weeklyGoals && userSettings.dailyGoals ? (
+        {loading ? (
+          <Card style={styles.loadingCard}>
+            <Text style={styles.loadingText}>Loading weekly totals...</Text>
+          </Card>
+        ) : weeklySummary && userSettings.weeklyGoals && userSettings.dailyGoals ? (
           <WeeklyTotals
             summary={weeklySummary}
             weeklyGoals={userSettings.weeklyGoals}
@@ -299,7 +323,7 @@ export function HomeScreen() {
           />
         ) : (
           <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading weekly totals...</Text>
+            <Text style={styles.loadingText}>No weekly goals configured</Text>
           </Card>
         )}
 
