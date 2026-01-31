@@ -301,29 +301,6 @@ export function SettingsScreen() {
                 step={10}
               />
             </View>
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Track Creatine</Text>
-              <TouchableOpacity
-                style={[
-                  styles.toggle,
-                  userSettings.dailyGoals?.trackCreatine && styles.toggleActive,
-                ]}
-                onPress={() => {
-                  const dailyGoals = {
-                    ...(userSettings.dailyGoals || {}),
-                    trackCreatine: !userSettings.dailyGoals?.trackCreatine,
-                  };
-                  updateUserSettings({ dailyGoals });
-                }}
-              >
-                <Text style={[
-                  styles.toggleText,
-                  userSettings.dailyGoals?.trackCreatine && styles.toggleTextActive,
-                ]}>
-                  {userSettings.dailyGoals?.trackCreatine ? 'On' : 'Off'}
-                </Text>
-              </TouchableOpacity>
-            </View>
             <View style={[styles.settingRow, styles.settingRowLast]}>
               <Text style={styles.settingLabel}>Track Training</Text>
               <TouchableOpacity
@@ -380,21 +357,6 @@ export function SettingsScreen() {
                 step={1}
               />
             </View>
-            {userSettings.dailyGoals?.trackCreatine && (
-              <View style={styles.settingRow}>
-                <Text style={styles.settingLabel}>Creatine Days</Text>
-                <NumberInput
-                  value={userSettings.weeklyGoals?.creatineDays ?? 7}
-                  onChangeValue={(value) => {
-                    const weeklyGoals = { ...(userSettings.weeklyGoals || {}), creatineDays: value };
-                    updateUserSettings({ weeklyGoals });
-                  }}
-                  min={1}
-                  max={7}
-                  step={1}
-                />
-              </View>
-            )}
             <View style={[styles.settingRow, styles.settingRowLast]}>
               <Text style={styles.settingLabel}>Training Days</Text>
               <NumberInput
@@ -410,39 +372,6 @@ export function SettingsScreen() {
             </View>
           </Card>
         </View>
-
-        {/* Creatine Supplement Selection */}
-        {userSettings.dailyGoals?.trackCreatine && supplements.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Creatine Tracking</Text>
-            <Card padding="none">
-              {supplements.map((supplement, index) => (
-                <TouchableOpacity
-                  key={supplement.id}
-                  style={[
-                    styles.creatineOption,
-                    index === supplements.length - 1 && styles.creatineOptionLast,
-                    userSettings.creatineSupplementId === supplement.id && styles.creatineOptionSelected,
-                  ]}
-                  onPress={() => updateUserSettings({ creatineSupplementId: supplement.id })}
-                >
-                  <Text style={[
-                    styles.creatineOptionText,
-                    userSettings.creatineSupplementId === supplement.id && styles.creatineOptionTextSelected,
-                  ]}>
-                    {supplement.name}
-                  </Text>
-                  {userSettings.creatineSupplementId === supplement.id && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </Card>
-            <Text style={styles.hint}>
-              Select which supplement to track as your creatine for streak counting
-            </Text>
-          </View>
-        )}
 
         {/* Location Management */}
         <View style={styles.section}>
@@ -942,28 +871,6 @@ const styles = StyleSheet.create({
   },
   toggleTextActive: {
     color: colors.textOnPrimary,
-  },
-  creatineOption: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
-  },
-  creatineOptionLast: {
-    borderBottomWidth: 0,
-  },
-  creatineOptionSelected: {
-    backgroundColor: colors.primary + '10',
-  },
-  creatineOptionText: {
-    fontSize: typography.size.md,
-    color: colors.text,
-  },
-  creatineOptionTextSelected: {
-    fontWeight: typography.weight.medium,
   },
   checkmark: {
     fontSize: typography.size.md,

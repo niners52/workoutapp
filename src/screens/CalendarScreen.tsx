@@ -105,7 +105,7 @@ export function CalendarScreen() {
 
     return workouts.filter(w => {
       if (!w.completedAt) return false;
-      return isSameDay(new Date(w.startedAt), selectedDate);
+      return isSameDay(new Date(w.completedAt), selectedDate);
     });
   }, [workouts, selectedDate]);
 
