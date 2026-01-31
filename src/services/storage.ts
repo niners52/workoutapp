@@ -572,7 +572,37 @@ export async function getLastSetsForExercise(exerciseId: string, limit: number =
 // ==================== USER SETTINGS ====================
 
 export async function getUserSettings(): Promise<UserSettings> {
-  return getItem(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
+  try {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.USER_SETTINGS);
+    if (!value) {
+      return DEFAULT_USER_SETTINGS;
+    }
+
+    const stored = JSON.parse(value) as Partial<UserSettings>;
+
+    // Merge stored settings with defaults to ensure all fields exist
+    // This handles migration when new fields are added to UserSettings
+    return {
+      ...DEFAULT_USER_SETTINGS,
+      ...stored,
+      // Ensure nested objects are also merged
+      dailyGoals: {
+        ...DEFAULT_USER_SETTINGS.dailyGoals,
+        ...(stored.dailyGoals || {}),
+      },
+      weeklyGoals: {
+        ...DEFAULT_USER_SETTINGS.weeklyGoals,
+        ...(stored.weeklyGoals || {}),
+      },
+      muscleGroupTargets: {
+        ...DEFAULT_USER_SETTINGS.muscleGroupTargets,
+        ...(stored.muscleGroupTargets || {}),
+      },
+    };
+  } catch (error) {
+    console.error('Error reading user settings:', error);
+    return DEFAULT_USER_SETTINGS;
+  }
 }
 
 export async function updateUserSettings(settings: Partial<UserSettings>): Promise<void> {
