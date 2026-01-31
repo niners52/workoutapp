@@ -3,6 +3,55 @@ import { getSleepData, getNutritionData } from './healthKitCache'; // Use cached
 import { getWorkouts, getSupplementIntakesForDate, getUserSettings, getSupplements, getActiveRoutine } from './storage';
 import { DailyGoals, WeeklyGoals, UserSettings, Workout, SupplementIntake, Supplement, Routine } from '../types';
 
+// Timeout helper to prevent hanging HealthKit calls
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
+
+// Batch fetch HealthKit data for a date range (parallel fetching with timeouts)
+async function batchGetHealthData(
+  startDate: Date,
+  endDate: Date
+): Promise<{
+  sleep: Map<string, number>;
+  protein: Map<string, number>;
+}> {
+  const sleepMap = new Map<string, number>();
+  const proteinMap = new Map<string, number>();
+
+  const current = new Date(startDate);
+  const dates: Date[] = [];
+
+  // Collect all dates we need
+  while (current <= endDate) {
+    dates.push(new Date(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  // Fetch all dates in parallel with 2s timeout per call
+  await Promise.all(dates.map(async (date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    try {
+      const [sleepData, nutritionData] = await Promise.all([
+        withTimeout(getSleepData(date), 2000, null),
+        withTimeout(getNutritionData(date), 2000, null),
+      ]);
+      sleepMap.set(dateStr, sleepData?.totalHours || 0);
+      proteinMap.set(dateStr, nutritionData?.protein || 0);
+    } catch (e) {
+      console.error(`Failed to fetch health data for ${dateStr}:`, e);
+      // Use defaults on failure
+      sleepMap.set(dateStr, 0);
+      proteinMap.set(dateStr, 0);
+    }
+  }));
+
+  return { sleep: sleepMap, protein: proteinMap };
+}
+
 // Status for a single day's goal
 export interface DailyGoalStatus {
   date: string; // YYYY-MM-DD
@@ -152,10 +201,77 @@ function isScheduledTrainingDay(date: Date, activeRoutine: Routine | undefined):
 export async function calculateStreaks(settings: UserSettings): Promise<StreakCounts> {
   const today = startOfDay(new Date());
   const yesterday = subDays(today, 1);
+  const maxLookback = 90;
+  const lookbackStart = subDays(today, maxLookback);
 
-  // Pre-fetch data
-  const workouts = await getWorkouts();
-  const activeRoutine = await getActiveRoutine();
+  console.time('[Streaks] Total calculation time');
+
+  // Pre-fetch ALL data in parallel
+  console.time('[Streaks] Batch fetch all data');
+  const [workouts, activeRoutine, allSupplements, healthData] = await Promise.all([
+    getWorkouts(),
+    getActiveRoutine(),
+    getSupplements(),
+    batchGetHealthData(lookbackStart, today),
+  ]);
+  console.timeEnd('[Streaks] Batch fetch all data');
+
+  const activeSupplements = allSupplements.filter(s => s.isActive);
+
+  // Pre-fetch supplement intakes for all dates
+  console.time('[Streaks] Fetch supplement intakes');
+  const intakesByDate = new Map<string, SupplementIntake[]>();
+  const intakePromises: Promise<void>[] = [];
+  for (let i = 0; i <= maxLookback; i++) {
+    const date = subDays(today, i);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    intakePromises.push(
+      getSupplementIntakesForDate(dateStr).then(intakes => {
+        intakesByDate.set(dateStr, intakes);
+      })
+    );
+  }
+  await Promise.all(intakePromises);
+  console.timeEnd('[Streaks] Fetch supplement intakes');
+
+  // Helper to calculate status from pre-fetched data (synchronous)
+  const getStatusForDate = (date: Date): DailyGoalStatus => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const sleepHours = healthData.sleep.get(dateStr) || 0;
+    const proteinGrams = healthData.protein.get(dateStr) || 0;
+    const intakes = intakesByDate.get(dateStr) || [];
+
+    const sleepMet = sleepHours >= settings.dailyGoals.sleepHours;
+    const proteinMet = proteinGrams >= settings.dailyGoals.proteinGrams;
+
+    const totalSupplements = activeSupplements.length;
+    const takenSupplements = activeSupplements.filter(s =>
+      intakes.some(i => i.supplementId === s.id)
+    ).length;
+    const allSupplementsTaken = totalSupplements > 0 && takenSupplements === totalSupplements;
+
+    let trainingCompleted = false;
+    if (settings.dailyGoals.trackTraining) {
+      trainingCompleted = workouts.some(w => {
+        if (!w.completedAt) return false;
+        const workoutDate = format(new Date(w.completedAt), 'yyyy-MM-dd');
+        return workoutDate === dateStr;
+      });
+    }
+
+    const perfectDay = sleepMet && proteinMet &&
+      (totalSupplements === 0 || allSupplementsTaken) &&
+      (!settings.dailyGoals.trackTraining || trainingCompleted);
+
+    return {
+      date: dateStr,
+      sleep: { hours: sleepHours, met: sleepMet },
+      protein: { grams: proteinGrams, met: proteinMet },
+      supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken },
+      training: { completed: trainingCompleted },
+      perfectDay,
+    };
+  };
 
   // Track streaks going backward
   let sleepStreak = 0;
@@ -164,10 +280,8 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
   let trainingStreak = 0;
   let perfectStreak = 0;
 
-  // Also check if today's goals are already met
-  const todayDateStr = format(today, 'yyyy-MM-dd');
-  const todayIntakes = await getSupplementIntakesForDate(todayDateStr);
-  const todayStatus = await getDailyGoalStatus(today, settings, workouts, todayIntakes);
+  // Check today's goals
+  const todayStatus = getStatusForDate(today);
 
   // Count today if goals are met
   if (todayStatus.sleep.met) sleepStreak++;
@@ -181,15 +295,11 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
 
   if (todayStatus.perfectDay) perfectStreak++;
 
-  // Look backward from yesterday (max 90 days for performance)
-  // Most people won't have streaks longer than 90 days anyway
+  // Look backward from yesterday
   let currentDate = yesterday;
-  const maxLookback = 90;
 
   for (let i = 0; i < maxLookback; i++) {
-    const dateStr = format(currentDate, 'yyyy-MM-dd');
-    const intakes = await getSupplementIntakesForDate(dateStr);
-    const status = await getDailyGoalStatus(currentDate, settings, workouts, intakes);
+    const status = getStatusForDate(currentDate);
 
     // Check each streak
     let anyContinued = false;
@@ -212,12 +322,7 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
     }
 
     if (settings.dailyGoals.trackTraining) {
-      // Check if this day was a scheduled training day
       const wasScheduledTrainingDay = isScheduledTrainingDay(currentDate, activeRoutine);
-
-      // Streak continues if:
-      // - It's a rest day (regardless of workout), OR
-      // - It's a scheduled training day AND there was a workout
       const shouldContinueTrainingStreak = !wasScheduledTrainingDay || status.training.completed;
 
       if (trainingStreak === i + (todayTrainingMet ? 1 : 0) && shouldContinueTrainingStreak) {
@@ -236,6 +341,8 @@ export async function calculateStreaks(settings: UserSettings): Promise<StreakCo
 
     currentDate = subDays(currentDate, 1);
   }
+
+  console.timeEnd('[Streaks] Total calculation time');
 
   return {
     sleep: sleepStreak,
@@ -258,7 +365,30 @@ export async function getWeeklyGridData(
   const weekStartsOn = settings.weekStartDay === 'sunday' ? 0 : 1;
   const weekStart = startOfWeek(today, { weekStartsOn });
 
-  // Get status for all 7 days
+  // Pre-fetch ALL data in parallel
+  const [workouts, allSupplements, healthData] = await Promise.all([
+    getWorkouts(),
+    getSupplements(),
+    batchGetHealthData(weekStart, today),
+  ]);
+
+  const activeSupplements = allSupplements.filter(s => s.isActive);
+
+  // Pre-fetch supplement intakes for the week
+  const intakePromises: Promise<{ date: string; intakes: SupplementIntake[] }>[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(weekStart, i);
+    if (isAfter(date, today)) continue;
+    const dateStr = format(date, 'yyyy-MM-dd');
+    intakePromises.push(
+      getSupplementIntakesForDate(dateStr).then(intakes => ({ date: dateStr, intakes }))
+    );
+  }
+
+  const intakesArray = await Promise.all(intakePromises);
+  const intakesByDate = new Map(intakesArray.map(({ date, intakes }) => [date, intakes]));
+
+  // Build grid data synchronously using pre-fetched data
   const days: DailyGoalStatus[] = [];
   const dayLabels: string[] = [];
   let todayIndex = -1;
@@ -266,8 +396,6 @@ export async function getWeeklyGridData(
   for (let i = 0; i < 7; i++) {
     const date = addDays(weekStart, i);
     const dateStr = format(date, 'yyyy-MM-dd');
-    const intakes = await getSupplementIntakesForDate(dateStr);
-    const workouts = await getWorkouts();
 
     // Only get data for past days and today
     if (isAfter(date, today)) {
@@ -281,8 +409,41 @@ export async function getWeeklyGridData(
         perfectDay: false,
       });
     } else {
-      const status = await getDailyGoalStatus(date, settings, workouts, intakes);
-      days.push(status);
+      // Use pre-fetched data
+      const sleepHours = healthData.sleep.get(dateStr) || 0;
+      const proteinGrams = healthData.protein.get(dateStr) || 0;
+      const intakes = intakesByDate.get(dateStr) || [];
+
+      const sleepMet = sleepHours >= settings.dailyGoals.sleepHours;
+      const proteinMet = proteinGrams >= settings.dailyGoals.proteinGrams;
+
+      const totalSupplements = activeSupplements.length;
+      const takenSupplements = activeSupplements.filter(s =>
+        intakes.some(i => i.supplementId === s.id)
+      ).length;
+      const allSupplementsTaken = totalSupplements > 0 && takenSupplements === totalSupplements;
+
+      let trainingCompleted = false;
+      if (settings.dailyGoals.trackTraining) {
+        trainingCompleted = workouts.some(w => {
+          if (!w.completedAt) return false;
+          const workoutDate = format(new Date(w.completedAt), 'yyyy-MM-dd');
+          return workoutDate === dateStr;
+        });
+      }
+
+      const perfectDay = sleepMet && proteinMet &&
+        (totalSupplements === 0 || allSupplementsTaken) &&
+        (!settings.dailyGoals.trackTraining || trainingCompleted);
+
+      days.push({
+        date: dateStr,
+        sleep: { hours: sleepHours, met: sleepMet },
+        protein: { grams: proteinGrams, met: proteinMet },
+        supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken },
+        training: { completed: trainingCompleted },
+        perfectDay,
+      });
     }
 
     // Track today's index
@@ -304,12 +465,34 @@ export async function getWeeklySummary(settings: UserSettings): Promise<WeeklySu
   const weekStartsOn = settings.weekStartDay === 'sunday' ? 0 : 1;
   const weekStart = startOfWeek(today, { weekStartsOn });
 
+  // Pre-fetch ALL data in parallel
+  const [workouts, allSupplements, healthData] = await Promise.all([
+    getWorkouts(),
+    getSupplements(),
+    batchGetHealthData(weekStart, today),
+  ]);
+
+  const activeSupplements = allSupplements.filter(s => s.isActive);
+
+  // Pre-fetch supplement intakes for the week
+  const intakePromises: Promise<{ date: string; intakes: SupplementIntake[] }>[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(weekStart, i);
+    if (isAfter(date, today)) continue;
+    const dateStr = format(date, 'yyyy-MM-dd');
+    intakePromises.push(
+      getSupplementIntakesForDate(dateStr).then(intakes => ({ date: dateStr, intakes }))
+    );
+  }
+
+  const intakesArray = await Promise.all(intakePromises);
+  const intakesByDate = new Map(intakesArray.map(({ date, intakes }) => [date, intakes]));
+
+  // Calculate totals using pre-fetched data
   let sleepHours = 0;
   let proteinDays = 0;
   let creatineDays = 0;
   let trainingDays = 0;
-
-  const workouts = await getWorkouts();
 
   for (let i = 0; i < 7; i++) {
     const date = addDays(weekStart, i);
@@ -318,13 +501,34 @@ export async function getWeeklySummary(settings: UserSettings): Promise<WeeklySu
     if (isAfter(date, today)) continue;
 
     const dateStr = format(date, 'yyyy-MM-dd');
-    const intakes = await getSupplementIntakesForDate(dateStr);
-    const status = await getDailyGoalStatus(date, settings, workouts, intakes);
+    const sleepHoursForDay = healthData.sleep.get(dateStr) || 0;
+    const proteinGrams = healthData.protein.get(dateStr) || 0;
+    const intakes = intakesByDate.get(dateStr) || [];
 
-    sleepHours += status.sleep.hours;
-    if (status.protein.met) proteinDays++;
-    if (status.supplements.allTaken) creatineDays++;
-    if (status.training.completed) trainingDays++;
+    sleepHours += sleepHoursForDay;
+
+    if (proteinGrams >= settings.dailyGoals.proteinGrams) {
+      proteinDays++;
+    }
+
+    const totalSupplements = activeSupplements.length;
+    const takenSupplements = activeSupplements.filter(s =>
+      intakes.some(i => i.supplementId === s.id)
+    ).length;
+    if (totalSupplements > 0 && takenSupplements === totalSupplements) {
+      creatineDays++;
+    }
+
+    if (settings.dailyGoals.trackTraining) {
+      const trainingCompleted = workouts.some(w => {
+        if (!w.completedAt) return false;
+        const workoutDate = format(new Date(w.completedAt), 'yyyy-MM-dd');
+        return workoutDate === dateStr;
+      });
+      if (trainingCompleted) {
+        trainingDays++;
+      }
+    }
   }
 
   return {
