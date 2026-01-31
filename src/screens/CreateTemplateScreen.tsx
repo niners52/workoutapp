@@ -14,7 +14,10 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { v4 as uuidv4 } from 'uuid';
+import * as Crypto from 'expo-crypto';
+
+// Generate UUID using expo-crypto (uuid library crashes on React Native)
+const generateId = () => Crypto.randomUUID();
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
@@ -63,30 +66,62 @@ export function CreateTemplateScreen() {
   const [showAllExercises, setShowAllExercises] = useState(false);
 
   const handleSave = async () => {
+    console.log('Save button pressed'); // Debug
+    console.log('Form data:', { name, templateType, locationId, exerciseIds: selectedExercises }); // Debug
+
+    // Validate name
     if (!name.trim()) {
+      console.log('Validation failed: name is empty'); // Debug
       Alert.alert('Error', 'Please enter a template name');
       return;
     }
 
+    // Validate type
+    if (!templateType) {
+      console.log('Validation failed: no template type'); // Debug
+      Alert.alert('Error', 'Please select a template type');
+      return;
+    }
+
+    // Validate location
+    if (!locationId) {
+      console.log('Validation failed: no location'); // Debug
+      Alert.alert('Error', 'Please select a location');
+      return;
+    }
+
+    // Validate exercises
     if (selectedExercises.length === 0) {
+      console.log('Validation failed: no exercises selected'); // Debug
       Alert.alert('Error', 'Please add at least one exercise');
       return;
     }
 
-    const template: Template = {
-      id: existingTemplate?.id || uuidv4(),
-      name: name.trim(),
-      type: templateType,
-      locationId,
-      exerciseIds: selectedExercises,
-    };
+    try {
+      const template: Template = {
+        id: existingTemplate?.id || generateId(),
+        name: name.trim(),
+        type: templateType,
+        locationId,
+        exerciseIds: selectedExercises,
+      };
 
-    if (existingTemplate) {
-      await updateTemplate(template);
-    } else {
-      await addTemplate(template);
+      console.log('Saving template:', template); // Debug
+
+      if (existingTemplate) {
+        console.log('Updating existing template'); // Debug
+        await updateTemplate(template);
+      } else {
+        console.log('Creating new template'); // Debug
+        await addTemplate(template);
+      }
+
+      console.log('Template saved successfully'); // Debug
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error saving template:', error); // Debug
+      Alert.alert('Error', 'Failed to save template. Please try again.');
     }
-    navigation.goBack();
   };
 
   const toggleExercise = (exerciseId: string) => {
