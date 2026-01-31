@@ -67,35 +67,121 @@ export function HomeScreen() {
 
   const activeRoutine = getActiveRoutine();
 
+  // Timeout wrapper for debugging hanging promises
+  const withTimeout = async <T,>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    name: string
+  ): Promise<T | null> => {
+    const timeout = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error(`${name} timed out after ${timeoutMs}ms`)), timeoutMs)
+    );
+
+    try {
+      return await Promise.race([promise, timeout]);
+    } catch (error) {
+      console.error(`[HomeScreen] ${name} failed:`, error);
+      return null;
+    }
+  };
+
   const loadData = useCallback(async () => {
+    console.log('[HomeScreen] ========== loadData START ==========');
     console.time('[HomeScreen] Total load time');
 
     try {
       // Phase 1: Load critical data first (Today's status)
+      console.log('[HomeScreen] Phase 1: Starting getTodayGoalStatus...');
       console.time('[HomeScreen] Phase 1: Critical data');
-      const status = await getTodayGoalStatus(userSettings, activeSupplements);
-      setTodayStatus(status);
+
+      const status = await withTimeout(
+        getTodayGoalStatus(userSettings, activeSupplements),
+        10000,
+        'getTodayGoalStatus'
+      );
+
+      if (status) {
+        setTodayStatus(status);
+        console.log('[HomeScreen] Phase 1: getTodayGoalStatus SUCCESS');
+      } else {
+        console.warn('[HomeScreen] Phase 1: getTodayGoalStatus returned null');
+      }
       console.timeEnd('[HomeScreen] Phase 1: Critical data');
 
-      // Phase 2: Load non-critical data in parallel
+      // Phase 2: Load non-critical data in parallel with individual timeouts
+      console.log('[HomeScreen] Phase 2: Starting parallel data load...');
       console.time('[HomeScreen] Phase 2: Non-critical data');
-      const [streakCounts, gridData, summary, shortfallData] = await Promise.all([
+
+      console.log('[HomeScreen] Phase 2: Starting calculateStreaks...');
+      const streaksPromise = withTimeout(
         calculateStreaks(userSettings),
+        10000,
+        'calculateStreaks'
+      );
+
+      console.log('[HomeScreen] Phase 2: Starting getWeeklyGridData...');
+      const gridDataPromise = withTimeout(
         getWeeklyGridData(userSettings),
+        10000,
+        'getWeeklyGridData'
+      );
+
+      console.log('[HomeScreen] Phase 2: Starting getWeeklySummary...');
+      const summaryPromise = withTimeout(
         getWeeklySummary(userSettings),
+        10000,
+        'getWeeklySummary'
+      );
+
+      console.log('[HomeScreen] Phase 2: Starting calculateWeeklyShortfalls...');
+      const shortfallPromise = withTimeout(
         calculateWeeklyShortfalls(activeRoutine, templates, exercises, userSettings),
+        10000,
+        'calculateWeeklyShortfalls'
+      );
+
+      const [streakCounts, gridData, summary, shortfallData] = await Promise.all([
+        streaksPromise,
+        gridDataPromise,
+        summaryPromise,
+        shortfallPromise,
       ]);
 
-      setStreaks(streakCounts);
-      setWeeklyGridData(gridData);
-      setWeeklySummary(summary);
-      setShortfalls(shortfallData);
+      if (streakCounts) {
+        setStreaks(streakCounts);
+        console.log('[HomeScreen] Phase 2: calculateStreaks SUCCESS');
+      } else {
+        console.warn('[HomeScreen] Phase 2: calculateStreaks returned null');
+      }
+
+      if (gridData) {
+        setWeeklyGridData(gridData);
+        console.log('[HomeScreen] Phase 2: getWeeklyGridData SUCCESS');
+      } else {
+        console.warn('[HomeScreen] Phase 2: getWeeklyGridData returned null');
+      }
+
+      if (summary) {
+        setWeeklySummary(summary);
+        console.log('[HomeScreen] Phase 2: getWeeklySummary SUCCESS');
+      } else {
+        console.warn('[HomeScreen] Phase 2: getWeeklySummary returned null');
+      }
+
+      if (shortfallData) {
+        setShortfalls(shortfallData);
+        console.log('[HomeScreen] Phase 2: calculateWeeklyShortfalls SUCCESS');
+      } else {
+        console.warn('[HomeScreen] Phase 2: calculateWeeklyShortfalls returned null');
+      }
+
       console.timeEnd('[HomeScreen] Phase 2: Non-critical data');
     } catch (error) {
-      console.error('Failed to load home data:', error);
+      console.error('[HomeScreen] Failed to load home data:', error);
     }
 
     console.timeEnd('[HomeScreen] Total load time');
+    console.log('[HomeScreen] ========== loadData END ==========');
   }, [userSettings, activeRoutine, templates, exercises, activeSupplements]);
 
   useFocusEffect(
