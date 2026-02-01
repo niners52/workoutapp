@@ -12,10 +12,17 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card, ListItem, NumberInput, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { exportToJSON, exportToCSV, resetStorage } from '../services/storage';
+import {
+  exportToJSON,
+  exportToCSV,
+  resetStorage,
+  validateBackupData,
+  restoreFromBackup,
+} from '../services/storage';
 import { clearHealthKitCache } from '../services/healthKitCache';
 import {
   WeekStartDay,
@@ -122,6 +129,80 @@ export function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const handleRestoreBackup = async () => {
+    try {
+      // Pick a JSON file
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      // Read the file content
+      const fileUri = result.assets[0].uri;
+      const response = await fetch(fileUri);
+      const jsonString = await response.text();
+
+      // Validate and get counts
+      const validation = await validateBackupData(jsonString);
+
+      if (!validation.isValid) {
+        Alert.alert('Invalid Backup', validation.error || 'The selected file is not a valid backup');
+        return;
+      }
+
+      const { counts, data } = validation;
+
+      // Show confirmation with counts
+      const currentCounts = `You have:
+• ${counts!.current.exercises} exercises
+• ${counts!.current.templates} templates
+• ${counts!.current.workouts} workouts
+• ${counts!.current.sets} sets
+• ${counts!.current.routines} routines
+• ${counts!.current.supplements} supplements`;
+
+      const backupCounts = `The backup contains:
+• ${counts!.backup.exercises} exercises
+• ${counts!.backup.templates} templates
+• ${counts!.backup.workouts} workouts
+• ${counts!.backup.sets} sets
+• ${counts!.backup.routines} routines
+• ${counts!.backup.supplements} supplements`;
+
+      Alert.alert(
+        'Restore from Backup',
+        `This will replace ALL your data with the backup.\n\n${currentCounts}\n\n${backupCounts}\n\nContinue?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Restore',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await restoreFromBackup(data);
+                await refreshAll();
+                Alert.alert(
+                  'Restore Complete',
+                  'Your data has been restored from the backup successfully'
+                );
+              } catch (error) {
+                console.error('Restore failed:', error);
+                Alert.alert('Restore Failed', 'Failed to restore data from backup');
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error selecting backup file:', error);
+      Alert.alert('Error', 'Failed to read backup file');
+    }
   };
 
   const handleMuscleTargetChange = (muscleGroup: string, value: number) => {
@@ -646,6 +727,12 @@ export function SettingsScreen() {
               title="Export as CSV"
               subtitle="Sets only, spreadsheet compatible"
               onPress={handleExportCSV}
+              showChevron
+            />
+            <ListItem
+              title="Restore from Backup"
+              subtitle="Replace all data with a JSON backup"
+              onPress={handleRestoreBackup}
               showChevron
             />
             <ListItem

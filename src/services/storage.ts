@@ -620,18 +620,34 @@ export interface ExportData {
   workouts: Workout[];
   sets: WorkoutSet[];
   userSettings: UserSettings;
+  supplements?: Supplement[];
+  supplementIntakes?: SupplementIntake[];
+  routines?: Routine[];
   exportedAt: string;
   version: string;
 }
 
 export async function exportAllData(): Promise<ExportData> {
-  const [exercises, templates, locations, workouts, sets, userSettings] = await Promise.all([
+  const [
+    exercises,
+    templates,
+    locations,
+    workouts,
+    sets,
+    userSettings,
+    supplements,
+    supplementIntakes,
+    routines,
+  ] = await Promise.all([
     getExercises(),
     getTemplates(),
     getLocations(),
     getWorkouts(),
     getSets(),
     getUserSettings(),
+    getSupplements(),
+    getSupplementIntakes(),
+    getRoutines(),
   ]);
 
   return {
@@ -641,6 +657,9 @@ export async function exportAllData(): Promise<ExportData> {
     workouts,
     sets,
     userSettings,
+    supplements,
+    supplementIntakes,
+    routines,
     exportedAt: new Date().toISOString(),
     version: '1.0.0',
   };
@@ -695,6 +714,127 @@ export async function importData(data: ExportData): Promise<void> {
   await setItem(STORAGE_KEYS.WORKOUTS, data.workouts);
   await setItem(STORAGE_KEYS.SETS, data.sets);
   await setItem(STORAGE_KEYS.USER_SETTINGS, data.userSettings);
+}
+
+// ==================== RESTORE FROM BACKUP ====================
+
+export interface RestoreDataCounts {
+  current: {
+    exercises: number;
+    templates: number;
+    workouts: number;
+    sets: number;
+    locations: number;
+    supplements: number;
+    routines: number;
+  };
+  backup: {
+    exercises: number;
+    templates: number;
+    workouts: number;
+    sets: number;
+    locations: number;
+    supplements: number;
+    routines: number;
+  };
+}
+
+/**
+ * Validates backup data structure and returns counts for confirmation
+ */
+export async function validateBackupData(jsonString: string): Promise<{
+  isValid: boolean;
+  data?: any;
+  counts?: RestoreDataCounts;
+  error?: string;
+}> {
+  try {
+    const data = JSON.parse(jsonString);
+
+    // Validate required fields
+    if (!data.exercises || !Array.isArray(data.exercises)) {
+      return { isValid: false, error: 'Invalid backup: missing exercises array' };
+    }
+    if (!data.workouts || !Array.isArray(data.workouts)) {
+      return { isValid: false, error: 'Invalid backup: missing workouts array' };
+    }
+    if (!data.sets || !Array.isArray(data.sets)) {
+      return { isValid: false, error: 'Invalid backup: missing sets array' };
+    }
+
+    // Get current data counts
+    const [
+      currentExercises,
+      currentTemplates,
+      currentWorkouts,
+      currentSets,
+      currentLocations,
+      currentSupplements,
+      currentRoutines,
+    ] = await Promise.all([
+      getExercises(),
+      getTemplates(),
+      getWorkouts(),
+      getSets(),
+      getLocations(),
+      getSupplements(),
+      getRoutines(),
+    ]);
+
+    const counts: RestoreDataCounts = {
+      current: {
+        exercises: currentExercises.length,
+        templates: currentTemplates.length,
+        workouts: currentWorkouts.length,
+        sets: currentSets.length,
+        locations: currentLocations.length,
+        supplements: currentSupplements.length,
+        routines: currentRoutines.length,
+      },
+      backup: {
+        exercises: data.exercises?.length || 0,
+        templates: data.templates?.length || 0,
+        workouts: data.workouts?.length || 0,
+        sets: data.sets?.length || 0,
+        locations: data.locations?.length || 0,
+        supplements: data.supplements?.length || 0,
+        routines: data.routines?.length || 0,
+      },
+    };
+
+    return { isValid: true, data, counts };
+  } catch (error) {
+    return {
+      isValid: false,
+      error: error instanceof Error ? error.message : 'Failed to parse JSON',
+    };
+  }
+}
+
+/**
+ * Restores all data from a backup, including supplements and routines
+ */
+export async function restoreFromBackup(data: any): Promise<void> {
+  // Import core data
+  await setItem(STORAGE_KEYS.EXERCISES, data.exercises || []);
+  await setItem(STORAGE_KEYS.TEMPLATES, data.templates || []);
+  await setItem(STORAGE_KEYS.WORKOUTS, data.workouts || []);
+  await setItem(STORAGE_KEYS.SETS, data.sets || []);
+  await setItem(STORAGE_KEYS.USER_SETTINGS, data.userSettings || DEFAULT_USER_SETTINGS);
+
+  // Import optional data (may not exist in older backups)
+  if (data.locations) {
+    await setItem(STORAGE_KEYS.LOCATIONS, data.locations);
+  }
+  if (data.supplements) {
+    await setItem(STORAGE_KEYS.SUPPLEMENTS, data.supplements);
+  }
+  if (data.supplementIntakes) {
+    await setItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, data.supplementIntakes);
+  }
+  if (data.routines) {
+    await setItem(STORAGE_KEYS.ROUTINES, data.routines);
+  }
 }
 
 // ==================== SUPPLEMENTS ====================
