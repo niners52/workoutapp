@@ -4,6 +4,14 @@ import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutr
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+// Timeout helper to prevent hanging HealthKit calls
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
+  ]);
+}
+
 interface CachedData<T> {
   data: T;
   timestamp: number;
@@ -43,9 +51,9 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
       }
     }
 
-    // Cache miss - fetch from HealthKit
+    // Cache miss - fetch from HealthKit with timeout
     console.log(`[Cache MISS] Fetching sleep data for ${dateStr}`);
-    const fresh = await getHealthKitSleep(date);
+    const fresh = await withTimeout(getHealthKitSleep(date), 3000);
 
     // Store in cache
     if (fresh) {
@@ -61,8 +69,8 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
     return fresh;
   } catch (error) {
     console.error('Error getting cached sleep data:', error);
-    // Fallback to direct fetch on error
-    return getHealthKitSleep(date);
+    // DO NOT call HealthKit again - just return null
+    return null;
   }
 }
 
@@ -85,9 +93,9 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
       }
     }
 
-    // Cache miss - fetch from HealthKit
+    // Cache miss - fetch from HealthKit with timeout
     console.log(`[Cache MISS] Fetching nutrition data for ${dateStr}`);
-    const fresh = await getHealthKitNutrition(date);
+    const fresh = await withTimeout(getHealthKitNutrition(date), 3000);
 
     // Store in cache
     if (fresh) {
@@ -103,8 +111,8 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     return fresh;
   } catch (error) {
     console.error('Error getting cached nutrition data:', error);
-    // Fallback to direct fetch on error
-    return getHealthKitNutrition(date);
+    // DO NOT call HealthKit again - just return null
+    return null;
   }
 }
 
