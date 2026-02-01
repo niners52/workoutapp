@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -52,7 +52,12 @@ export function HomeScreen() {
 
   // Get today's date string for supplements
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const activeSupplements = supplements.filter(s => s.isActive);
+
+  // Memoize to prevent infinite re-render loop
+  const activeSupplements = useMemo(
+    () => supplements.filter(s => s.isActive),
+    [supplements]
+  );
 
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -66,7 +71,14 @@ export function HomeScreen() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
 
-  const activeRoutine = getActiveRoutine();
+  // Memoize to prevent infinite re-render loop
+  const activeRoutine = useMemo(
+    () => getActiveRoutine(),
+    [getActiveRoutine]
+  );
+
+  // Ref to prevent concurrent loads
+  const isLoadingRef = useRef(false);
 
   // Timeout wrapper for debugging hanging promises
   const withTimeout = async <T,>(
@@ -87,20 +99,32 @@ export function HomeScreen() {
   };
 
   const loadData = useCallback(async () => {
+    // Prevent concurrent loads
+    if (isLoadingRef.current) {
+      console.log('[HomeScreen] Already loading, skipping');
+      return;
+    }
+
+    isLoadingRef.current = true;
     console.log('[HomeScreen] ========== loadData START ==========');
     console.log('[HomeScreen] userSettings:', userSettings);
-    console.log('[HomeScreen] activeSupplements:', activeSupplements);
     console.time('[HomeScreen] Total load time');
 
     setLoading(true);
 
     try {
+      // Read current values inside the function
+      const currentSupplements = supplements.filter(s => s.isActive);
+      const currentRoutine = getActiveRoutine();
+
+      console.log('[HomeScreen] activeSupplements:', currentSupplements);
+
       // Phase 1: Load critical data first (Today's status)
       console.log('[HomeScreen] Phase 1: Starting getTodayGoalStatus...');
       console.time('[HomeScreen] Phase 1: Critical data');
 
       const status = await withTimeout(
-        getTodayGoalStatus(userSettings, activeSupplements),
+        getTodayGoalStatus(userSettings, currentSupplements),
         10000,
         'getTodayGoalStatus'
       );
@@ -140,7 +164,7 @@ export function HomeScreen() {
 
       console.log('[HomeScreen] Phase 2: Starting calculateWeeklyShortfalls...');
       const shortfallPromise = withTimeout(
-        calculateWeeklyShortfalls(activeRoutine, templates, exercises, userSettings),
+        calculateWeeklyShortfalls(currentRoutine, templates, exercises, userSettings),
         10000,
         'calculateWeeklyShortfalls'
       );
@@ -185,26 +209,31 @@ export function HomeScreen() {
       console.error('[HomeScreen] Failed to load home data:', error);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
       console.log('[HomeScreen] setLoading(false) - loading complete');
     }
 
     console.timeEnd('[HomeScreen] Total load time');
     console.log('[HomeScreen] ========== loadData END ==========');
-  }, [userSettings, activeRoutine, templates, exercises, activeSupplements]);
+  }, [userSettings, supplements, templates, exercises, getActiveRoutine]);
+
+  // Use ref pattern to prevent useFocusEffect from re-registering on every render
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
 
   useFocusEffect(
     useCallback(() => {
       refreshWorkouts();
-      loadData();
-    }, [loadData, refreshWorkouts])
+      loadDataRef.current();
+    }, [refreshWorkouts])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshWorkouts();
-    await loadData();
+    await loadDataRef.current();
     setRefreshing(false);
-  }, [refreshWorkouts, loadData]);
+  }, [refreshWorkouts]);
 
   // Week dates for header
   const today = new Date();
