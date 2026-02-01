@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,15 +15,23 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Card } from '../components/common';
 import { CalendarView, GoalStatusMap } from '../components/calendar';
 import { useData } from '../contexts/DataContext';
-import { getDailyGoalStatus } from '../services/streaks';
+import { getSleepData, getNutritionData } from '../services/healthKitCache';
 import { Workout } from '../types';
 import { RootStackParamList } from '../navigation/types';
+
+// Timeout helper to prevent hanging HealthKit calls
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function CalendarScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { workouts, templates, userSettings, supplements, refreshWorkouts } = useData();
+  const { workouts, templates, userSettings, supplements, supplementIntakes, refreshWorkouts } = useData();
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -39,57 +47,92 @@ export function CalendarScreen() {
     const monthStart = startOfMonth(currentMonth);
     const monthEnd = endOfMonth(currentMonth);
     const today = startOfDay(new Date());
-
-    // Get all days in the month
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
     const statusMap: GoalStatusMap = {};
+    const activeSupps = supplements.filter(s => s.isActive);
 
-    // Load goal status for each day (skip future days)
+    // Pre-fetch HealthKit data for the visible month range in parallel
+    // Use timeouts so HealthKit failures don't block the calendar
+    const healthDataMap = new Map<string, { sleepMet: boolean; proteinMet: boolean }>();
+
+    const healthPromises = days
+      .filter(day => !isAfter(startOfDay(day), today))
+      .map(async (day) => {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        try {
+          const [sleepData, nutritionData] = await Promise.all([
+            withTimeout(getSleepData(day), 2000, null),
+            withTimeout(getNutritionData(day), 2000, null),
+          ]);
+          healthDataMap.set(dateStr, {
+            sleepMet: (sleepData?.totalHours || 0) >= userSettings.dailyGoals.sleepHours,
+            proteinMet: (nutritionData?.protein || 0) >= userSettings.dailyGoals.proteinGrams,
+          });
+        } catch {
+          healthDataMap.set(dateStr, { sleepMet: false, proteinMet: false });
+        }
+      });
+
+    // Wait for all health data (with timeouts, max ~2 seconds)
+    await Promise.all(healthPromises);
+
+    // Now build the status map synchronously
     for (const day of days) {
       if (isAfter(startOfDay(day), today)) continue;
-
       const dateStr = format(day, 'yyyy-MM-dd');
-      const status = await getDailyGoalStatus(day, userSettings, workouts, undefined, activeSupplements);
 
-      // Count goals met (0-4)
       let goalsMetCount = 0;
-      if (status.sleep.met) goalsMetCount++;
-      if (status.protein.met) goalsMetCount++;
-      if (status.supplements.total === 0 || status.supplements.allTaken) goalsMetCount++;
-      if (status.training.completed) goalsMetCount++;
+
+      // Sleep
+      const health = healthDataMap.get(dateStr);
+      if (health?.sleepMet) goalsMetCount++;
+
+      // Protein
+      if (health?.proteinMet) goalsMetCount++;
+
+      // Supplements
+      const dayIntakes = supplementIntakes.filter(i => i.date === dateStr);
+      const allSupplementsTaken = activeSupps.length > 0 &&
+        activeSupps.every(s => dayIntakes.some(i => i.supplementId === s.id));
+      if (activeSupps.length === 0 || allSupplementsTaken) goalsMetCount++;
+
+      // Training - check workouts using completedAt
+      const hasWorkout = workouts.some(w => {
+        if (!w.completedAt) return false;
+        const workoutDate = format(new Date(w.completedAt), 'yyyy-MM-dd');
+        return workoutDate === dateStr;
+      });
+      if (hasWorkout) goalsMetCount++;
 
       statusMap[dateStr] = goalsMetCount;
     }
 
     setGoalStatusMap(statusMap);
-  }, [currentMonth, userSettings, workouts, activeSupplements]);
+  }, [currentMonth, userSettings, workouts, supplements, supplementIntakes]);
+
+  // Use ref pattern to prevent re-render loop
+  const loadGoalStatusRef = useRef(loadGoalStatus);
+  loadGoalStatusRef.current = loadGoalStatus;
 
   useFocusEffect(
     useCallback(() => {
       refreshWorkouts();
-      loadGoalStatus();
-    }, [loadGoalStatus, refreshWorkouts])
+      loadGoalStatusRef.current();
+    }, [refreshWorkouts])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshWorkouts();
-    await loadGoalStatus();
+    await loadGoalStatusRef.current();
     setRefreshing(false);
-  }, [refreshWorkouts, loadGoalStatus]);
+  }, [refreshWorkouts]);
 
   const handleMonthChange = useCallback((date: Date) => {
     setCurrentMonth(date);
     setSelectedDate(null);
   }, []);
-
-  // When month changes, reload goal status
-  useFocusEffect(
-    useCallback(() => {
-      loadGoalStatus();
-    }, [loadGoalStatus])
-  );
 
   const handleDayPress = useCallback((date: Date) => {
     setSelectedDate(date);
