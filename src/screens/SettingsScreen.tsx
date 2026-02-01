@@ -16,6 +16,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Card, ListItem, NumberInput, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { exportToJSON, exportToCSV, resetStorage } from '../services/storage';
+import { clearHealthKitCache } from '../services/healthKitCache';
 import {
   WeekStartDay,
   WorkoutLocation,
@@ -100,6 +101,23 @@ export function SettingsScreen() {
             await resetStorage();
             await refreshAll();
             Alert.alert('Data Reset', 'All data has been reset to defaults');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClearHealthCache = () => {
+    Alert.alert(
+      'Clear Health Cache',
+      'This will clear all cached HealthKit data (sleep & nutrition). The app will re-fetch fresh data from Apple Health.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear Cache',
+          onPress: async () => {
+            await clearHealthKitCache();
+            Alert.alert('Cache Cleared', 'HealthKit cache has been cleared');
           },
         },
       ]
@@ -640,6 +658,12 @@ export function SettingsScreen() {
               title="HealthKit Data"
               subtitle="View raw Apple Health data for debugging"
               onPress={() => navigation.navigate('HealthKitData')}
+              showChevron
+            />
+            <ListItem
+              title="Clear Health Cache"
+              subtitle="Re-fetch fresh data from Apple Health"
+              onPress={handleClearHealthCache}
               showChevron
               isLast
             />

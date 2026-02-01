@@ -1,10 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format, isToday } from 'date-fns';
+import { format } from 'date-fns';
 import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition } from './healthKit';
 import { SleepData, NutritionData } from '../types';
 
-const CACHE_DURATION_TODAY = 5 * 60 * 1000; // 5 minutes for today
-const CACHE_DURATION_PAST = 7 * 24 * 60 * 60 * 1000; // 7 days for past (effectively permanent)
+/**
+ * Get cache duration based on how old the date is:
+ * - Today: 5 minutes (data still coming in)
+ * - Yesterday: 1 hour (MFP might still sync)
+ * - 2+ days ago: 7 days (data is final)
+ */
+function getCacheDuration(date: Date): number {
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 5 * 60 * 1000;       // 5 min
+  if (diffDays === 1) return 60 * 60 * 1000;       // 1 hour
+  return 7 * 24 * 60 * 60 * 1000;                  // 7 days
+}
 
 interface CachedData<T> {
   data: T | null;
@@ -26,7 +38,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
 export async function getSleepData(date: Date): Promise<SleepData | null> {
   const dateStr = format(date, 'yyyy-MM-dd');
   const cacheKey = CACHE_KEYS.SLEEP(dateStr);
-  const cacheDuration = isToday(date) ? CACHE_DURATION_TODAY : CACHE_DURATION_PAST;
+  const cacheDuration = getCacheDuration(date);
 
   try {
     const cached = await AsyncStorage.getItem(cacheKey);
@@ -54,7 +66,7 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
 export async function getNutritionData(date: Date): Promise<NutritionData | null> {
   const dateStr = format(date, 'yyyy-MM-dd');
   const cacheKey = CACHE_KEYS.NUTRITION(dateStr);
-  const cacheDuration = isToday(date) ? CACHE_DURATION_TODAY : CACHE_DURATION_PAST;
+  const cacheDuration = getCacheDuration(date);
 
   try {
     const cached = await AsyncStorage.getItem(cacheKey);
