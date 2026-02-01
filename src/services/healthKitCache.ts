@@ -1,30 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format } from 'date-fns';
+import { format, isToday } from 'date-fns';
 import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition } from './healthKit';
+import { SleepData, NutritionData } from '../types';
 
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-// Timeout helper to prevent hanging HealthKit calls
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race([
-    promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))
-  ]);
-}
+const CACHE_DURATION_TODAY = 5 * 60 * 1000; // 5 minutes for today
+const CACHE_DURATION_PAST = 7 * 24 * 60 * 60 * 1000; // 7 days for past (effectively permanent)
 
 interface CachedData<T> {
-  data: T;
+  data: T | null;
   timestamp: number;
-}
-
-interface SleepData {
-  totalHours: number;
-  date: string;
-}
-
-interface NutritionData {
-  protein: number;
-  date: string;
 }
 
 const CACHE_KEYS = {
@@ -32,93 +16,104 @@ const CACHE_KEYS = {
   NUTRITION: (date: string) => `healthkit_nutrition_${date}`,
 };
 
-/**
- * Get sleep data with caching
- * Cache duration: 5 minutes
- */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export async function getSleepData(date: Date): Promise<SleepData | null> {
   const dateStr = format(date, 'yyyy-MM-dd');
   const cacheKey = CACHE_KEYS.SLEEP(dateStr);
+  const cacheDuration = isToday(date) ? CACHE_DURATION_TODAY : CACHE_DURATION_PAST;
 
   try {
-    // Check cache first
     const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
-      const { data, timestamp } = JSON.parse(cached) as CachedData<SleepData>;
-      if (Date.now() - timestamp < CACHE_DURATION) {
-        console.log(`[Cache HIT] Sleep data for ${dateStr}`);
-        return data;
+      const parsed = JSON.parse(cached) as CachedData<SleepData>;
+      if (Date.now() - parsed.timestamp < cacheDuration) {
+        return parsed.data;
       }
     }
 
-    // Cache miss - fetch from HealthKit with timeout
-    console.log(`[Cache MISS] Fetching sleep data for ${dateStr}`);
     const fresh = await withTimeout(getHealthKitSleep(date), 3000);
 
-    // Store in cache
-    if (fresh) {
-      await AsyncStorage.setItem(
-        cacheKey,
-        JSON.stringify({
-          data: fresh,
-          timestamp: Date.now(),
-        } as CachedData<SleepData>)
-      );
-    }
+    await AsyncStorage.setItem(
+      cacheKey,
+      JSON.stringify({ data: fresh, timestamp: Date.now() })
+    ).catch(() => {});
 
     return fresh;
   } catch (error) {
     console.error('Error getting cached sleep data:', error);
-    // DO NOT call HealthKit again - just return null
     return null;
   }
 }
 
-/**
- * Get nutrition data with caching
- * Cache duration: 5 minutes
- */
 export async function getNutritionData(date: Date): Promise<NutritionData | null> {
   const dateStr = format(date, 'yyyy-MM-dd');
   const cacheKey = CACHE_KEYS.NUTRITION(dateStr);
+  const cacheDuration = isToday(date) ? CACHE_DURATION_TODAY : CACHE_DURATION_PAST;
 
   try {
-    // Check cache first
     const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
-      const { data, timestamp } = JSON.parse(cached) as CachedData<NutritionData>;
-      if (Date.now() - timestamp < CACHE_DURATION) {
-        console.log(`[Cache HIT] Nutrition data for ${dateStr}`);
-        return data;
+      const parsed = JSON.parse(cached) as CachedData<NutritionData>;
+      if (Date.now() - parsed.timestamp < cacheDuration) {
+        return parsed.data;
       }
     }
 
-    // Cache miss - fetch from HealthKit with timeout
-    console.log(`[Cache MISS] Fetching nutrition data for ${dateStr}`);
     const fresh = await withTimeout(getHealthKitNutrition(date), 3000);
 
-    // Store in cache
-    if (fresh) {
-      await AsyncStorage.setItem(
-        cacheKey,
-        JSON.stringify({
-          data: fresh,
-          timestamp: Date.now(),
-        } as CachedData<NutritionData>)
-      );
-    }
+    await AsyncStorage.setItem(
+      cacheKey,
+      JSON.stringify({ data: fresh, timestamp: Date.now() })
+    ).catch(() => {});
 
     return fresh;
   } catch (error) {
     console.error('Error getting cached nutrition data:', error);
-    // DO NOT call HealthKit again - just return null
     return null;
   }
 }
 
 /**
- * Clear all HealthKit cache
+ * Batch fetch health data for multiple dates.
+ * Processes in chunks of 5 to avoid overwhelming HealthKit.
+ * Each individual call has a 3-second timeout and caching.
  */
+export async function batchFetchHealthData(
+  dates: Date[]
+): Promise<Map<string, { sleepHours: number; proteinGrams: number }>> {
+  const result = new Map<string, { sleepHours: number; proteinGrams: number }>();
+
+  const chunkSize = 5;
+  for (let i = 0; i < dates.length; i += chunkSize) {
+    const chunk = dates.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (date) => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        try {
+          const [sleep, nutrition] = await Promise.all([
+            getSleepData(date),
+            getNutritionData(date),
+          ]);
+          result.set(dateStr, {
+            sleepHours: sleep?.totalHours || 0,
+            proteinGrams: nutrition?.protein || 0,
+          });
+        } catch {
+          result.set(dateStr, { sleepHours: 0, proteinGrams: 0 });
+        }
+      })
+    );
+  }
+
+  return result;
+}
+
 export async function clearHealthKitCache(): Promise<void> {
   try {
     const keys = await AsyncStorage.getAllKeys();
@@ -130,9 +125,6 @@ export async function clearHealthKitCache(): Promise<void> {
   }
 }
 
-/**
- * Clear cache for a specific date
- */
 export async function clearCacheForDate(date: Date): Promise<void> {
   const dateStr = format(date, 'yyyy-MM-dd');
   try {

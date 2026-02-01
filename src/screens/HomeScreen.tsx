@@ -30,7 +30,16 @@ import {
   calculateWeeklyShortfalls,
   MuscleGroupShortfall,
 } from '../services/analytics';
-import { DAY_NAMES } from '../types';
+import {
+  getWorkouts,
+  getSupplements,
+  getSupplementIntakes,
+  getUserSettings,
+  getRoutines,
+  getTemplates,
+  getExercises,
+} from '../services/storage';
+import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 
@@ -50,17 +59,14 @@ export function HomeScreen() {
   } = useData();
   const { isWorkoutActive } = useWorkout();
 
-  // Get today's date string for supplements
+  // Today's date for supplements
   const todayStr = format(new Date(), 'yyyy-MM-dd');
-
-  // Memoize to prevent infinite re-render loop
   const activeSupplements = useMemo(
     () => supplements.filter(s => s.isActive),
     [supplements]
   );
 
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [todayStatus, setTodayStatus] = useState<DailyGoalStatus | null>(null);
   const [streaks, setStreaks] = useState<StreakCounts | null>(null);
   const [weeklyGridData, setWeeklyGridData] = useState<{
@@ -71,169 +77,87 @@ export function HomeScreen() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
 
-  // Memoize to prevent infinite re-render loop
-  const activeRoutine = useMemo(
-    () => getActiveRoutine(),
-    [getActiveRoutine]
-  );
+  // Memoize active routine for render
+  const activeRoutine = useMemo(() => getActiveRoutine(), [getActiveRoutine]);
 
-  // Ref to prevent concurrent loads
-  const isLoadingRef = useRef(false);
+  // Fallbacks for settings that might not have been migrated
+  const dailyGoals = userSettings.dailyGoals || DEFAULT_DAILY_GOALS;
+  const weeklyGoals = userSettings.weeklyGoals || DEFAULT_WEEKLY_GOALS;
 
-  // Timeout wrapper for debugging hanging promises
-  const withTimeout = async <T,>(
-    promise: Promise<T>,
-    timeoutMs: number,
-    name: string
-  ): Promise<T | null> => {
-    const timeout = new Promise<null>((_, reject) =>
-      setTimeout(() => reject(new Error(`${name} timed out after ${timeoutMs}ms`)), timeoutMs)
-    );
-
-    try {
-      return await Promise.race([promise, timeout]);
-    } catch (error) {
-      console.error(`[HomeScreen] ${name} failed:`, error);
-      return null;
-    }
-  };
-
+  /**
+   * Load all computed data.
+   * Fetches fresh from storage directly to avoid stale closures.
+   * No DataContext dependencies = no re-render loop.
+   */
   const loadData = useCallback(async () => {
-    // Prevent concurrent loads
-    if (isLoadingRef.current) {
-      console.log('[HomeScreen] Already loading, skipping');
-      return;
-    }
-
-    isLoadingRef.current = true;
-    console.log('[HomeScreen] ========== loadData START ==========');
-    console.log('[HomeScreen] userSettings:', userSettings);
-    console.time('[HomeScreen] Total load time');
-
-    setLoading(true);
-
     try {
-      // Read current values inside the function
-      const currentSupplements = supplements.filter(s => s.isActive);
-      const currentRoutine = getActiveRoutine();
-
-      console.log('[HomeScreen] activeSupplements:', currentSupplements);
-
-      // Phase 1: Load critical data first (Today's status)
-      console.log('[HomeScreen] Phase 1: Starting getTodayGoalStatus...');
-      console.time('[HomeScreen] Phase 1: Critical data');
-
-      const status = await withTimeout(
-        getTodayGoalStatus(userSettings, currentSupplements),
-        10000,
-        'getTodayGoalStatus'
-      );
-
-      if (status) {
-        setTodayStatus(status);
-        console.log('[HomeScreen] Phase 1: getTodayGoalStatus SUCCESS', status);
-      } else {
-        console.warn('[HomeScreen] Phase 1: getTodayGoalStatus returned null');
-      }
-      console.timeEnd('[HomeScreen] Phase 1: Critical data');
-
-      // Phase 2: Load non-critical data in parallel with individual timeouts
-      console.log('[HomeScreen] Phase 2: Starting parallel data load...');
-      console.time('[HomeScreen] Phase 2: Non-critical data');
-
-      console.log('[HomeScreen] Phase 2: Starting calculateStreaks...');
-      const streaksPromise = withTimeout(
-        calculateStreaks(userSettings),
-        10000,
-        'calculateStreaks'
-      );
-
-      console.log('[HomeScreen] Phase 2: Starting getWeeklyGridData...');
-      const gridDataPromise = withTimeout(
-        getWeeklyGridData(userSettings),
-        10000,
-        'getWeeklyGridData'
-      );
-
-      console.log('[HomeScreen] Phase 2: Starting getWeeklySummary...');
-      const summaryPromise = withTimeout(
-        getWeeklySummary(userSettings),
-        10000,
-        'getWeeklySummary'
-      );
-
-      console.log('[HomeScreen] Phase 2: Starting calculateWeeklyShortfalls...');
-      const shortfallPromise = withTimeout(
-        calculateWeeklyShortfalls(currentRoutine, templates, exercises, userSettings),
-        10000,
-        'calculateWeeklyShortfalls'
-      );
-
-      const [streakCounts, gridData, summary, shortfallData] = await Promise.all([
-        streaksPromise,
-        gridDataPromise,
-        summaryPromise,
-        shortfallPromise,
+      // Phase 1: Fetch fresh local data from storage (fast)
+      const [
+        freshWorkouts,
+        freshSupplements,
+        freshIntakes,
+        freshSettings,
+        freshRoutines,
+        freshTemplates,
+        freshExercises,
+      ] = await Promise.all([
+        getWorkouts(),
+        getSupplements(),
+        getSupplementIntakes(),
+        getUserSettings(),
+        getRoutines(),
+        getTemplates(),
+        getExercises(),
       ]);
 
-      if (streakCounts) {
-        setStreaks(streakCounts);
-        console.log('[HomeScreen] Phase 2: calculateStreaks SUCCESS', streakCounts);
-      } else {
-        console.warn('[HomeScreen] Phase 2: calculateStreaks returned null');
+      const activeSupps = freshSupplements.filter(s => s.isActive);
+      const currentRoutine = freshRoutines.find(r => r.isActive);
+
+      // Phase 2: Calculate shortfalls (no HealthKit, fast)
+      try {
+        const shortfallData = await calculateWeeklyShortfalls(
+          currentRoutine, freshTemplates, freshExercises, freshSettings
+        );
+        if (shortfallData) setShortfalls(shortfallData);
+      } catch (e) {
+        console.error('[HomeScreen] Shortfalls error:', e);
       }
 
-      if (gridData) {
-        setWeeklyGridData(gridData);
-        console.log('[HomeScreen] Phase 2: getWeeklyGridData SUCCESS', gridData);
-      } else {
-        console.warn('[HomeScreen] Phase 2: getWeeklyGridData returned null');
-      }
+      // Phase 3: Calculate HealthKit-dependent data (all in parallel)
+      const [status, streakCounts, gridData, summary] = await Promise.all([
+        getTodayGoalStatus(freshSettings, freshWorkouts, freshIntakes, activeSupps)
+          .catch(e => { console.error('[HomeScreen] Today status error:', e); return null; }),
+        calculateStreaks(freshSettings, freshWorkouts, freshIntakes, activeSupps, currentRoutine)
+          .catch(e => { console.error('[HomeScreen] Streaks error:', e); return null; }),
+        getWeeklyGridData(freshSettings, freshWorkouts, freshIntakes, activeSupps)
+          .catch(e => { console.error('[HomeScreen] Grid error:', e); return null; }),
+        getWeeklySummary(freshSettings, freshWorkouts, freshIntakes, activeSupps)
+          .catch(e => { console.error('[HomeScreen] Summary error:', e); return null; }),
+      ]);
 
-      if (summary) {
-        setWeeklySummary(summary);
-        console.log('[HomeScreen] Phase 2: getWeeklySummary SUCCESS', summary);
-      } else {
-        console.warn('[HomeScreen] Phase 2: getWeeklySummary returned null');
-      }
-
-      if (shortfallData) {
-        setShortfalls(shortfallData);
-        console.log('[HomeScreen] Phase 2: calculateWeeklyShortfalls SUCCESS', shortfallData);
-      } else {
-        console.warn('[HomeScreen] Phase 2: calculateWeeklyShortfalls returned null');
-      }
-
-      console.timeEnd('[HomeScreen] Phase 2: Non-critical data');
+      if (status) setTodayStatus(status);
+      if (streakCounts) setStreaks(streakCounts);
+      if (gridData) setWeeklyGridData(gridData);
+      if (summary) setWeeklySummary(summary);
     } catch (error) {
-      console.error('[HomeScreen] Failed to load home data:', error);
-    } finally {
-      setLoading(false);
-      isLoadingRef.current = false;
-      console.log('[HomeScreen] setLoading(false) - loading complete');
+      console.error('[HomeScreen] Failed to load:', error);
     }
+  }, []);
 
-    console.timeEnd('[HomeScreen] Total load time');
-    console.log('[HomeScreen] ========== loadData END ==========');
-  }, [userSettings, supplements, templates, exercises, getActiveRoutine]);
-
-  // Use ref pattern to prevent useFocusEffect from re-registering on every render
-  const loadDataRef = useRef(loadData);
-  loadDataRef.current = loadData;
-
+  // Load data on screen focus - stable deps, no re-render loop
   useFocusEffect(
     useCallback(() => {
       refreshWorkouts();
-      loadDataRef.current();
-    }, [refreshWorkouts])
+      loadData();
+    }, [refreshWorkouts, loadData])
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshWorkouts();
-    await loadDataRef.current();
+    await loadData();
     setRefreshing(false);
-  }, [refreshWorkouts]);
+  }, [refreshWorkouts, loadData]);
 
   // Week dates for header
   const today = new Date();
@@ -242,7 +166,7 @@ export function HomeScreen() {
   const weekEnd = endOfWeek(today, { weekStartsOn: dayOffset as 0 | 1 });
 
   // Get today's planned workouts from active routine
-  const todayDayOfWeek = today.getDay(); // 0-6 (Sunday-Saturday)
+  const todayDayOfWeek = today.getDay();
   const todayPlannedTemplateIds =
     activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek)?.templateIds || [];
   const todayPlannedTemplates = todayPlannedTemplateIds
@@ -289,70 +213,54 @@ export function HomeScreen() {
           </Text>
         </View>
 
-        {/* Today's Rings */}
-        {loading ? (
+        {/* Today's Rings - shows when data arrives */}
+        {todayStatus ? (
+          <TodayRings
+            status={todayStatus}
+            dailyGoals={dailyGoals}
+          />
+        ) : (
           <Card style={styles.loadingCard}>
             <Text style={styles.loadingText}>Loading today's progress...</Text>
           </Card>
-        ) : todayStatus && userSettings.dailyGoals ? (
-          <TodayRings
-            status={todayStatus}
-            dailyGoals={userSettings.dailyGoals}
-          />
-        ) : (
-          <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>No daily goals configured</Text>
-          </Card>
         )}
 
-        {/* Streaks */}
-        {loading ? (
+        {/* Streaks - shows when data arrives */}
+        {streaks ? (
+          <StreakCounters
+            streaks={streaks}
+            dailyGoals={dailyGoals}
+          />
+        ) : (
           <Card style={styles.loadingCard}>
             <Text style={styles.loadingText}>Loading streaks...</Text>
           </Card>
-        ) : streaks && userSettings.dailyGoals ? (
-          <StreakCounters
-            streaks={streaks}
-            dailyGoals={userSettings.dailyGoals}
-          />
-        ) : (
-          <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>No streak data</Text>
-          </Card>
         )}
 
-        {/* Weekly Grid */}
-        {loading ? (
-          <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading weekly data...</Text>
-          </Card>
-        ) : weeklyGridData && userSettings.dailyGoals ? (
+        {/* Weekly Grid - shows when data arrives */}
+        {weeklyGridData ? (
           <WeeklyGrid
             days={weeklyGridData.days}
             todayIndex={weeklyGridData.todayIndex}
             dayLabels={weeklyGridData.dayLabels}
-            dailyGoals={userSettings.dailyGoals}
+            dailyGoals={dailyGoals}
           />
         ) : (
           <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>No weekly data</Text>
+            <Text style={styles.loadingText}>Loading weekly data...</Text>
           </Card>
         )}
 
-        {/* Weekly Totals */}
-        {loading ? (
-          <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>Loading weekly totals...</Text>
-          </Card>
-        ) : weeklySummary && userSettings.weeklyGoals && userSettings.dailyGoals ? (
+        {/* Weekly Totals - shows when data arrives */}
+        {weeklySummary ? (
           <WeeklyTotals
             summary={weeklySummary}
-            weeklyGoals={userSettings.weeklyGoals}
-            dailyGoals={userSettings.dailyGoals}
+            weeklyGoals={weeklyGoals}
+            dailyGoals={dailyGoals}
           />
         ) : (
           <Card style={styles.loadingCard}>
-            <Text style={styles.loadingText}>No weekly goals configured</Text>
+            <Text style={styles.loadingText}>Loading weekly totals...</Text>
           </Card>
         )}
 
@@ -595,7 +503,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-  // Shortfall styles
   onTrackCard: {
     alignItems: 'center',
   },
