@@ -29,6 +29,7 @@ import { clearHealthKitCache } from '../services/healthKitCache';
 import { resetMigration } from '../services/cloudSync';
 import {
   WeekStartDay,
+  UnitSystem,
   WorkoutLocation,
   Supplement,
   ALL_TRACKABLE_MUSCLE_GROUPS,
@@ -387,6 +388,45 @@ export function SettingsScreen() {
                 </View>
               }
               isFirst
+            />
+            <ListItem
+              title="Units"
+              rightElement={
+                <View style={styles.segmentedControl}>
+                  <TouchableOpacity
+                    style={[
+                      styles.segment,
+                      userSettings.units === 'imperial' && styles.segmentSelected,
+                    ]}
+                    onPress={() => updateUserSettings({ units: 'imperial' })}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        userSettings.units === 'imperial' && styles.segmentTextSelected,
+                      ]}
+                    >
+                      lbs
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.segment,
+                      userSettings.units === 'metric' && styles.segmentSelected,
+                    ]}
+                    onPress={() => updateUserSettings({ units: 'metric' })}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        userSettings.units === 'metric' && styles.segmentTextSelected,
+                      ]}
+                    >
+                      kg
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              }
             />
             <View style={styles.settingRow}>
               <Text style={styles.settingLabel}>Rest Timer (seconds)</Text>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   Modal,
   Platform,
+  Animated,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -18,8 +19,10 @@ import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
-import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES } from '../types';
+import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, UnitSystem } from '../types';
 import { RootStackParamList } from '../navigation/types';
+import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
+import { checkForPR, PRCheckResult, prEmoji, formatPRLabel } from '../services/personalRecords';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -48,7 +51,7 @@ interface ExerciseHistory {
 
 export function ActiveWorkoutScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings, locations } = useData();
+  const { exercises, templates, userSettings, locations, workouts, sets } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -76,6 +79,11 @@ export function ActiveWorkoutScreen() {
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestStep, setSuggestStep] = useState<'location' | 'exercises'>('location');
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [prCelebration, setPrCelebration] = useState<{ exerciseId: string; type: string; emoji: string } | null>(null);
+  const prAnimValue = useRef(new Animated.Value(0)).current;
+
+  // Get units from settings
+  const units = userSettings?.units || 'imperial';
 
   // Load history for all exercises when workout starts
   useEffect(() => {
@@ -126,10 +134,55 @@ export function ActiveWorkoutScreen() {
     ? templates.find(t => t.id === activeWorkout.workout.templateId)
     : null;
 
+  // Build workoutDates map for PR calculation
+  const workoutDates = new Map<string, string>();
+  workouts.forEach(w => {
+    workoutDates.set(w.id, w.completedAt || w.startedAt);
+  });
+
+  const showPRCelebration = (exerciseId: string, prResult: PRCheckResult) => {
+    // Priority: weight > e1rm > volume > reps
+    let prType: string;
+    if (prResult.isWeightPR) {
+      prType = 'weight';
+    } else if (prResult.isE1rmPR) {
+      prType = 'e1rm';
+    } else if (prResult.isVolumePR) {
+      prType = 'volume';
+    } else if (prResult.isRepPR) {
+      prType = 'reps';
+    } else {
+      return;
+    }
+
+    setPrCelebration({ exerciseId, type: prType, emoji: prEmoji(prType as any) });
+
+    // Animate in
+    Animated.sequence([
+      Animated.timing(prAnimValue, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(2500),
+      Animated.timing(prAnimValue, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => {
+      setPrCelebration(null);
+    });
+  };
+
   const handleLogSet = async () => {
     if (!selectedExerciseId) return;
 
+    // Check for PR before logging (compare against all previous sets)
+    const prResult = checkForPR(
+      { exerciseId: selectedExerciseId, weight, reps, workoutId: activeWorkout.workout.id },
+      sets.filter(s => s.exerciseId === selectedExerciseId),
+      workoutDates
+    );
+
     await logSet(reps, weight, selectedExerciseId);
+
+    // Show PR celebration if any PR was set
+    if (prResult.isPR) {
+      showPRCelebration(selectedExerciseId, prResult);
+    }
 
     // Don't collapse - keep exercise expanded so user can continue logging
     // The rest timer will start automatically from logSet
@@ -454,6 +507,9 @@ export function ActiveWorkoutScreen() {
                 reps={reps}
                 setReps={setReps}
                 restTimerSeconds={customRestTime}
+                units={units}
+                prCelebration={prCelebration}
+                prAnimValue={prAnimValue}
               />
             );
           })}
@@ -750,9 +806,10 @@ export function ActiveWorkoutScreen() {
 interface PreviousSetIndicatorProps {
   currentSets: WorkoutSet[];
   history: ExerciseHistory | undefined;
+  units: UnitSystem;
 }
 
-function PreviousSetIndicator({ currentSets, history }: PreviousSetIndicatorProps) {
+function PreviousSetIndicator({ currentSets, history, units }: PreviousSetIndicatorProps) {
   // Determine what to show: last set from current session, or last set from previous session
   const lastCurrentSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
   const lastHistorySet = history?.sets?.[0];
@@ -763,7 +820,7 @@ function PreviousSetIndicator({ currentSets, history }: PreviousSetIndicatorProp
       <View style={styles.previousSetContainer}>
         <Text style={styles.previousSetLabel}>Previous set:</Text>
         <Text style={styles.previousSetValue}>
-          {lastCurrentSet.weight} lbs × {lastCurrentSet.reps} reps
+          {formatWeight(lastCurrentSet.weight, units)} × {lastCurrentSet.reps} reps
         </Text>
       </View>
     );
@@ -776,7 +833,7 @@ function PreviousSetIndicator({ currentSets, history }: PreviousSetIndicatorProp
       <View style={styles.previousSetContainer}>
         <Text style={styles.previousSetLabel}>Last time ({historyDate}):</Text>
         <Text style={styles.previousSetValue}>
-          {lastHistorySet.weight} lbs × {lastHistorySet.reps} reps
+          {formatWeight(lastHistorySet.weight, units)} × {lastHistorySet.reps} reps
         </Text>
       </View>
     );
@@ -808,6 +865,9 @@ interface ExerciseCardProps {
   reps: number;
   setReps: (r: number) => void;
   restTimerSeconds: number;
+  units: UnitSystem;
+  prCelebration: { exerciseId: string; type: string; emoji: string } | null;
+  prAnimValue: Animated.Value;
 }
 
 function ExerciseCard({
@@ -828,7 +888,11 @@ function ExerciseCard({
   reps,
   setReps,
   restTimerSeconds,
+  units,
+  prCelebration,
+  prAnimValue,
 }: ExerciseCardProps) {
+  const showPR = prCelebration?.exerciseId === exercise.id;
   return (
     <Card style={styles.exerciseCard} padding="none">
       {/* Exercise Header - Always visible */}
@@ -870,6 +934,20 @@ function ExerciseCard({
         </View>
       </TouchableOpacity>
 
+      {/* PR Celebration Banner */}
+      {showPR && (
+        <Animated.View
+          style={[
+            styles.prBanner,
+            { opacity: prAnimValue, transform: [{ scale: prAnimValue.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }] },
+          ]}
+        >
+          <Text style={styles.prBannerText}>
+            {prCelebration.emoji} {formatPRLabel(prCelebration.type as any)}!
+          </Text>
+        </Animated.View>
+      )}
+
       {/* Expanded Content */}
       {isExpanded && (
         <View style={styles.exerciseContent}>
@@ -888,7 +966,7 @@ function ExerciseCard({
               <View style={styles.historyRow}>
                 {history.sets.slice(0, 5).map((set, idx) => (
                   <Text key={set.id} style={styles.historySet}>
-                    {set.weight}×{set.reps}
+                    {formatWeightValue(set.weight, units)}×{set.reps}
                     {idx < Math.min(history.sets.length, 5) - 1 ? '  ' : ''}
                   </Text>
                 ))}
@@ -907,7 +985,7 @@ function ExerciseCard({
                 <View key={set.id} style={styles.currentSetRow}>
                   <Text style={styles.currentSetNumber}>Set {index + 1}</Text>
                   <Text style={styles.currentSetDetail}>
-                    {set.weight} lbs × {set.reps} reps
+                    {formatWeight(set.weight, units)} × {set.reps} reps
                   </Text>
                   <TouchableOpacity onPress={() => onDeleteSet(set.id)}>
                     <Text style={styles.deleteText}>×</Text>
@@ -923,16 +1001,17 @@ function ExerciseCard({
             <PreviousSetIndicator
               currentSets={currentSets}
               history={history}
+              units={units}
             />
 
             <View style={styles.inputRow}>
               <NumberInput
-                value={weight}
-                onChangeValue={setWeight}
-                label="Weight (lbs)"
-                step={2.5}
+                value={displayWeight(weight, units)}
+                onChangeValue={(v) => setWeight(inputToLbs(v, units))}
+                label={`Weight (${weightUnit(units)})`}
+                step={weightIncrement(units)}
                 min={0}
-                max={1000}
+                max={units === 'metric' ? 500 : 1000}
                 allowDecimals
               />
               <NumberInput
@@ -1081,6 +1160,17 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  prBanner: {
+    backgroundColor: colors.success,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+    alignItems: 'center',
+  },
+  prBannerText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
   },
   swapButton: {
     backgroundColor: colors.backgroundTertiary,

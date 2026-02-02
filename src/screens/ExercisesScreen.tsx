@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -21,8 +21,11 @@ import {
   CABLE_ACCESSORY_DISPLAY_NAMES,
   MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
   EQUIPMENT_DISPLAY_NAMES,
+  WorkoutSet,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
+import { getExercisePRSummaries, ExercisePRs } from '../services/personalRecords';
+import { getSets } from '../services/storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -33,9 +36,30 @@ interface ExerciseSection {
 
 export function ExercisesScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises } = useData();
+  const { exercises, workouts } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
+  const [prSummaries, setPrSummaries] = useState<Map<string, ExercisePRs>>(new Map());
+
+  // Build workoutDates map for PR calculation
+  const workoutDates = useMemo(() => {
+    const map = new Map<string, string>();
+    workouts.forEach(w => {
+      map.set(w.id, w.completedAt || w.startedAt);
+    });
+    return map;
+  }, [workouts]);
+
+  // Load PR summaries for all exercises
+  useEffect(() => {
+    const loadPRs = async () => {
+      const allSets = await getSets();
+      const exerciseIds = exercises.map(e => e.id);
+      const summaries = getExercisePRSummaries(exerciseIds, allSets, workoutDates);
+      setPrSummaries(summaries);
+    };
+    loadPRs();
+  }, [exercises, workoutDates]);
 
   // Helper to get primary muscles display
   const getPrimaryMusclesText = (exercise: Exercise): string => {
@@ -123,24 +147,34 @@ export function ExercisesScreen() {
   const ITEM_HEIGHT = 62; // exerciseItem height
   const SECTION_HEADER_HEIGHT = 38; // sectionHeader height
 
-  const renderExercise = useCallback(({ item: exercise }: { item: Exercise }) => (
-    <TouchableOpacity
-      style={styles.exerciseItem}
-      onPress={() => handleExercisePress(exercise)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.exerciseInfo}>
-        <Text style={styles.exerciseName}>{exercise.name}</Text>
-        <Text style={styles.exerciseDetail}>
-          {getEquipmentText(exercise)} | {getPrimaryMusclesText(exercise)}
-        </Text>
-      </View>
-      {exercise.isCustom && (
-        <Text style={styles.customBadge}>Custom</Text>
-      )}
-      <Text style={styles.chevron}>›</Text>
-    </TouchableOpacity>
-  ), [handleExercisePress]);
+  const renderExercise = useCallback(({ item: exercise }: { item: Exercise }) => {
+    const exercisePRs = prSummaries.get(exercise.id);
+    const hasPR = exercisePRs && (exercisePRs.weightPR || exercisePRs.e1rmPR);
+
+    return (
+      <TouchableOpacity
+        style={styles.exerciseItem}
+        onPress={() => handleExercisePress(exercise)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.exerciseInfo}>
+          <View style={styles.exerciseNameRow}>
+            <Text style={styles.exerciseName}>{exercise.name}</Text>
+            {hasPR && (
+              <Text style={styles.prBadge}>PR</Text>
+            )}
+          </View>
+          <Text style={styles.exerciseDetail}>
+            {getEquipmentText(exercise)} | {getPrimaryMusclesText(exercise)}
+          </Text>
+        </View>
+        {exercise.isCustom && (
+          <Text style={styles.customBadge}>Custom</Text>
+        )}
+        <Text style={styles.chevron}>›</Text>
+      </TouchableOpacity>
+    );
+  }, [handleExercisePress, prSummaries]);
 
   const renderSectionHeader = useCallback(({ section }: { section: ExerciseSection }) => (
     <View style={styles.sectionHeader}>
@@ -304,9 +338,23 @@ const styles = StyleSheet.create({
   exerciseInfo: {
     flex: 1,
   },
+  exerciseNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   exerciseName: {
     fontSize: typography.size.md,
     color: colors.text,
+  },
+  prBadge: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    color: colors.warning,
+    backgroundColor: colors.backgroundTertiary,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    borderRadius: borderRadius.sm,
   },
   exerciseDetail: {
     fontSize: typography.size.sm,

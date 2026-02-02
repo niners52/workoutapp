@@ -14,7 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, ListItem } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { getPersonalRecords, PersonalRecord } from '../services/analytics';
+import { calculateExercisePRs, ExercisePRs } from '../services/personalRecords';
+import { formatWeight, formatWeightValue, weightUnit } from '../services/units';
 import { getSetsByExerciseId } from '../services/storage';
 import {
   Exercise,
@@ -45,26 +46,38 @@ export function ExerciseDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ExerciseDetailRouteProp>();
   const { exerciseId } = route.params;
-  const { exercises, deleteExercise, locations } = useData();
+  const { exercises, deleteExercise, locations, workouts, userSettings } = useData();
 
-  const [personalRecord, setPersonalRecord] = useState<PersonalRecord | null>(null);
+  const [exercisePRs, setExercisePRs] = useState<ExercisePRs | null>(null);
   const [allSets, setAllSets] = useState<WorkoutSet[]>([]);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
 
   const exercise = exercises.find(e => e.id === exerciseId);
+  const units = userSettings?.units || 'imperial';
+
+  // Build workoutDates map for PR calculation
+  const workoutDates = useMemo(() => {
+    const map = new Map<string, string>();
+    workouts.forEach(w => {
+      map.set(w.id, w.completedAt || w.startedAt);
+    });
+    return map;
+  }, [workouts]);
 
   useEffect(() => {
     if (exercise) {
-      getPersonalRecords(exercise.id).then(setPersonalRecord);
       getSetsByExerciseId(exercise.id).then(sets => {
         // Sort by date descending
         const sorted = sets.sort((a, b) =>
           new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()
         );
         setAllSets(sorted);
+        // Calculate PRs from sets
+        const prs = calculateExercisePRs(exercise.id, sets, workoutDates);
+        setExercisePRs(prs);
       });
     }
-  }, [exercise]);
+  }, [exercise, workoutDates]);
 
   // Group sets by session (date)
   const sessions: SessionData[] = useMemo(() => {
@@ -248,22 +261,26 @@ export function ExerciseDetailScreen() {
         </Card>
 
         {/* Personal Records */}
-        {personalRecord && (
+        {exercisePRs && (exercisePRs.weightPR || exercisePRs.e1rmPR) && (
           <Card style={styles.section}>
             <Text style={styles.sectionTitle}>Personal Records</Text>
             <View style={styles.prGrid}>
-              <View style={styles.prItem}>
-                <Text style={styles.prValue}>{personalRecord.maxWeight} lbs</Text>
-                <Text style={styles.prLabel}>Max Weight</Text>
-              </View>
-              <View style={styles.prItem}>
-                <Text style={styles.prValue}>{personalRecord.maxReps}</Text>
-                <Text style={styles.prLabel}>Max Reps</Text>
-              </View>
-              <View style={styles.prItem}>
-                <Text style={styles.prValue}>{personalRecord.maxVolume}</Text>
-                <Text style={styles.prLabel}>Max Volume</Text>
-              </View>
+              {exercisePRs.weightPR && (
+                <View style={styles.prItem}>
+                  <Text style={styles.prValue}>
+                    {formatWeight(exercisePRs.weightPR.weight, units)} × {exercisePRs.weightPR.reps}
+                  </Text>
+                  <Text style={styles.prLabel}>Weight PR</Text>
+                </View>
+              )}
+              {exercisePRs.e1rmPR && (
+                <View style={styles.prItem}>
+                  <Text style={styles.prValue}>
+                    {formatWeight(exercisePRs.e1rmPR.value, units)}
+                  </Text>
+                  <Text style={styles.prLabel}>Est. 1RM</Text>
+                </View>
+              )}
             </View>
           </Card>
         )}
@@ -319,7 +336,7 @@ export function ExerciseDetailScreen() {
                 })}
               </View>
             </View>
-            <Text style={styles.chartUnit}>lbs</Text>
+            <Text style={styles.chartUnit}>{weightUnit(units)}</Text>
           </Card>
         )}
 
@@ -389,7 +406,7 @@ export function ExerciseDetailScreen() {
                     </View>
                     <View style={styles.sessionHeaderRight}>
                       <Text style={styles.sessionSummary}>
-                        {session.sets.length} sets · {session.maxWeight} lbs
+                        {session.sets.length} sets · {formatWeightValue(session.maxWeight, units)} {weightUnit(units)}
                       </Text>
                       <Text style={styles.expandIcon}>
                         {isExpanded ? '▼' : '▶'}
@@ -403,7 +420,7 @@ export function ExerciseDetailScreen() {
                         <View key={set.id} style={styles.setRow}>
                           <Text style={styles.setNumber}>Set {setIndex + 1}</Text>
                           <Text style={styles.setDetail}>
-                            {set.weight} lbs × {set.reps} reps
+                            {formatWeightValue(set.weight, units)} {weightUnit(units)} × {set.reps} reps
                           </Text>
                         </View>
                       ))}

@@ -16,6 +16,7 @@ import { useData } from '../contexts/DataContext';
 import { getSetsByWorkoutId } from '../services/storage';
 import { WorkoutSet } from '../types';
 import { RootStackParamList } from '../navigation/types';
+import { formatWeightValue } from '../services/units';
 
 type WorkoutDetailRouteProp = RouteProp<RootStackParamList, 'WorkoutDetail'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -24,7 +25,8 @@ export function WorkoutDetailScreen() {
   const route = useRoute<WorkoutDetailRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const { workoutId } = route.params;
-  const { workouts, templates, exercises } = useData();
+  const { workouts, templates, exercises, userSettings } = useData();
+  const units = userSettings?.units || 'imperial';
 
   const [sets, setSets] = useState<WorkoutSet[]>([]);
 
@@ -128,7 +130,7 @@ export function WorkoutDetailScreen() {
                       <View style={styles.setsRow}>
                         {exerciseSets.map((set, idx) => (
                           <Text key={set.id} style={styles.setDetail}>
-                            {set.weight}×{set.reps}
+                            {formatWeightValue(set.weight, units)}×{set.reps}
                             {idx < exerciseSets.length - 1 ? '  ' : ''}
                           </Text>
                         ))}

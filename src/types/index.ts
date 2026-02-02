@@ -17,6 +17,7 @@ export const EQUIPMENT_DISPLAY_NAMES: Record<Equipment, string> = {
 export type ExerciseLocation = 'gym' | 'home' | 'both';
 export type WeekStartDay = 'sunday' | 'monday';
 export type TemplateType = 'push' | 'pull' | 'lower';
+export type UnitSystem = 'imperial' | 'metric';
 
 // Workout Location entity (user-defined locations)
 export interface WorkoutLocation {
@@ -315,6 +316,7 @@ export const DEFAULT_WEEKLY_GOALS: WeeklyGoals = {
 
 export interface UserSettings {
   weekStartDay: WeekStartDay;
+  units: UnitSystem;
   proteinGoal: number; // grams - legacy, use dailyGoals.proteinGrams
   sleepGoal: number; // hours - legacy, use dailyGoals.sleepHours
   restTimerSeconds: number;
@@ -326,6 +328,7 @@ export interface UserSettings {
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   weekStartDay: 'monday',
+  units: 'imperial',
   proteinGoal: 150,
   sleepGoal: 8,
   restTimerSeconds: 90,
