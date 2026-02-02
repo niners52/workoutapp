@@ -15,7 +15,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-live-activity"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -36,7 +37,8 @@
         ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSHealthShareUsageDescription": "WorkoutTracker needs access to your health data to show your workout history and track your fitness progress.",
-        "NSHealthUpdateUsageDescription": "WorkoutTracker will save your completed workouts to Apple Health."
+        "NSHealthUpdateUsageDescription": "WorkoutTracker will save your completed workouts to Apple Health.",
+        "NSSupportsLiveActivities": true
       }
     },
     "android": {

@@ -1,32 +1,34 @@
-import { NativeModules, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import * as LiveActivity from 'expo-live-activity';
 
-interface LiveActivityModuleInterface {
-  isLiveActivitySupported(): Promise<boolean>;
-  startRestTimer(seconds: number): Promise<string>;
-  updateRestTimer(remainingSeconds: number): Promise<boolean>;
-  stopRestTimer(): Promise<boolean>;
-  endRestTimerWithAlert(): Promise<boolean>;
-}
+// App colors for Live Activity styling
+const COLORS = {
+  background: '#0A1628',    // Navy background
+  accent: '#FFC52F',        // Gold accent
+  text: '#FFFFFF',          // White text
+  subtitleText: '#A0AEC0',  // Muted text for subtitle
+};
 
-const { LiveActivityModule } = NativeModules;
+// Current activity ID for tracking
+let currentActivityId: string | null = null;
 
 // Live Activity service for iOS rest timer
 // Falls back gracefully on unsupported platforms
 export const liveActivityService = {
   /**
    * Check if Live Activities are supported on this device
+   * iOS 16.1+ with iPhone 14 Pro+ for Dynamic Island, iOS 16.2+ for all devices
    */
   async isSupported(): Promise<boolean> {
     if (Platform.OS !== 'ios') {
       return false;
     }
 
+    // expo-live-activity handles the iOS version check internally
+    // Try to start and immediately stop an activity to verify support
+    // For now, just check platform since the package handles availability
     try {
-      const module = LiveActivityModule as LiveActivityModuleInterface | undefined;
-      if (!module?.isLiveActivitySupported) {
-        return false;
-      }
-      return await module.isLiveActivitySupported();
+      return true; // Let the startActivity fail gracefully if unsupported
     } catch (error) {
       console.log('Live Activities not available:', error);
       return false;
@@ -44,11 +46,37 @@ export const liveActivityService = {
     }
 
     try {
-      const module = LiveActivityModule as LiveActivityModuleInterface | undefined;
-      if (!module?.startRestTimer) {
-        return null;
+      // End any existing activity first
+      if (currentActivityId) {
+        await this.stopTimer();
       }
-      return await module.startRestTimer(seconds);
+
+      // Calculate end time in milliseconds for countdown
+      const endTimeMs = Date.now() + seconds * 1000;
+
+      const state: LiveActivity.LiveActivityState = {
+        title: 'Rest Timer',
+        subtitle: 'Time remaining',
+        progressBar: {
+          date: endTimeMs,
+        },
+      };
+
+      const config: LiveActivity.LiveActivityConfig = {
+        backgroundColor: COLORS.background,
+        titleColor: COLORS.text,
+        subtitleColor: COLORS.subtitleText,
+        progressViewTint: COLORS.accent,
+        progressViewLabelColor: COLORS.text,
+        timerType: 'circular',
+      };
+
+      const activityId = LiveActivity.startActivity(state, config);
+      if (activityId) {
+        currentActivityId = activityId;
+        return activityId;
+      }
+      return null;
     } catch (error) {
       console.log('Failed to start Live Activity:', error);
       return null;
@@ -60,16 +88,24 @@ export const liveActivityService = {
    * @param remainingSeconds - New remaining time
    */
   async updateTimer(remainingSeconds: number): Promise<boolean> {
-    if (Platform.OS !== 'ios') {
+    if (Platform.OS !== 'ios' || !currentActivityId) {
       return false;
     }
 
     try {
-      const module = LiveActivityModule as LiveActivityModuleInterface | undefined;
-      if (!module?.updateRestTimer) {
-        return false;
-      }
-      return await module.updateRestTimer(remainingSeconds);
+      // Calculate new end time
+      const endTimeMs = Date.now() + remainingSeconds * 1000;
+
+      const state: LiveActivity.LiveActivityState = {
+        title: 'Rest Timer',
+        subtitle: 'Time remaining',
+        progressBar: {
+          date: endTimeMs,
+        },
+      };
+
+      LiveActivity.updateActivity(currentActivityId, state);
+      return true;
     } catch (error) {
       console.log('Failed to update Live Activity:', error);
       return false;
@@ -80,18 +116,25 @@ export const liveActivityService = {
    * Stop/cancel the timer Live Activity immediately
    */
   async stopTimer(): Promise<boolean> {
-    if (Platform.OS !== 'ios') {
+    if (Platform.OS !== 'ios' || !currentActivityId) {
       return false;
     }
 
     try {
-      const module = LiveActivityModule as LiveActivityModuleInterface | undefined;
-      if (!module?.stopRestTimer) {
-        return false;
-      }
-      return await module.stopRestTimer();
+      const state: LiveActivity.LiveActivityState = {
+        title: 'Rest Timer',
+        subtitle: 'Cancelled',
+        progressBar: {
+          progress: 0,
+        },
+      };
+
+      LiveActivity.stopActivity(currentActivityId, state);
+      currentActivityId = null;
+      return true;
     } catch (error) {
       console.log('Failed to stop Live Activity:', error);
+      currentActivityId = null;
       return false;
     }
   },
@@ -100,20 +143,34 @@ export const liveActivityService = {
    * End the timer with completion alert (timer finished naturally)
    */
   async endTimerWithAlert(): Promise<boolean> {
-    if (Platform.OS !== 'ios') {
+    if (Platform.OS !== 'ios' || !currentActivityId) {
       return false;
     }
 
     try {
-      const module = LiveActivityModule as LiveActivityModuleInterface | undefined;
-      if (!module?.endRestTimerWithAlert) {
-        return false;
-      }
-      return await module.endRestTimerWithAlert();
+      const state: LiveActivity.LiveActivityState = {
+        title: 'Rest Complete!',
+        subtitle: 'Time to lift',
+        progressBar: {
+          progress: 1,
+        },
+      };
+
+      LiveActivity.stopActivity(currentActivityId, state);
+      currentActivityId = null;
+      return true;
     } catch (error) {
       console.log('Failed to end Live Activity:', error);
+      currentActivityId = null;
       return false;
     }
+  },
+
+  /**
+   * Get the current activity ID
+   */
+  getCurrentActivityId(): string | null {
+    return currentActivityId;
   },
 };
 
