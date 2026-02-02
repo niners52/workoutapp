@@ -9,6 +9,7 @@ import {
   Supplement,
   SupplementIntake,
   Routine,
+  BodyMeasurement,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
@@ -30,6 +31,7 @@ const STORAGE_KEYS = {
   SUPPLEMENTS: '@workout_tracker/supplements',
   SUPPLEMENT_INTAKES: '@workout_tracker/supplement_intakes',
   ROUTINES: '@workout_tracker/routines',
+  BODY_MEASUREMENTS: '@workout_tracker/body_measurements',
   INITIALIZED: '@workout_tracker/initialized',
   MIGRATION_VERSION: '@workout_tracker/migration_version',
   SETGRAPH_MAPPINGS: '@workout_tracker/setgraph_mappings',
@@ -623,6 +625,7 @@ export interface ExportData {
   supplements?: Supplement[];
   supplementIntakes?: SupplementIntake[];
   routines?: Routine[];
+  bodyMeasurements?: BodyMeasurement[];
   exportedAt: string;
   version: string;
 }
@@ -638,6 +641,7 @@ export async function exportAllData(): Promise<ExportData> {
     supplements,
     supplementIntakes,
     routines,
+    bodyMeasurements,
   ] = await Promise.all([
     getExercises(),
     getTemplates(),
@@ -648,6 +652,7 @@ export async function exportAllData(): Promise<ExportData> {
     getSupplements(),
     getSupplementIntakes(),
     getRoutines(),
+    getBodyMeasurements(),
   ]);
 
   return {
@@ -660,6 +665,7 @@ export async function exportAllData(): Promise<ExportData> {
     supplements,
     supplementIntakes,
     routines,
+    bodyMeasurements,
     exportedAt: new Date().toISOString(),
     version: '1.0.0',
   };
@@ -727,6 +733,7 @@ export interface RestoreDataCounts {
     locations: number;
     supplements: number;
     routines: number;
+    bodyMeasurements: number;
   };
   backup: {
     exercises: number;
@@ -736,6 +743,7 @@ export interface RestoreDataCounts {
     locations: number;
     supplements: number;
     routines: number;
+    bodyMeasurements: number;
   };
 }
 
@@ -771,6 +779,7 @@ export async function validateBackupData(jsonString: string): Promise<{
       currentLocations,
       currentSupplements,
       currentRoutines,
+      currentBodyMeasurements,
     ] = await Promise.all([
       getExercises(),
       getTemplates(),
@@ -779,6 +788,7 @@ export async function validateBackupData(jsonString: string): Promise<{
       getLocations(),
       getSupplements(),
       getRoutines(),
+      getBodyMeasurements(),
     ]);
 
     const counts: RestoreDataCounts = {
@@ -790,6 +800,7 @@ export async function validateBackupData(jsonString: string): Promise<{
         locations: currentLocations.length,
         supplements: currentSupplements.length,
         routines: currentRoutines.length,
+        bodyMeasurements: currentBodyMeasurements.length,
       },
       backup: {
         exercises: data.exercises?.length || 0,
@@ -799,6 +810,7 @@ export async function validateBackupData(jsonString: string): Promise<{
         locations: data.locations?.length || 0,
         supplements: data.supplements?.length || 0,
         routines: data.routines?.length || 0,
+        bodyMeasurements: data.bodyMeasurements?.length || 0,
       },
     };
 
@@ -834,6 +846,9 @@ export async function restoreFromBackup(data: any): Promise<void> {
   }
   if (data.routines) {
     await setItem(STORAGE_KEYS.ROUTINES, data.routines);
+  }
+  if (data.bodyMeasurements) {
+    await setItem(STORAGE_KEYS.BODY_MEASUREMENTS, data.bodyMeasurements);
   }
 }
 
@@ -968,4 +983,68 @@ export async function setActiveRoutine(routineId: string | null): Promise<void> 
 export async function getActiveRoutine(): Promise<Routine | undefined> {
   const routines = await getRoutines();
   return routines.find(r => r.isActive);
+}
+
+// ==================== BODY MEASUREMENTS ====================
+
+export async function getBodyMeasurements(): Promise<BodyMeasurement[]> {
+  return getItem(STORAGE_KEYS.BODY_MEASUREMENTS, []);
+}
+
+export async function getBodyMeasurementById(id: string): Promise<BodyMeasurement | undefined> {
+  const measurements = await getBodyMeasurements();
+  return measurements.find(m => m.id === id);
+}
+
+export async function getBodyMeasurementByDate(date: string): Promise<BodyMeasurement | undefined> {
+  const measurements = await getBodyMeasurements();
+  return measurements.find(m => m.date === date);
+}
+
+export async function addBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
+  const measurements = await getBodyMeasurements();
+  // Check if there's already a measurement for this date
+  const existingIndex = measurements.findIndex(m => m.date === measurement.date);
+  if (existingIndex !== -1) {
+    // Merge with existing measurement
+    measurements[existingIndex] = {
+      ...measurements[existingIndex],
+      ...measurement,
+      // Keep existing values if new ones are undefined
+      weight: measurement.weight ?? measurements[existingIndex].weight,
+      bodyFatPercentage: measurement.bodyFatPercentage ?? measurements[existingIndex].bodyFatPercentage,
+      heightInches: measurement.heightInches ?? measurements[existingIndex].heightInches,
+    };
+  } else {
+    measurements.push(measurement);
+  }
+  await setItem(STORAGE_KEYS.BODY_MEASUREMENTS, measurements);
+}
+
+export async function updateBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
+  const measurements = await getBodyMeasurements();
+  const index = measurements.findIndex(m => m.id === measurement.id);
+  if (index !== -1) {
+    measurements[index] = measurement;
+    await setItem(STORAGE_KEYS.BODY_MEASUREMENTS, measurements);
+  }
+}
+
+export async function deleteBodyMeasurement(id: string): Promise<void> {
+  const measurements = await getBodyMeasurements();
+  const filtered = measurements.filter(m => m.id !== id);
+  await setItem(STORAGE_KEYS.BODY_MEASUREMENTS, filtered);
+}
+
+export async function getBodyMeasurementsInDateRange(start: Date, end: Date): Promise<BodyMeasurement[]> {
+  const measurements = await getBodyMeasurements();
+  const startStr = start.toISOString().split('T')[0];
+  const endStr = end.toISOString().split('T')[0];
+  return measurements.filter(m => m.date >= startStr && m.date <= endStr);
+}
+
+export async function getLatestBodyMeasurement(): Promise<BodyMeasurement | undefined> {
+  const measurements = await getBodyMeasurements();
+  if (measurements.length === 0) return undefined;
+  return measurements.sort((a, b) => b.date.localeCompare(a.date))[0];
 }

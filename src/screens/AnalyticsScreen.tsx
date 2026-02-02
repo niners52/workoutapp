@@ -6,11 +6,16 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Modal,
+  TextInput,
+  Alert,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, startOfWeek, endOfWeek, subWeeks } from 'date-fns';
+import { format, startOfWeek, endOfWeek, subWeeks, subDays } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
 import { MuscleGroupVolumeChart } from '../components/charts';
@@ -25,9 +30,23 @@ import {
 import {
   getWeeklySleepAverage,
   getWeeklyNutritionAverage,
+  getAllBodyMeasurements,
+  getWeightHistory,
+  getBodyFatHistory,
+  BodyMeasurementData,
 } from '../services/healthKit';
 import {
+  formatWeight,
+  formatHeight,
+  inputToLbs,
+  inputToInches,
+  feetAndInchesToInches,
+  inchesToFeetAndInches,
+} from '../services/units';
+import {
   WeeklyVolume,
+  BodyMeasurement,
+  BodyMeasurementHistory,
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
@@ -36,7 +55,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function AnalyticsScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { userSettings } = useData();
+  const { userSettings, bodyMeasurements, addBodyMeasurement, getLatestBodyMeasurement } = useData();
 
   const [refreshing, setRefreshing] = useState(false);
   const [currentWeekVolume, setCurrentWeekVolume] = useState<WeeklyVolume | null>(null);
@@ -50,6 +69,15 @@ export function AnalyticsScreen() {
     avgFat: number;
     days: number;
   } | null>(null);
+
+  // Body measurements state
+  const [healthKitBodyData, setHealthKitBodyData] = useState<BodyMeasurementData | null>(null);
+  const [syncingHealthKit, setSyncingHealthKit] = useState(false);
+  const [logModalVisible, setLogModalVisible] = useState(false);
+  const [manualWeight, setManualWeight] = useState('');
+  const [manualBodyFat, setManualBodyFat] = useState('');
+  const [manualHeightFeet, setManualHeightFeet] = useState('');
+  const [manualHeightInches, setManualHeightInches] = useState('');
 
   const loadData = useCallback(async () => {
     try {
@@ -66,6 +94,12 @@ export function AnalyticsScreen() {
 
       const nutrition = await getWeeklyNutritionAverage(today);
       setNutritionData(nutrition);
+
+      // Load body measurements from HealthKit
+      if (Platform.OS === 'ios') {
+        const bodyData = await getAllBodyMeasurements();
+        setHealthKitBodyData(bodyData);
+      }
     } catch (error) {
       console.error('Failed to load analytics:', error);
     }
@@ -82,6 +116,81 @@ export function AnalyticsScreen() {
     await loadData();
     setRefreshing(false);
   }, [loadData]);
+
+  // Sync body measurements from HealthKit
+  const syncFromHealthKit = useCallback(async () => {
+    if (Platform.OS !== 'ios') return;
+
+    setSyncingHealthKit(true);
+    try {
+      const bodyData = await getAllBodyMeasurements();
+      setHealthKitBodyData(bodyData);
+
+      if (bodyData.weight || bodyData.bodyFatPercentage || bodyData.heightInches) {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const measurement: BodyMeasurement = {
+          id: `body-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          date: today,
+          weight: bodyData.weight ?? undefined,
+          bodyFatPercentage: bodyData.bodyFatPercentage ?? undefined,
+          heightInches: bodyData.heightInches ?? undefined,
+          source: 'healthkit',
+          syncedAt: new Date().toISOString(),
+        };
+        await addBodyMeasurement(measurement);
+        Alert.alert('Synced', 'Body measurements synced from Apple Health');
+      } else {
+        Alert.alert('No Data', 'No body measurement data found in Apple Health');
+      }
+    } catch (error) {
+      console.error('Failed to sync from HealthKit:', error);
+      Alert.alert('Error', 'Failed to sync from Apple Health');
+    } finally {
+      setSyncingHealthKit(false);
+    }
+  }, [addBodyMeasurement]);
+
+  // Save manual body measurement
+  const saveManualMeasurement = useCallback(async () => {
+    const weight = manualWeight ? parseFloat(manualWeight) : undefined;
+    const bodyFat = manualBodyFat ? parseFloat(manualBodyFat) : undefined;
+
+    let totalInches: number | undefined;
+    if (userSettings.units === 'imperial') {
+      const heightFt = manualHeightFeet ? parseInt(manualHeightFeet, 10) : 0;
+      const heightIn = manualHeightInches ? parseInt(manualHeightInches, 10) : 0;
+      totalInches = heightFt > 0 || heightIn > 0 ? feetAndInchesToInches(heightFt, heightIn) : undefined;
+    } else {
+      // Metric: user enters cm, convert to inches for storage
+      const cm = manualHeightInches ? parseFloat(manualHeightInches) : 0;
+      totalInches = cm > 0 ? inputToInches(cm, 'metric') : undefined;
+    }
+
+    if (!weight && !bodyFat && !totalInches) {
+      Alert.alert('No Data', 'Please enter at least one measurement');
+      return;
+    }
+
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const measurement: BodyMeasurement = {
+      id: `body-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      date: today,
+      weight: weight ? inputToLbs(weight, userSettings.units) : undefined,
+      bodyFatPercentage: bodyFat,
+      heightInches: totalInches,
+      source: 'manual',
+    };
+
+    await addBodyMeasurement(measurement);
+    setLogModalVisible(false);
+    setManualWeight('');
+    setManualBodyFat('');
+    setManualHeightFeet('');
+    setManualHeightInches('');
+  }, [manualWeight, manualBodyFat, manualHeightFeet, manualHeightInches, userSettings.units, addBodyMeasurement]);
+
+  // Get the latest body measurement for display
+  const latestMeasurement = getLatestBodyMeasurement();
 
   const displayVolume = selectedWeekIndex === 0 && currentWeekVolume
     ? currentWeekVolume
@@ -235,6 +344,98 @@ export function AnalyticsScreen() {
           )}
         </View>
 
+        {/* Body Measurements */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Body Measurements</Text>
+            <View style={styles.bodyMeasurementButtons}>
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  style={styles.syncButton}
+                  onPress={syncFromHealthKit}
+                  disabled={syncingHealthKit}
+                >
+                  {syncingHealthKit ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text style={styles.syncButtonText}>Sync</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.logButton}
+                onPress={() => setLogModalVisible(true)}
+              >
+                <Text style={styles.logButtonText}>+ Log</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {latestMeasurement || healthKitBodyData ? (
+            <View style={styles.bodyMeasurementGrid}>
+              {/* Weight */}
+              <Card style={styles.bodyMeasurementCard}>
+                <Text style={styles.bodyMeasurementLabel}>Weight</Text>
+                <Text style={styles.bodyMeasurementValue}>
+                  {latestMeasurement?.weight
+                    ? formatWeight(latestMeasurement.weight, userSettings.units)
+                    : healthKitBodyData?.weight
+                      ? formatWeight(healthKitBodyData.weight, userSettings.units)
+                      : '--'}
+                </Text>
+                {latestMeasurement?.date && latestMeasurement?.weight && (
+                  <Text style={styles.bodyMeasurementDate}>
+                    {format(new Date(latestMeasurement.date), 'MMM d')}
+                  </Text>
+                )}
+              </Card>
+
+              {/* Body Fat */}
+              <Card style={styles.bodyMeasurementCard}>
+                <Text style={styles.bodyMeasurementLabel}>Body Fat</Text>
+                <Text style={styles.bodyMeasurementValue}>
+                  {latestMeasurement?.bodyFatPercentage
+                    ? `${latestMeasurement.bodyFatPercentage.toFixed(1)}%`
+                    : healthKitBodyData?.bodyFatPercentage
+                      ? `${healthKitBodyData.bodyFatPercentage.toFixed(1)}%`
+                      : '--'}
+                </Text>
+                {latestMeasurement?.date && latestMeasurement?.bodyFatPercentage && (
+                  <Text style={styles.bodyMeasurementDate}>
+                    {format(new Date(latestMeasurement.date), 'MMM d')}
+                  </Text>
+                )}
+              </Card>
+
+              {/* Height */}
+              <Card style={styles.bodyMeasurementCard}>
+                <Text style={styles.bodyMeasurementLabel}>Height</Text>
+                <Text style={styles.bodyMeasurementValue}>
+                  {latestMeasurement?.heightInches
+                    ? formatHeight(latestMeasurement.heightInches, userSettings.units)
+                    : healthKitBodyData?.heightInches
+                      ? formatHeight(healthKitBodyData.heightInches, userSettings.units)
+                      : '--'}
+                </Text>
+                {latestMeasurement?.date && latestMeasurement?.heightInches && (
+                  <Text style={styles.bodyMeasurementDate}>
+                    {format(new Date(latestMeasurement.date), 'MMM d')}
+                  </Text>
+                )}
+              </Card>
+            </View>
+          ) : (
+            <Card style={styles.emptyBodyCard}>
+              <Text style={styles.emptyBodyText}>No body measurements logged</Text>
+              <Text style={styles.emptyBodySubtext}>
+                {Platform.OS === 'ios'
+                  ? 'Sync from Apple Health or log manually'
+                  : 'Tap "+ Log" to add your measurements'}
+              </Text>
+            </Card>
+          )}
+        </View>
+
         {/* Category Summary */}
         {categoryVolumes.length > 0 && (
           <View style={styles.section}>
@@ -319,6 +520,99 @@ export function AnalyticsScreen() {
           </Card>
         </View>
       </ScrollView>
+
+      {/* Manual Log Modal */}
+      <Modal
+        visible={logModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setLogModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setLogModalVisible(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Log Measurements</Text>
+            <TouchableOpacity onPress={saveManualMeasurement}>
+              <Text style={styles.modalSave}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            {/* Weight Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>
+                Weight ({userSettings.units === 'metric' ? 'kg' : 'lbs'})
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={manualWeight}
+                onChangeText={setManualWeight}
+                placeholder="Enter weight"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            {/* Body Fat Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Body Fat %</Text>
+              <TextInput
+                style={styles.input}
+                value={manualBodyFat}
+                onChangeText={setManualBodyFat}
+                placeholder="Enter body fat percentage"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            {/* Height Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Height</Text>
+              {userSettings.units === 'imperial' ? (
+                <View style={styles.heightInputRow}>
+                  <View style={styles.heightInputGroup}>
+                    <TextInput
+                      style={[styles.input, styles.heightInput]}
+                      value={manualHeightFeet}
+                      onChangeText={setManualHeightFeet}
+                      placeholder="Feet"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="number-pad"
+                    />
+                    <Text style={styles.heightUnit}>ft</Text>
+                  </View>
+                  <View style={styles.heightInputGroup}>
+                    <TextInput
+                      style={[styles.input, styles.heightInput]}
+                      value={manualHeightInches}
+                      onChangeText={setManualHeightInches}
+                      placeholder="Inches"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="number-pad"
+                    />
+                    <Text style={styles.heightUnit}>in</Text>
+                  </View>
+                </View>
+              ) : (
+                <TextInput
+                  style={styles.input}
+                  value={manualHeightInches}
+                  onChangeText={(text) => {
+                    // For metric, convert cm to inches when saving
+                    setManualHeightInches(text);
+                  }}
+                  placeholder="Enter height in cm"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="number-pad"
+                />
+              )}
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -534,6 +828,147 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: 'center',
     marginTop: spacing.sm,
+  },
+  // Body Measurements styles
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  bodyMeasurementButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  syncButton: {
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  syncButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  logButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  logButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.background,
+    fontWeight: typography.weight.medium,
+  },
+  bodyMeasurementGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  bodyMeasurementCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: spacing.base,
+  },
+  bodyMeasurementLabel: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bodyMeasurementValue: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginVertical: spacing.xs,
+  },
+  bodyMeasurementDate: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+  },
+  emptyBodyCard: {
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  emptyBodyText: {
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  emptyBodySubtext: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+    textAlign: 'center',
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.base,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.backgroundTertiary,
+  },
+  modalCancel: {
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
+  },
+  modalTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  modalSave: {
+    fontSize: typography.size.base,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  modalContent: {
+    flex: 1,
+    padding: spacing.base,
+  },
+  inputGroup: {
+    marginBottom: spacing.lg,
+  },
+  inputLabel: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  input: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: typography.size.lg,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.backgroundTertiary,
+  },
+  heightInputRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  heightInputGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heightInput: {
+    flex: 1,
+  },
+  heightUnit: {
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
+    marginLeft: spacing.sm,
+    minWidth: 20,
   },
 });
 

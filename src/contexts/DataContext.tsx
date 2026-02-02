@@ -10,6 +10,7 @@ import {
   Supplement,
   SupplementIntake,
   Routine,
+  BodyMeasurement,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
 } from '../types';
@@ -24,6 +25,7 @@ import {
   getSupplements,
   getSupplementIntakes,
   getRoutines,
+  getBodyMeasurements,
   restoreFromBackup,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
@@ -41,6 +43,8 @@ import {
   syncDeleteSupplementIntake,
   syncRoutine,
   syncDeleteRoutine,
+  syncBodyMeasurement,
+  syncDeleteBodyMeasurement,
   syncUserSettings,
   processPendingSync,
   pullFromCloud,
@@ -69,6 +73,9 @@ import {
   updateRoutine as updateRoutineInStorage,
   deleteRoutine as deleteRoutineFromStorage,
   setActiveRoutine as setActiveRoutineInStorage,
+  addBodyMeasurement as addBodyMeasurementToStorage,
+  updateBodyMeasurement as updateBodyMeasurementInStorage,
+  deleteBodyMeasurement as deleteBodyMeasurementFromStorage,
 } from '../services/storage';
 
 interface DataContextType {
@@ -129,6 +136,14 @@ interface DataContextType {
   getActiveRoutine: () => Routine | undefined;
   getRoutineById: (id: string) => Routine | undefined;
 
+  // Body measurements data and CRUD
+  bodyMeasurements: BodyMeasurement[];
+  refreshBodyMeasurements: () => Promise<void>;
+  addBodyMeasurement: (measurement: BodyMeasurement) => Promise<void>;
+  updateBodyMeasurement: (measurement: BodyMeasurement) => Promise<void>;
+  deleteBodyMeasurement: (id: string) => Promise<void>;
+  getLatestBodyMeasurement: () => BodyMeasurement | undefined;
+
   // Settings
   updateUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
 
@@ -153,6 +168,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [supplements, setSupplements] = useState<Supplement[]>([]);
   const [supplementIntakes, setSupplementIntakes] = useState<SupplementIntake[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
+  const [bodyMeasurements, setBodyMeasurements] = useState<BodyMeasurement[]>([]);
 
   // One-time migration: backfill completedAt for imported workouts
   const backfillCompletedAt = async () => {
@@ -252,6 +268,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 supplementIntakes: cloudData.supplementIntakes,
                 routines: cloudData.routines,
                 locations: cloudData.locations,
+                bodyMeasurements: cloudData.bodyMeasurements,
                 userSettings: cloudData.userSettings || DEFAULT_USER_SETTINGS,
               });
               await refreshAll();
@@ -329,6 +346,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setRoutines(data);
   }, []);
 
+  const refreshBodyMeasurements = useCallback(async () => {
+    const data = await getBodyMeasurements();
+    // Sort by date descending (newest first)
+    data.sort((a, b) => b.date.localeCompare(a.date));
+    setBodyMeasurements(data);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([
       refreshExercises(),
@@ -340,8 +364,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshSupplements(),
       refreshSupplementIntakes(),
       refreshRoutines(),
+      refreshBodyMeasurements(),
     ]);
-  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshRoutines]);
+  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshRoutines, refreshBodyMeasurements]);
 
   // Exercise CRUD
   const addExercise = useCallback(async (exercise: Exercise) => {
@@ -524,6 +549,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return routines.find(r => r.id === id);
   }, [routines]);
 
+  // Body Measurement CRUD
+  const addBodyMeasurement = useCallback(async (measurement: BodyMeasurement) => {
+    await addBodyMeasurementToStorage(measurement);
+    await refreshBodyMeasurements();
+    // Fire-and-forget sync to cloud
+    syncBodyMeasurement(measurement).catch(e => console.log('Sync error:', e));
+  }, [refreshBodyMeasurements]);
+
+  const updateBodyMeasurement = useCallback(async (measurement: BodyMeasurement) => {
+    await updateBodyMeasurementInStorage(measurement);
+    await refreshBodyMeasurements();
+    // Fire-and-forget sync to cloud
+    syncBodyMeasurement(measurement).catch(e => console.log('Sync error:', e));
+  }, [refreshBodyMeasurements]);
+
+  const deleteBodyMeasurement = useCallback(async (id: string) => {
+    await deleteBodyMeasurementFromStorage(id);
+    await refreshBodyMeasurements();
+    // Fire-and-forget sync to cloud
+    syncDeleteBodyMeasurement(id).catch(e => console.log('Sync error:', e));
+  }, [refreshBodyMeasurements]);
+
+  const getLatestBodyMeasurement = useCallback((): BodyMeasurement | undefined => {
+    // bodyMeasurements is already sorted by date descending
+    return bodyMeasurements[0];
+  }, [bodyMeasurements]);
+
   // Settings
   const updateUserSettingsHandler = useCallback(async (settings: Partial<UserSettings>) => {
     await updateUserSettingsInStorage(settings);
@@ -592,6 +644,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setActiveRoutine,
     getActiveRoutine,
     getRoutineById,
+    bodyMeasurements,
+    refreshBodyMeasurements,
+    addBodyMeasurement,
+    updateBodyMeasurement,
+    deleteBodyMeasurement,
+    getLatestBodyMeasurement,
     updateUserSettings: updateUserSettingsHandler,
     getExerciseById,
     getTemplateById,

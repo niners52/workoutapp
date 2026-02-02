@@ -13,6 +13,8 @@ const LBS_TO_KG = 0.453592;
 const KG_TO_LBS = 2.20462;
 const MILES_TO_KM = 1.60934;
 const KM_TO_MILES = 0.621371;
+const INCHES_TO_CM = 2.54;
+const CM_TO_INCHES = 0.393701;
 
 /**
  * Convert weight for display.
@@ -124,4 +126,83 @@ export function estimated1RM(weightLbs: number, reps: number): number {
   if (reps <= 0 || reps > 36) return weightLbs;
   if (reps === 1) return weightLbs;
   return Math.round(weightLbs * (36 / (37 - reps)));
+}
+
+// ============== HEIGHT CONVERSIONS ==============
+
+/**
+ * Convert inches to feet and inches parts.
+ * e.g., 70 inches -> { feet: 5, inches: 10 }
+ */
+export function inchesToFeetAndInches(totalInches: number): { feet: number; inches: number } {
+  const feet = Math.floor(totalInches / 12);
+  const inches = Math.round(totalInches % 12);
+  return { feet, inches };
+}
+
+/**
+ * Convert feet and inches to total inches.
+ * e.g., 5 feet 10 inches -> 70 inches
+ */
+export function feetAndInchesToInches(feet: number, inches: number): number {
+  return feet * 12 + inches;
+}
+
+/**
+ * Convert inches to centimeters.
+ */
+export function inchesToCm(inches: number): number {
+  return Math.round(inches * INCHES_TO_CM * 10) / 10;
+}
+
+/**
+ * Convert centimeters to inches.
+ */
+export function cmToInches(cm: number): number {
+  return Math.round(cm * CM_TO_INCHES * 10) / 10;
+}
+
+/**
+ * Format height for display.
+ * Imperial: 5'10" or "5 ft 10 in"
+ * Metric: 178 cm
+ */
+export function formatHeight(inches: number, units: UnitSystem, compact: boolean = true): string {
+  if (units === 'metric') {
+    const cm = inchesToCm(inches);
+    return `${Math.round(cm)} cm`;
+  }
+  const { feet, inches: remainingInches } = inchesToFeetAndInches(inches);
+  if (compact) {
+    return `${feet}'${remainingInches}"`;
+  }
+  return `${feet} ft ${remainingInches} in`;
+}
+
+/**
+ * Convert height for display based on unit system.
+ * Returns cm for metric, inches for imperial.
+ */
+export function displayHeight(inches: number, units: UnitSystem): number {
+  if (units === 'metric') {
+    return Math.round(inchesToCm(inches));
+  }
+  return inches;
+}
+
+/**
+ * Convert height from user input to internal storage (inches).
+ */
+export function inputToInches(value: number, units: UnitSystem): number {
+  if (units === 'metric') {
+    return cmToInches(value);
+  }
+  return value;
+}
+
+/**
+ * Get the height unit label.
+ */
+export function heightUnit(units: UnitSystem): string {
+  return units === 'metric' ? 'cm' : 'in';
 }

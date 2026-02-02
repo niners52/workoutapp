@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { NutritionData, SleepData, SleepStages } from '../types';
+import { NutritionData, SleepData, SleepStages, BodyMeasurementHistory } from '../types';
 import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 
 // Conditionally import react-native-health only on iOS
@@ -45,6 +45,11 @@ const healthKitPermissions = {
       'Carbohydrates',
       'FatTotal',
       'EnergyConsumed',
+      'Weight',
+      'BodyFatPercentage',
+      'Height',
+      'LeanBodyMass',
+      'BodyMassIndex',
     ],
     write: [
       'Workout',
@@ -548,6 +553,298 @@ export async function getWeeklySleepAverage(weekEndDate: Date): Promise<{
     avgRem: Math.round((totals.rem / data.length) * 10) / 10,
     avgCore: Math.round((totals.core / data.length) * 10) / 10,
     days: data.length,
+  };
+}
+
+// ============== BODY MEASUREMENTS ==============
+
+export interface BodyMeasurementData {
+  weight: number | null; // in lbs
+  bodyFatPercentage: number | null;
+  heightInches: number | null;
+  lastUpdated: string | null; // ISO date string
+}
+
+// Get the latest weight from HealthKit
+export async function getLatestWeight(): Promise<{ value: number; date: string } | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = {
+    unit: 'pound',
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestWeight timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getLatestWeight(options, (err: string, result: any) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting latest weight:', err);
+          resolve(null);
+          return;
+        }
+        if (!result || !result.value) {
+          resolve(null);
+          return;
+        }
+        resolve({
+          value: Math.round(result.value * 10) / 10,
+          date: result.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestWeight exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get the latest body fat percentage from HealthKit
+export async function getLatestBodyFat(): Promise<{ value: number; date: string } | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestBodyFat timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getLatestBodyFatPercentage({}, (err: string, result: any) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting latest body fat:', err);
+          resolve(null);
+          return;
+        }
+        if (!result || result.value === undefined) {
+          resolve(null);
+          return;
+        }
+        // Body fat comes as a decimal (0.15 = 15%)
+        resolve({
+          value: Math.round(result.value * 1000) / 10, // Convert to percentage with 1 decimal
+          date: result.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestBodyFat exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get the latest height from HealthKit
+export async function getLatestHeight(): Promise<{ value: number; date: string } | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = {
+    unit: 'inch',
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestHeight timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getLatestHeight(options, (err: string, result: any) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting latest height:', err);
+          resolve(null);
+          return;
+        }
+        if (!result || !result.value) {
+          resolve(null);
+          return;
+        }
+        resolve({
+          value: Math.round(result.value * 10) / 10,
+          date: result.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestHeight exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get weight history for a date range
+export async function getWeightHistory(
+  startDate: Date,
+  endDate: Date = new Date()
+): Promise<BodyMeasurementHistory[]> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return [];
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return [];
+
+  const options = {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    unit: 'pound',
+    ascending: true,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getWeightHistory timed out');
+      resolve([]);
+    }, 10000);
+
+    try {
+      AppleHealthKit.getWeightSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting weight history:', err);
+          resolve([]);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        // Group by date and take the latest value for each day
+        const byDate = new Map<string, { value: number; timestamp: number }>();
+        results.forEach((sample: any) => {
+          const date = format(new Date(sample.startDate), 'yyyy-MM-dd');
+          const timestamp = new Date(sample.startDate).getTime();
+          const existing = byDate.get(date);
+          if (!existing || timestamp > existing.timestamp) {
+            byDate.set(date, { value: sample.value, timestamp });
+          }
+        });
+
+        const history: BodyMeasurementHistory[] = Array.from(byDate.entries())
+          .map(([date, data]) => ({
+            date,
+            value: Math.round(data.value * 10) / 10,
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        resolve(history);
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getWeightHistory exception:', e);
+      resolve([]);
+    }
+  });
+}
+
+// Get body fat percentage history for a date range
+export async function getBodyFatHistory(
+  startDate: Date,
+  endDate: Date = new Date()
+): Promise<BodyMeasurementHistory[]> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return [];
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return [];
+
+  const options = {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    ascending: true,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getBodyFatHistory timed out');
+      resolve([]);
+    }, 10000);
+
+    try {
+      AppleHealthKit.getBodyFatPercentageSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting body fat history:', err);
+          resolve([]);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        // Group by date and take the latest value for each day
+        const byDate = new Map<string, { value: number; timestamp: number }>();
+        results.forEach((sample: any) => {
+          const date = format(new Date(sample.startDate), 'yyyy-MM-dd');
+          const timestamp = new Date(sample.startDate).getTime();
+          const existing = byDate.get(date);
+          if (!existing || timestamp > existing.timestamp) {
+            // Body fat comes as a decimal (0.15 = 15%)
+            byDate.set(date, { value: sample.value * 100, timestamp });
+          }
+        });
+
+        const history: BodyMeasurementHistory[] = Array.from(byDate.entries())
+          .map(([date, data]) => ({
+            date,
+            value: Math.round(data.value * 10) / 10,
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        resolve(history);
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getBodyFatHistory exception:', e);
+      resolve([]);
+    }
+  });
+}
+
+// Get all body measurements at once
+export async function getAllBodyMeasurements(): Promise<BodyMeasurementData> {
+  const [weight, bodyFat, height] = await Promise.all([
+    getLatestWeight(),
+    getLatestBodyFat(),
+    getLatestHeight(),
+  ]);
+
+  // Find the most recent date from any measurement
+  const dates = [weight?.date, bodyFat?.date, height?.date].filter(Boolean) as string[];
+  const lastUpdated = dates.length > 0
+    ? dates.reduce((latest, date) => date > latest ? date : latest)
+    : null;
+
+  return {
+    weight: weight?.value ?? null,
+    bodyFatPercentage: bodyFat?.value ?? null,
+    heightInches: height?.value ?? null,
+    lastUpdated,
   };
 }
 

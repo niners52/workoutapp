@@ -427,3 +427,19 @@ export interface Routine {
 
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Body Measurements
+export interface BodyMeasurement {
+  id: string;
+  date: string; // 'YYYY-MM-DD' format
+  weight?: number; // stored in lbs
+  bodyFatPercentage?: number;
+  heightInches?: number; // stored in inches
+  source: 'healthkit' | 'manual';
+  syncedAt?: string; // ISO datetime when synced from HealthKit
+}
+
+export interface BodyMeasurementHistory {
+  date: string;
+  value: number;
+}

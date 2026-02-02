@@ -10,6 +10,7 @@ import {
   Supplement,
   SupplementIntake,
   Routine,
+  BodyMeasurement,
 } from '../types';
 
 // Storage keys for sync state
@@ -431,6 +432,61 @@ export async function syncDeleteRoutine(id: string): Promise<void> {
   }
 }
 
+// ==================== BODY MEASUREMENT SYNC ====================
+
+export async function syncBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  try {
+    const row = {
+      id: measurement.id,
+      user_id: userId,
+      date: measurement.date,
+      weight: measurement.weight ?? null,
+      body_fat_percentage: measurement.bodyFatPercentage ?? null,
+      height_inches: measurement.heightInches ?? null,
+      source: measurement.source,
+      synced_at: measurement.syncedAt ?? null,
+    };
+
+    const { error } = await supabase
+      .from('body_measurements')
+      .upsert(row, { onConflict: 'id' });
+
+    if (error) {
+      console.log('Body measurement sync failed, queuing:', error.message);
+      await addToPendingQueue({ table: 'body_measurements', operation: 'upsert', data: row });
+    } else {
+      await updateLastSyncTimestamp();
+    }
+  } catch (error) {
+    console.log('Body measurement sync error:', error);
+  }
+}
+
+export async function syncDeleteBodyMeasurement(id: string): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  try {
+    const { error } = await supabase
+      .from('body_measurements')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.log('Body measurement delete sync failed, queuing:', error.message);
+      await addToPendingQueue({ table: 'body_measurements', operation: 'delete', data: { id, user_id: userId } });
+    } else {
+      await updateLastSyncTimestamp();
+    }
+  } catch (error) {
+    console.log('Body measurement delete sync error:', error);
+  }
+}
+
 // ==================== USER SETTINGS SYNC ====================
 
 export async function syncUserSettings(settings: UserSettings): Promise<void> {
@@ -598,6 +654,7 @@ export interface CloudData {
   supplementIntakes: SupplementIntake[];
   routines: Routine[];
   locations: WorkoutLocation[];
+  bodyMeasurements: BodyMeasurement[];
   userSettings: Partial<UserSettings> | null;
 }
 
@@ -618,6 +675,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       intakesResult,
       routinesResult,
       locationsResult,
+      bodyMeasurementsResult,
       settingsResult,
     ] = await Promise.all([
       supabase.from('exercises').select('*').eq('user_id', userId),
@@ -628,6 +686,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       supabase.from('supplement_intakes').select('*').eq('user_id', userId),
       supabase.from('routines').select('*').eq('user_id', userId),
       supabase.from('workout_locations').select('*').eq('user_id', userId),
+      supabase.from('body_measurements').select('*').eq('user_id', userId),
       supabase.from('user_settings').select('*').eq('user_id', userId).single(),
     ]);
 
@@ -695,6 +754,16 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       sortOrder: row.sort_order ?? 0,
     }));
 
+    const bodyMeasurements: BodyMeasurement[] = (bodyMeasurementsResult.data || []).map(row => ({
+      id: row.id,
+      date: row.date,
+      weight: row.weight ?? undefined,
+      bodyFatPercentage: row.body_fat_percentage ?? undefined,
+      heightInches: row.height_inches ?? undefined,
+      source: row.source || 'manual',
+      syncedAt: row.synced_at ?? undefined,
+    }));
+
     let userSettings: Partial<UserSettings> | null = null;
     if (settingsResult.data) {
       const row = settingsResult.data;
@@ -721,6 +790,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       supplementIntakes,
       routines,
       locations,
+      bodyMeasurements,
       userSettings,
     };
   } catch (error) {
