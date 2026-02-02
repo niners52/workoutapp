@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Exercise,
   Template,
@@ -25,6 +26,7 @@ import {
   getRoutines,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
+import { supabase } from '../services/supabase';
 import {
   addExercise as addExerciseToStorage,
   updateExercise as updateExerciseInStorage,
@@ -131,11 +133,77 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [supplementIntakes, setSupplementIntakes] = useState<SupplementIntake[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
 
+  // One-time migration: backfill completedAt for imported workouts
+  const backfillCompletedAt = async () => {
+    const MIGRATION_KEY = '@workout_tracker/completedAt_backfilled';
+
+    try {
+      // Check if migration already ran
+      const alreadyRan = await AsyncStorage.getItem(MIGRATION_KEY);
+      if (alreadyRan === 'true') {
+        console.log('completedAt backfill already completed');
+        return;
+      }
+
+      // Get all workouts
+      const allWorkouts = await getWorkouts();
+
+      // Find workouts that need fixing: have startedAt but no completedAt
+      const workoutsToFix = allWorkouts.filter(w => w.startedAt && !w.completedAt);
+
+      if (workoutsToFix.length === 0) {
+        console.log('No workouts need completedAt backfill');
+        await AsyncStorage.setItem(MIGRATION_KEY, 'true');
+        return;
+      }
+
+      console.log(`Backfilling completedAt for ${workoutsToFix.length} workouts`);
+
+      // Update each workout locally
+      const { updateWorkout } = await import('../services/storage');
+      for (const workout of workoutsToFix) {
+        const updated = { ...workout, completedAt: workout.startedAt };
+        await updateWorkout(updated);
+      }
+
+      // Update in Supabase if user is authenticated
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          console.log('Updating Supabase with backfilled completedAt values');
+          const updates = workoutsToFix.map(w => ({
+            id: w.id,
+            user_id: user.id,
+            completed_at: w.startedAt,
+          }));
+
+          // Upsert in batches of 50
+          for (let i = 0; i < updates.length; i += 50) {
+            const batch = updates.slice(i, i + 50);
+            await supabase
+              .from('workouts')
+              .upsert(batch, { onConflict: 'id' });
+          }
+        }
+      } catch (supabaseError) {
+        console.log('Supabase update skipped (not authenticated or error):', supabaseError);
+      }
+
+      // Mark migration as complete
+      await AsyncStorage.setItem(MIGRATION_KEY, 'true');
+      console.log(`Backfilled completedAt for ${workoutsToFix.length} workouts`);
+    } catch (error) {
+      console.error('Error during completedAt backfill:', error);
+      // Don't throw - we don't want to break app initialization
+    }
+  };
+
   // Initialize storage and load data
   useEffect(() => {
     async function init() {
       try {
         await initializeStorage();
+        await backfillCompletedAt();
         await refreshAll();
 
         // Initialize HealthKit (this will trigger the permission prompt on iOS)
