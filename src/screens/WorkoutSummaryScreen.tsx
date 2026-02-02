@@ -11,6 +11,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
+import { WorkoutShareButton } from '../components/WorkoutShareCard';
+import { useData } from '../contexts/DataContext';
 import {
   MUSCLE_GROUP_DISPLAY_NAMES,
   PrimaryMuscleGroup,
@@ -52,7 +54,15 @@ function groupByCategory(muscleGroupSets: MuscleGroupSetData[]): {
 export function WorkoutSummaryScreen() {
   const route = useRoute<WorkoutSummaryRouteProp>();
   const navigation = useNavigation<NavigationProp>();
-  const { startedAt, completedAt, totalSets, muscleGroupSets } = route.params;
+  const { workoutId, startedAt, completedAt, totalSets, muscleGroupSets } = route.params;
+  const { workouts, templates, sets: allSets, exercises, userSettings } = useData();
+
+  // Get workout details
+  const workout = workouts.find(w => w.id === workoutId);
+  const template = workout?.templateId ? templates.find(t => t.id === workout.templateId) : null;
+  const workoutName = template?.name || 'Custom Workout';
+  const workoutSets = allSets.filter(s => s.workoutId === workoutId);
+  const units = userSettings?.units || 'imperial';
 
   const startTime = parseISO(startedAt);
   const endTime = parseISO(completedAt);
@@ -149,8 +159,18 @@ export function WorkoutSummaryScreen() {
         </View>
       </ScrollView>
 
-      {/* Done Button */}
+      {/* Buttons */}
       <View style={styles.buttonContainer}>
+        <WorkoutShareButton
+          workoutName={workoutName}
+          startedAt={startedAt}
+          completedAt={completedAt}
+          sets={workoutSets}
+          exercises={exercises}
+          muscleGroupSets={muscleGroupSets}
+          units={units}
+        />
+        <View style={styles.buttonSpacer} />
         <Button
           title="Done"
           onPress={handleDone}
@@ -282,6 +302,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.separator,
+  },
+  buttonSpacer: {
+    height: spacing.sm,
   },
 });
 

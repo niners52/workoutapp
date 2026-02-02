@@ -13,6 +13,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, ListItem } from '../components/common';
+import { ExerciseHistoryChart } from '../components/ExerciseHistoryChart';
 import { useData } from '../contexts/DataContext';
 import { calculateExercisePRs, ExercisePRs } from '../services/personalRecords';
 import { formatWeight, formatWeightValue, weightUnit } from '../services/units';
@@ -46,7 +47,7 @@ export function ExerciseDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ExerciseDetailRouteProp>();
   const { exerciseId } = route.params;
-  const { exercises, deleteExercise, locations, workouts, userSettings } = useData();
+  const { exercises, deleteExercise, locations, workouts, userSettings, sets: allContextSets } = useData();
 
   const [exercisePRs, setExercisePRs] = useState<ExercisePRs | null>(null);
   const [allSets, setAllSets] = useState<WorkoutSet[]>([]);
@@ -101,11 +102,6 @@ export function ExerciseDetailScreen() {
       }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [allSets]);
-
-  // Prepare chart data (last 12 sessions, chronological order for chart)
-  const chartSessions = useMemo(() => {
-    return [...sessions].reverse().slice(-12);
-  }, [sessions]);
 
   const toggleSession = (date: string) => {
     const newExpanded = new Set(expandedSessions);
@@ -173,10 +169,6 @@ export function ExerciseDetailScreen() {
     if (exercise.location === 'home') return 'Home';
     return 'Unknown';
   };
-
-  // Calculate chart dimensions
-  const maxWeight = chartSessions.length > 0 ? Math.max(...chartSessions.map(s => s.maxWeight)) : 100;
-  const maxReps = chartSessions.length > 0 ? Math.max(...chartSessions.map(s => s.maxReps)) : 20;
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
@@ -285,6 +277,14 @@ export function ExerciseDetailScreen() {
           </Card>
         )}
 
+        {/* Progress Chart */}
+        <ExerciseHistoryChart
+          exerciseId={exerciseId}
+          sets={allContextSets}
+          workouts={workouts}
+          units={units}
+        />
+
         {/* Action Buttons */}
         <View style={styles.buttonGroup}>
           <Button
@@ -302,80 +302,6 @@ export function ExerciseDetailScreen() {
             style={styles.actionButton}
           />
         </View>
-
-        {/* Weight Progression Chart */}
-        {chartSessions.length > 1 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Weight Progression</Text>
-            <View style={styles.chart}>
-              <View style={styles.chartYAxis}>
-                <Text style={styles.chartYLabel}>{maxWeight}</Text>
-                <Text style={styles.chartYLabel}>{Math.round(maxWeight / 2)}</Text>
-                <Text style={styles.chartYLabel}>0</Text>
-              </View>
-              <View style={styles.chartBarsContainer}>
-                {chartSessions.map((session) => {
-                  const chartHeight = 80; // Fixed height in pixels
-                  const barHeight = Math.max((session.maxWeight / maxWeight) * chartHeight, 4);
-                  return (
-                    <View key={session.date} style={styles.chartBarColumn}>
-                      <View style={styles.chartBarArea}>
-                        <View
-                          style={[
-                            styles.chartBar,
-                            styles.chartBarWeight,
-                            { height: barHeight },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.chartXLabel}>
-                        {format(new Date(session.date), 'M/d')}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-            <Text style={styles.chartUnit}>{weightUnit(units)}</Text>
-          </Card>
-        )}
-
-        {/* Reps Progression Chart */}
-        {chartSessions.length > 1 && (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Reps Progression</Text>
-            <View style={styles.chart}>
-              <View style={styles.chartYAxis}>
-                <Text style={styles.chartYLabel}>{maxReps}</Text>
-                <Text style={styles.chartYLabel}>{Math.round(maxReps / 2)}</Text>
-                <Text style={styles.chartYLabel}>0</Text>
-              </View>
-              <View style={styles.chartBarsContainer}>
-                {chartSessions.map((session) => {
-                  const chartHeight = 80; // Fixed height in pixels
-                  const barHeight = Math.max((session.maxReps / maxReps) * chartHeight, 4);
-                  return (
-                    <View key={session.date} style={styles.chartBarColumn}>
-                      <View style={styles.chartBarArea}>
-                        <View
-                          style={[
-                            styles.chartBar,
-                            styles.chartBarReps,
-                            { height: barHeight },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.chartXLabel}>
-                        {format(new Date(session.date), 'M/d')}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-            <Text style={styles.chartUnit}>reps</Text>
-          </Card>
-        )}
 
         {/* All Sessions History */}
         {sessions.length > 0 && (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
+import { WorkoutShareButton } from '../components/WorkoutShareCard';
 import { useData } from '../contexts/DataContext';
 import { getSetsByWorkoutId } from '../services/storage';
-import { WorkoutSet } from '../types';
+import { WorkoutSet, PrimaryMuscleGroup } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeightValue } from '../services/units';
 
@@ -67,6 +68,55 @@ export function WorkoutDetailScreen() {
   }, {} as Record<string, WorkoutSet[]>);
 
   const exerciseIds = Object.keys(setsByExercise);
+
+  // Calculate muscle group sets for share card
+  const muscleGroupSets = useMemo(() => {
+    const muscleSetCounts = new Map<string, { sets: number; isSecondary: boolean }>();
+
+    exerciseIds.forEach(exerciseId => {
+      const exercise = exercises.find(e => e.id === exerciseId);
+      if (!exercise) return;
+
+      const exerciseSets = setsByExercise[exerciseId];
+      const setCount = exerciseSets.length;
+
+      // Primary muscle groups
+      const primaryMuscles = exercise.primaryMuscleGroups?.length
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [];
+
+      primaryMuscles.forEach((muscle: PrimaryMuscleGroup) => {
+        const existing = muscleSetCounts.get(muscle);
+        if (existing) {
+          existing.sets += setCount;
+        } else {
+          muscleSetCounts.set(muscle, { sets: setCount, isSecondary: false });
+        }
+      });
+
+      // Secondary muscle groups
+      exercise.secondaryMuscleGroups?.forEach((muscle: PrimaryMuscleGroup) => {
+        const existing = muscleSetCounts.get(muscle);
+        if (existing && !existing.isSecondary) {
+          // Already counted as primary, don't change
+        } else if (existing) {
+          existing.sets += setCount;
+        } else {
+          muscleSetCounts.set(muscle, { sets: setCount, isSecondary: true });
+        }
+      });
+    });
+
+    return Array.from(muscleSetCounts.entries()).map(([muscleGroup, data]) => ({
+      muscleGroup,
+      sets: data.sets,
+      isSecondary: data.isSecondary,
+    }));
+  }, [exerciseIds, exercises, setsByExercise]);
+
+  const workoutName = template?.name || 'Custom Workout';
 
   const handleExercisePress = (exerciseId: string) => {
     navigation.navigate('ExerciseDetail', { exerciseId });
@@ -143,6 +193,21 @@ export function WorkoutDetailScreen() {
             </Card>
           )}
         </View>
+
+        {/* Share Button */}
+        {workout.completedAt && sets.length > 0 && (
+          <View style={styles.shareSection}>
+            <WorkoutShareButton
+              workoutName={workoutName}
+              startedAt={workout.startedAt}
+              completedAt={workout.completedAt}
+              sets={sets}
+              exercises={exercises}
+              muscleGroupSets={muscleGroupSets}
+              units={units}
+            />
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -248,6 +313,9 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xl,
     color: colors.textTertiary,
     marginLeft: spacing.sm,
+  },
+  shareSection: {
+    marginTop: spacing.lg,
   },
 });
 
