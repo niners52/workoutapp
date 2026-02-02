@@ -320,6 +320,7 @@ export interface UserSettings {
   proteinGoal: number; // grams - legacy, use dailyGoals.proteinGrams
   sleepGoal: number; // hours - legacy, use dailyGoals.sleepHours
   restTimerSeconds: number;
+  minimumSetsPerExercise: number; // Warn if finishing workout with fewer sets
   muscleGroupTargets: MuscleGroupTargets;
   dailyGoals: DailyGoals;
   weeklyGoals: WeeklyGoals;
@@ -332,6 +333,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   proteinGoal: 150,
   sleepGoal: 8,
   restTimerSeconds: 90,
+  minimumSetsPerExercise: 3,
   muscleGroupTargets: {
     chest: 10,
     lats: 10,

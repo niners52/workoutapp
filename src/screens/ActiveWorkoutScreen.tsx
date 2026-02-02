@@ -204,80 +204,106 @@ export function ActiveWorkoutScreen() {
   };
 
   const handleFinishWorkout = () => {
-    showAlert(
-      'Finish Workout',
-      'Are you sure you want to finish this workout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Finish',
-          onPress: async () => {
-            // Calculate muscle group breakdown before finishing
-            const muscleGroupSetsMap = new Map<string, { sets: number; isSecondary: boolean }>();
+    const minSets = userSettings?.minimumSetsPerExercise ?? 3;
 
-            activeWorkout.sets.forEach(set => {
-              const exercise = exercises.find(e => e.id === set.exerciseId);
-              if (!exercise) return;
+    // Check for exercises below minimum sets
+    const incompleteExercises = activeWorkout.exerciseIds
+      .map(id => {
+        const exercise = exercises.find(e => e.id === id);
+        const setsLogged = getSetsForExercise(id).length;
+        return { exercise, setsLogged };
+      })
+      .filter(item => item.exercise && item.setsLogged > 0 && item.setsLogged < minSets);
 
-              // Primary muscle groups
-              const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
-                ? exercise.primaryMuscleGroups
-                : exercise.primaryMuscleGroup
-                ? [exercise.primaryMuscleGroup]
-                : [];
+    const doFinish = async () => {
+      // Calculate muscle group breakdown before finishing
+      const muscleGroupSetsMap = new Map<string, { sets: number; isSecondary: boolean }>();
 
-              primaryMuscleGroups.forEach(mg => {
-                const existing = muscleGroupSetsMap.get(mg);
-                muscleGroupSetsMap.set(mg, {
-                  sets: (existing?.sets || 0) + 1,
-                  isSecondary: false,
-                });
-              });
+      activeWorkout.sets.forEach(set => {
+        const exercise = exercises.find(e => e.id === set.exerciseId);
+        if (!exercise) return;
 
-              // Secondary muscle groups
-              (exercise.secondaryMuscleGroups || []).forEach(mg => {
-                const existing = muscleGroupSetsMap.get(mg);
-                // Only add as secondary if not already primary
-                if (!existing || existing.isSecondary) {
-                  muscleGroupSetsMap.set(mg, {
-                    sets: (existing?.sets || 0) + 1,
-                    isSecondary: true,
-                  });
-                }
-              });
+        // Primary muscle groups
+        const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+          ? exercise.primaryMuscleGroups
+          : exercise.primaryMuscleGroup
+          ? [exercise.primaryMuscleGroup]
+          : [];
+
+        primaryMuscleGroups.forEach(mg => {
+          const existing = muscleGroupSetsMap.get(mg);
+          muscleGroupSetsMap.set(mg, {
+            sets: (existing?.sets || 0) + 1,
+            isSecondary: false,
+          });
+        });
+
+        // Secondary muscle groups
+        (exercise.secondaryMuscleGroups || []).forEach(mg => {
+          const existing = muscleGroupSetsMap.get(mg);
+          // Only add as secondary if not already primary
+          if (!existing || existing.isSecondary) {
+            muscleGroupSetsMap.set(mg, {
+              sets: (existing?.sets || 0) + 1,
+              isSecondary: true,
             });
+          }
+        });
+      });
 
-            const muscleGroupSets = Array.from(muscleGroupSetsMap.entries())
-              .map(([muscleGroup, data]) => ({
-                muscleGroup,
-                sets: data.sets,
-                isSecondary: data.isSecondary,
-              }))
-              .sort((a, b) => {
-                // Primary first, then by sets descending
-                if (a.isSecondary !== b.isSecondary) {
-                  return a.isSecondary ? 1 : -1;
-                }
-                return b.sets - a.sets;
-              });
+      const muscleGroupSets = Array.from(muscleGroupSetsMap.entries())
+        .map(([muscleGroup, data]) => ({
+          muscleGroup,
+          sets: data.sets,
+          isSecondary: data.isSecondary,
+        }))
+        .sort((a, b) => {
+          // Primary first, then by sets descending
+          if (a.isSecondary !== b.isSecondary) {
+            return a.isSecondary ? 1 : -1;
+          }
+          return b.sets - a.sets;
+        });
 
-            const startedAt = activeWorkout.workout.startedAt;
-            const completedAt = new Date().toISOString();
-            const totalSets = activeWorkout.sets.length;
+      const startedAt = activeWorkout.workout.startedAt;
+      const completedAt = new Date().toISOString();
+      const totalSets = activeWorkout.sets.length;
 
-            await finishWorkout();
+      await finishWorkout();
 
-            navigation.replace('WorkoutSummary', {
-              workoutId: activeWorkout.workout.id,
-              startedAt,
-              completedAt,
-              totalSets,
-              muscleGroupSets,
-            });
-          },
-        },
-      ]
-    );
+      navigation.replace('WorkoutSummary', {
+        workoutId: activeWorkout.workout.id,
+        startedAt,
+        completedAt,
+        totalSets,
+        muscleGroupSets,
+      });
+    };
+
+    // Show warning if any exercises are below minimum
+    if (incompleteExercises.length > 0) {
+      const exerciseList = incompleteExercises
+        .map(item => `• ${item.exercise!.name}: ${item.setsLogged} set${item.setsLogged !== 1 ? 's' : ''}`)
+        .join('\n');
+
+      showAlert(
+        'Incomplete Exercises',
+        `The following exercises have fewer than ${minSets} sets:\n\n${exerciseList}\n\nFinish anyway?`,
+        [
+          { text: 'Keep Going', style: 'cancel' },
+          { text: 'Finish Anyway', onPress: doFinish },
+        ]
+      );
+    } else {
+      showAlert(
+        'Finish Workout',
+        'Are you sure you want to finish this workout?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Finish', onPress: doFinish },
+        ]
+      );
+    }
   };
 
   const handleCancelWorkout = () => {

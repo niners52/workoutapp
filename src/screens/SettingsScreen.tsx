@@ -438,7 +438,20 @@ export function SettingsScreen() {
                 step={15}
               />
             </View>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <Text style={styles.settingLabel}>Min Sets / Exercise</Text>
+              <NumberInput
+                value={userSettings.minimumSetsPerExercise ?? 3}
+                onChangeValue={(value) => updateUserSettings({ minimumSetsPerExercise: value })}
+                min={1}
+                max={10}
+                step={1}
+              />
+            </View>
           </Card>
+          <Text style={styles.hint}>
+            Warn when finishing a workout with fewer sets per exercise
+          </Text>
         </View>
 
         {/* Routines */}
