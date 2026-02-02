@@ -24,9 +24,30 @@ import {
   getSupplements,
   getSupplementIntakes,
   getRoutines,
+  restoreFromBackup,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
 import { supabase } from '../services/supabase';
+import {
+  syncExercise,
+  syncDeleteExercise,
+  syncTemplate,
+  syncDeleteTemplate,
+  syncLocation,
+  syncDeleteLocation,
+  syncSupplement,
+  syncDeleteSupplement,
+  syncSupplementIntake,
+  syncDeleteSupplementIntake,
+  syncRoutine,
+  syncDeleteRoutine,
+  syncUserSettings,
+  processPendingSync,
+  pullFromCloud,
+  getLastCloudPull,
+  setLastCloudPull,
+  isAuthenticated,
+} from '../services/syncService';
 import {
   addExercise as addExerciseToStorage,
   updateExercise as updateExerciseInStorage,
@@ -206,6 +227,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await backfillCompletedAt();
         await refreshAll();
 
+        // Handle cloud sync on launch
+        const authenticated = await isAuthenticated();
+        if (authenticated) {
+          // Process any pending sync operations
+          processPendingSync().catch(err => console.log('Pending sync error:', err));
+
+          // Check if we need to pull from cloud (new device or empty local data)
+          const lastPull = await getLastCloudPull();
+          const localWorkouts = await getWorkouts();
+
+          if (!lastPull && localWorkouts.length === 0) {
+            // New device with no local data - pull from cloud
+            console.log('New device detected, pulling data from cloud...');
+            const cloudData = await pullFromCloud();
+            if (cloudData && (cloudData.workouts.length > 0 || cloudData.exercises.length > 0)) {
+              // Restore cloud data to local storage
+              await restoreFromBackup({
+                exercises: cloudData.exercises,
+                templates: cloudData.templates,
+                workouts: cloudData.workouts,
+                sets: cloudData.sets,
+                supplements: cloudData.supplements,
+                supplementIntakes: cloudData.supplementIntakes,
+                routines: cloudData.routines,
+                locations: cloudData.locations,
+                userSettings: cloudData.userSettings || DEFAULT_USER_SETTINGS,
+              });
+              await refreshAll();
+              console.log('Cloud data restored to local storage');
+            }
+            await setLastCloudPull();
+          }
+        }
+
         // Initialize HealthKit (this will trigger the permission prompt on iOS)
         initializeHealthKit().then(success => {
           if (success) {
@@ -292,52 +347,75 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addExercise = useCallback(async (exercise: Exercise) => {
     await addExerciseToStorage(exercise);
     await refreshExercises();
+    // Fire-and-forget sync to cloud
+    syncExercise(exercise).catch(e => console.log('Sync error:', e));
   }, [refreshExercises]);
 
   const updateExercise = useCallback(async (exercise: Exercise) => {
     await updateExerciseInStorage(exercise);
     await refreshExercises();
+    // Fire-and-forget sync to cloud
+    syncExercise(exercise).catch(e => console.log('Sync error:', e));
   }, [refreshExercises]);
 
   const deleteExercise = useCallback(async (id: string) => {
     await deleteExerciseFromStorage(id);
     await refreshExercises();
+    // Fire-and-forget sync to cloud
+    syncDeleteExercise(id).catch(e => console.log('Sync error:', e));
   }, [refreshExercises]);
 
   // Template CRUD
   const addTemplate = useCallback(async (template: Template) => {
     await addTemplateToStorage(template);
     await refreshTemplates();
+    // Fire-and-forget sync to cloud
+    syncTemplate(template).catch(e => console.log('Sync error:', e));
   }, [refreshTemplates]);
 
   const updateTemplate = useCallback(async (template: Template) => {
     await updateTemplateInStorage(template);
     await refreshTemplates();
+    // Fire-and-forget sync to cloud
+    syncTemplate(template).catch(e => console.log('Sync error:', e));
   }, [refreshTemplates]);
 
   const deleteTemplate = useCallback(async (id: string) => {
     await deleteTemplateFromStorage(id);
     await refreshTemplates();
+    // Fire-and-forget sync to cloud
+    syncDeleteTemplate(id).catch(e => console.log('Sync error:', e));
   }, [refreshTemplates]);
 
   // Location CRUD
   const addLocation = useCallback(async (location: WorkoutLocation) => {
     await addLocationToStorage(location);
     await refreshLocations();
+    // Fire-and-forget sync to cloud
+    syncLocation(location).catch(e => console.log('Sync error:', e));
   }, [refreshLocations]);
 
   const updateLocation = useCallback(async (location: WorkoutLocation) => {
     await updateLocationInStorage(location);
     await refreshLocations();
+    // Fire-and-forget sync to cloud
+    syncLocation(location).catch(e => console.log('Sync error:', e));
   }, [refreshLocations]);
 
   const deleteLocation = useCallback(async (id: string) => {
     await deleteLocationFromStorage(id);
     await refreshLocations();
+    // Fire-and-forget sync to cloud
+    syncDeleteLocation(id).catch(e => console.log('Sync error:', e));
   }, [refreshLocations]);
 
   const reorderLocations = useCallback(async (locationIds: string[]) => {
     await reorderLocationsInStorage(locationIds);
+    const updatedLocations = await getLocations();
+    // Fire-and-forget sync all reordered locations to cloud
+    updatedLocations.forEach(loc => {
+      syncLocation(loc).catch(e => console.log('Sync error:', e));
+    });
     await refreshLocations();
   }, [refreshLocations]);
 
@@ -345,17 +423,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addSupplement = useCallback(async (supplement: Supplement) => {
     await addSupplementToStorage(supplement);
     await refreshSupplements();
+    // Fire-and-forget sync to cloud
+    syncSupplement(supplement).catch(e => console.log('Sync error:', e));
   }, [refreshSupplements]);
 
   const updateSupplement = useCallback(async (supplement: Supplement) => {
     await updateSupplementInStorage(supplement);
     await refreshSupplements();
+    // Fire-and-forget sync to cloud
+    syncSupplement(supplement).catch(e => console.log('Sync error:', e));
   }, [refreshSupplements]);
 
   const deleteSupplement = useCallback(async (id: string) => {
     await deleteSupplementFromStorage(id);
     await refreshSupplements();
     await refreshSupplementIntakes(); // Also refresh intakes since they may be deleted
+    // Fire-and-forget sync to cloud
+    syncDeleteSupplement(id).catch(e => console.log('Sync error:', e));
   }, [refreshSupplements, refreshSupplementIntakes]);
 
   const toggleSupplementIntake = useCallback(async (supplementId: string, date: string) => {
@@ -370,6 +454,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Save to storage in background
       try {
         await deleteSupplementIntakeBySupplementAndDate(supplementId, date);
+        // Fire-and-forget sync to cloud
+        syncDeleteSupplementIntake(existing.id).catch(e => console.log('Sync error:', e));
       } catch (error) {
         // Revert on error
         console.error('Failed to delete supplement intake:', error);
@@ -388,6 +474,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Save to storage in background
       try {
         await addSupplementIntakeToStorage(intake);
+        // Fire-and-forget sync to cloud
+        syncSupplementIntake(intake).catch(e => console.log('Sync error:', e));
       } catch (error) {
         // Revert on error
         console.error('Failed to add supplement intake:', error);
@@ -400,20 +488,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addRoutine = useCallback(async (routine: Routine) => {
     await addRoutineToStorage(routine);
     await refreshRoutines();
+    // Fire-and-forget sync to cloud
+    syncRoutine(routine).catch(e => console.log('Sync error:', e));
   }, [refreshRoutines]);
 
   const updateRoutine = useCallback(async (routine: Routine) => {
     await updateRoutineInStorage(routine);
     await refreshRoutines();
+    // Fire-and-forget sync to cloud
+    syncRoutine(routine).catch(e => console.log('Sync error:', e));
   }, [refreshRoutines]);
 
   const deleteRoutine = useCallback(async (id: string) => {
     await deleteRoutineFromStorage(id);
     await refreshRoutines();
+    // Fire-and-forget sync to cloud
+    syncDeleteRoutine(id).catch(e => console.log('Sync error:', e));
   }, [refreshRoutines]);
 
   const setActiveRoutine = useCallback(async (routineId: string | null) => {
     await setActiveRoutineInStorage(routineId);
+    const updatedRoutines = await getRoutines();
+    // Fire-and-forget sync all routines to cloud (isActive changed)
+    updatedRoutines.forEach(r => {
+      syncRoutine(r).catch(e => console.log('Sync error:', e));
+    });
     await refreshRoutines();
   }, [refreshRoutines]);
 
@@ -429,6 +528,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const updateUserSettingsHandler = useCallback(async (settings: Partial<UserSettings>) => {
     await updateUserSettingsInStorage(settings);
     await refreshUserSettings();
+    // Fire-and-forget sync to cloud - need full settings object
+    const fullSettings = await getUserSettings();
+    syncUserSettings(fullSettings).catch(e => console.log('Sync error:', e));
   }, [refreshUserSettings]);
 
   // Utility

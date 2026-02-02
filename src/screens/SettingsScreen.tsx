@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   Share,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -27,6 +28,14 @@ import {
 } from '../services/storage';
 import { clearHealthKitCache } from '../services/healthKitCache';
 import { resetMigration } from '../services/cloudSync';
+import {
+  processPendingSync,
+  pullFromCloud,
+  getLastSyncTimestamp,
+  getPendingOperationsCount,
+  isAuthenticated as checkIsAuthenticated,
+} from '../services/syncService';
+import { format } from 'date-fns';
 import {
   WeekStartDay,
   UnitSystem,
@@ -63,6 +72,52 @@ export function SettingsScreen() {
   const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
   const [editingSupplement, setEditingSupplement] = useState<Supplement | null>(null);
+
+  // Sync status state
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isAuthenticatedForSync, setIsAuthenticatedForSync] = useState(false);
+
+  const loadSyncStatus = useCallback(async () => {
+    const [authenticated, lastSync, pending] = await Promise.all([
+      checkIsAuthenticated(),
+      getLastSyncTimestamp(),
+      getPendingOperationsCount(),
+    ]);
+    setIsAuthenticatedForSync(authenticated);
+    setLastSyncTime(lastSync);
+    setPendingCount(pending);
+  }, []);
+
+  useEffect(() => {
+    loadSyncStatus();
+  }, [loadSyncStatus]);
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    try {
+      // Process any pending operations
+      const result = await processPendingSync();
+      console.log(`Sync complete: ${result.processed} processed, ${result.failed} failed`);
+
+      // Refresh sync status
+      await loadSyncStatus();
+
+      if (result.failed > 0) {
+        Alert.alert('Sync Partial', `${result.processed} synced, ${result.failed} still pending`);
+      } else if (result.processed > 0) {
+        Alert.alert('Sync Complete', `${result.processed} operations synced successfully`);
+      } else {
+        Alert.alert('Already Synced', 'No pending operations to sync');
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      Alert.alert('Sync Failed', 'Unable to sync with cloud');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleWeekStartChange = (day: WeekStartDay) => {
     updateUserSettings({ weekStartDay: day });
@@ -341,6 +396,48 @@ export function SettingsScreen() {
                   <Text style={styles.signOutText}>Sign Out</Text>
                 </TouchableOpacity>
               </View>
+            )}
+          </Card>
+        </View>
+
+        {/* Sync Status */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Cloud Sync</Text>
+          <Card padding="none">
+            {!isAuthenticatedForSync ? (
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <Text style={styles.offlineModeText}>Offline mode - sign in to enable sync</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Last synced</Text>
+                  <Text style={styles.syncValue}>
+                    {lastSyncTime
+                      ? format(new Date(lastSyncTime), 'MMM d, h:mm a')
+                      : 'Never'}
+                  </Text>
+                </View>
+                {pendingCount > 0 && (
+                  <View style={styles.settingRow}>
+                    <Text style={styles.settingLabel}>Pending operations</Text>
+                    <Text style={styles.pendingCount}>{pendingCount}</Text>
+                  </View>
+                )}
+                <View style={[styles.settingRow, styles.settingRowLast]}>
+                  <TouchableOpacity
+                    onPress={handleSyncNow}
+                    disabled={isSyncing}
+                    style={styles.syncButton}
+                  >
+                    {isSyncing ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.syncButtonText}>Sync Now</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </Card>
         </View>
@@ -1102,6 +1199,30 @@ const styles = StyleSheet.create({
   signOutText: {
     fontSize: typography.size.md,
     color: colors.error,
+    fontWeight: typography.weight.medium,
+  },
+  offlineModeText: {
+    fontSize: typography.size.md,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+  },
+  syncValue: {
+    fontSize: typography.size.md,
+    color: colors.textSecondary,
+  },
+  pendingCount: {
+    fontSize: typography.size.md,
+    color: colors.warning,
+    fontWeight: typography.weight.semibold,
+  },
+  syncButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  syncButtonText: {
+    fontSize: typography.size.md,
+    color: colors.primary,
     fontWeight: typography.weight.medium,
   },
 });

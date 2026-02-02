@@ -37,6 +37,11 @@ import {
   getUserSettings,
 } from '../services/storage';
 import { saveWorkoutToHealthKit } from '../services/healthKit';
+import {
+  syncWorkout,
+  syncSet,
+  syncDeleteSet,
+} from '../services/syncService';
 
 interface ActiveWorkoutState {
   workout: Workout;
@@ -306,6 +311,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     };
 
     await addWorkout(workout);
+    // Fire-and-forget sync to cloud
+    syncWorkout(workout).catch(e => console.log('Sync error:', e));
 
     let exerciseIds: string[] = [];
     if (templateId) {
@@ -353,6 +360,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     };
 
     await updateWorkout(completedWorkout);
+    // Fire-and-forget sync to cloud
+    syncWorkout(completedWorkout).catch(e => console.log('Sync error:', e));
 
     // Save to Apple Health
     try {
@@ -515,6 +524,9 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     };
 
     await addSet(set);
+    // Fire-and-forget sync to cloud
+    syncSet(set).catch(e => console.log('Sync error:', e));
+    syncWorkout(activeWorkout.workout).catch(e => console.log('Sync error:', e));
 
     setActiveWorkout(prev => {
       if (!prev) return null;
@@ -536,6 +548,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     if (!activeWorkout) return;
 
     await deleteSet(setId);
+    // Fire-and-forget sync to cloud
+    syncDeleteSet(setId).catch(e => console.log('Sync error:', e));
 
     setActiveWorkout(prev => {
       if (!prev) return null;
@@ -559,6 +573,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     };
 
     await updateSet(updatedSet);
+    // Fire-and-forget sync to cloud
+    syncSet(updatedSet).catch(e => console.log('Sync error:', e));
 
     setActiveWorkout(prev => {
       if (!prev) return null;
