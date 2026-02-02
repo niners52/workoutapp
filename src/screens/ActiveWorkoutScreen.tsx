@@ -1005,23 +1005,27 @@ function ExerciseCard({
             />
 
             <View style={styles.inputRow}>
-              <NumberInput
-                value={displayWeight(weight, units)}
-                onChangeValue={(v) => setWeight(inputToLbs(v, units))}
-                label={`Weight (${weightUnit(units)})`}
-                step={weightIncrement(units)}
-                min={0}
-                max={units === 'metric' ? 500 : 1000}
-                allowDecimals
-              />
-              <NumberInput
-                value={reps}
-                onChangeValue={setReps}
-                label="Reps"
-                step={1}
-                min={1}
-                max={100}
-              />
+              <View style={{ flex: 1 }}>
+                <NumberInput
+                  value={displayWeight(weight, units)}
+                  onChangeValue={(v) => setWeight(inputToLbs(v, units))}
+                  label={`Weight (${weightUnit(units)})`}
+                  step={weightIncrement(units)}
+                  min={0}
+                  max={units === 'metric' ? 500 : 1000}
+                  allowDecimals
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <NumberInput
+                  value={reps}
+                  onChangeValue={setReps}
+                  label="Reps"
+                  step={1}
+                  min={1}
+                  max={100}
+                />
+              </View>
             </View>
 
             <View style={styles.actionRow}>
@@ -1149,7 +1153,7 @@ const styles = StyleSheet.create({
   exerciseHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   exerciseName: {
     fontSize: typography.size.md,
@@ -1197,6 +1201,7 @@ const styles = StyleSheet.create({
   expandIcon: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
+    marginLeft: spacing.xs,
   },
   exerciseContent: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -1284,7 +1289,7 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    gap: spacing.md,
     marginBottom: spacing.md,
   },
   actionRow: {
