@@ -21,3 +21,5 @@ export { CreateRoutineScreen } from './CreateRoutineScreen';
 export { RoutineDetailScreen } from './RoutineDetailScreen';
 export { HealthKitDataScreen } from './HealthKitDataScreen';
 export { WorkoutSummaryScreen } from './WorkoutSummaryScreen';
+export { AuthScreen } from './AuthScreen';
+export { MigrationScreen } from './MigrationScreen';

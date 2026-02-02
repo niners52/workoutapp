@@ -4,6 +4,8 @@ import { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/n
 
 // Root Stack Navigator
 export type RootStackParamList = {
+  Auth: undefined;
+  Migration: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   StartWorkout: undefined;
   ActiveWorkout: { workoutId: string };

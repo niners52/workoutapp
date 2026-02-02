@@ -9,6 +9,7 @@ import {
   Share,
   TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +17,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card, ListItem, NumberInput, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
 import {
   exportToJSON,
   exportToCSV,
@@ -37,6 +39,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const { user, signOut } = useAuth();
   const {
     userSettings,
     updateUserSettings,
@@ -125,6 +128,25 @@ export function SettingsScreen() {
           onPress: async () => {
             await clearHealthKitCache();
             Alert.alert('Cache Cleared', 'HealthKit cache has been cleared');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out? Your data will remain on this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+            // Clear the auth_skipped flag so auth screen shows again
+            await AsyncStorage.removeItem('auth_skipped');
           },
         },
       ]
@@ -296,6 +318,25 @@ export function SettingsScreen() {
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.title}>Settings</Text>
+
+        {/* Account */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <Card padding="none">
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>
+                {user ? user.email : 'Not signed in - local only'}
+              </Text>
+            </View>
+            {user && (
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
+                  <Text style={styles.signOutText}>Sign Out</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </Card>
+        </View>
 
         {/* General Settings */}
         <View style={styles.section}>
@@ -987,6 +1028,16 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     color: colors.primary,
     fontWeight: typography.weight.bold,
+  },
+  signOutButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  signOutText: {
+    fontSize: typography.size.md,
+    color: colors.error,
+    fontWeight: typography.weight.medium,
   },
 });
 

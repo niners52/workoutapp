@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
+import { Text, View, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, typography } from '../theme';
 import { RootStackParamList, MainTabParamList } from './types';
+import { useAuth } from '../contexts/AuthContext';
+import { isMigrationComplete } from '../services/cloudSync';
 
 import {
   HomeScreen,
@@ -30,6 +33,8 @@ import {
   RoutineDetailScreen,
   HealthKitDataScreen,
   WorkoutSummaryScreen,
+  AuthScreen,
+  MigrationScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -107,6 +112,64 @@ function MainTabs() {
 }
 
 export function AppNavigator() {
+  const { isLoading, isAuthenticated } = useAuth();
+  const [authSkipped, setAuthSkipped] = useState(false);
+  const [needsMigration, setNeedsMigration] = useState(false);
+  const [checkingMigration, setCheckingMigration] = useState(true);
+
+  // Check if user skipped auth
+  useEffect(() => {
+    AsyncStorage.getItem('auth_skipped').then(value => {
+      setAuthSkipped(value === 'true');
+    });
+  }, []);
+
+  // Check migration status when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      isMigrationComplete().then(complete => {
+        setNeedsMigration(!complete);
+        setCheckingMigration(false);
+      });
+    } else {
+      setCheckingMigration(false);
+    }
+  }, [isAuthenticated, isLoading]);
+
+  // Show loading spinner while checking auth state
+  if (isLoading || checkingMigration) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  // Show auth screen if not authenticated and not skipped
+  if (!isAuthenticated && !authSkipped) {
+    return (
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Auth" component={AuthScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  // Show migration screen if authenticated but needs migration
+  if (isAuthenticated && needsMigration) {
+    return (
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Migration">
+            {() => <MigrationScreen onComplete={() => setNeedsMigration(false)} />}
+          </Stack.Screen>
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  // Show main app
   return (
     <NavigationContainer>
       <Stack.Navigator
