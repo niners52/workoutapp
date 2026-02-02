@@ -26,6 +26,7 @@ import {
   restoreFromBackup,
 } from '../services/storage';
 import { clearHealthKitCache } from '../services/healthKitCache';
+import { resetMigration } from '../services/cloudSync';
 import {
   WeekStartDay,
   WorkoutLocation,
@@ -151,6 +152,11 @@ export function SettingsScreen() {
         },
       ]
     );
+  };
+
+  const handleResetMigration = async () => {
+    await resetMigration();
+    Alert.alert('Migration Reset', 'Restart the app to re-sync.');
   };
 
   const handleRestoreBackup = async () => {
@@ -792,6 +798,12 @@ export function SettingsScreen() {
               title="Clear Health Cache"
               subtitle="Re-fetch fresh data from Apple Health"
               onPress={handleClearHealthCache}
+              showChevron
+            />
+            <ListItem
+              title="Reset Migration"
+              subtitle="Force re-sync to cloud (DEBUG)"
+              onPress={handleResetMigration}
               showChevron
               isLast
             />
