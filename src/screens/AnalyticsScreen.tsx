@@ -16,6 +16,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, startOfWeek, endOfWeek, subWeeks, subDays } from 'date-fns';
+import Svg, { Circle } from 'react-native-svg';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
 import { MuscleGroupVolumeChart } from '../components/charts';
@@ -34,7 +35,22 @@ import {
   getWeightHistory,
   getBodyFatHistory,
   BodyMeasurementData,
+  getAllHealthMetrics,
+  getHRVHistory,
+  HealthMetricsData,
+  HealthMetricSample,
 } from '../services/healthKit';
+import {
+  calculateRecoveryScore,
+  getStoredBaselines,
+  calculateBaselines,
+  shouldRecalculateBaselines,
+  getTrainingLoad,
+  getAverageTrainingLoad,
+  RecoveryResult,
+  Baselines,
+  clearRecoveryCache,
+} from '../services/recoveryScore';
 import {
   formatWeight,
   formatHeight,
@@ -51,11 +67,18 @@ import {
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
+// Recovery status colors
+const RECOVERY_COLORS = {
+  recovered: '#4CAF50',  // Green
+  moderate: '#FFC107',   // Yellow
+  strained: '#F44336',   // Red
+};
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function AnalyticsScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { userSettings, bodyMeasurements, addBodyMeasurement, getLatestBodyMeasurement } = useData();
+  const { userSettings, bodyMeasurements, addBodyMeasurement, getLatestBodyMeasurement, workouts, sets } = useData();
 
   const [refreshing, setRefreshing] = useState(false);
   const [currentWeekVolume, setCurrentWeekVolume] = useState<WeeklyVolume | null>(null);
@@ -79,6 +102,65 @@ export function AnalyticsScreen() {
   const [manualHeightFeet, setManualHeightFeet] = useState('');
   const [manualHeightInches, setManualHeightInches] = useState('');
 
+  // Recovery state
+  const [recoveryResult, setRecoveryResult] = useState<RecoveryResult | null>(null);
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetricsData | null>(null);
+  const [hrvHistory, setHrvHistory] = useState<HealthMetricSample[]>([]);
+  const [baselines, setBaselines] = useState<Baselines | null>(null);
+  const [loadingRecovery, setLoadingRecovery] = useState(false);
+  const [showFactorBreakdown, setShowFactorBreakdown] = useState(false);
+
+  const loadRecoveryData = useCallback(async () => {
+    if (Platform.OS !== 'ios') {
+      return;
+    }
+
+    setLoadingRecovery(true);
+    try {
+      // Get health metrics from HealthKit
+      const metrics = await getAllHealthMetrics();
+      setHealthMetrics(metrics);
+
+      // Get HRV history for sparkline
+      const hrvHist = await getHRVHistory(7);
+      setHrvHistory(hrvHist);
+
+      // Check if we need to recalculate baselines
+      let currentBaselines = await getStoredBaselines();
+      if (await shouldRecalculateBaselines()) {
+        const newBaselines = await calculateBaselines();
+        currentBaselines = {
+          ...newBaselines,
+          lastCalculated: new Date().toISOString(),
+        };
+      }
+      setBaselines(currentBaselines);
+
+      // Calculate training load
+      const yesterday = subDays(new Date(), 1);
+      const trainingLoadYesterday = getTrainingLoad(workouts, sets, yesterday);
+      const trainingLoadAverage = getAverageTrainingLoad(workouts, sets, 7);
+
+      // Calculate recovery score
+      const result = calculateRecoveryScore({
+        hrv: metrics.hrv?.value ?? null,
+        hrvBaseline: currentBaselines.hrvBaseline,
+        restingHR: metrics.restingHeartRate?.value ?? null,
+        rhrBaseline: currentBaselines.rhrBaseline,
+        sleepHours: metrics.sleepLastNight?.totalHours ?? null,
+        sleepTarget: userSettings.sleepGoal || 8,
+        trainingLoadYesterday,
+        trainingLoadAverage,
+      });
+
+      setRecoveryResult(result);
+    } catch (error) {
+      console.error('Failed to load recovery data:', error);
+    } finally {
+      setLoadingRecovery(false);
+    }
+  }, [workouts, sets, userSettings.sleepGoal]);
+
   const loadData = useCallback(async () => {
     try {
       const today = new Date();
@@ -100,10 +182,13 @@ export function AnalyticsScreen() {
         const bodyData = await getAllBodyMeasurements();
         setHealthKitBodyData(bodyData);
       }
+
+      // Load recovery data
+      await loadRecoveryData();
     } catch (error) {
       console.error('Failed to load analytics:', error);
     }
-  }, []);
+  }, [loadRecoveryData]);
 
   useFocusEffect(
     useCallback(() => {
@@ -113,9 +198,57 @@ export function AnalyticsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await clearRecoveryCache(); // Force refresh recovery data
     await loadData();
     setRefreshing(false);
   }, [loadData]);
+
+  // Get recovery status color
+  const getRecoveryColor = (status: RecoveryResult['status']): string => {
+    return RECOVERY_COLORS[status];
+  };
+
+  // Recovery gauge component
+  const RecoveryGauge = ({ score, status }: { score: number; status: RecoveryResult['status'] }) => {
+    const size = 140;
+    const strokeWidth = 12;
+    const radius = (size - strokeWidth) / 2;
+    const circumference = radius * 2 * Math.PI;
+    const progress = (score / 100) * circumference;
+    const color = getRecoveryColor(status);
+
+    return (
+      <View style={styles.gaugeContainer}>
+        <Svg width={size} height={size}>
+          {/* Background circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colors.backgroundTertiary}
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          {/* Progress circle */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={strokeWidth}
+            fill="none"
+            strokeDasharray={`${progress} ${circumference}`}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        </Svg>
+        <View style={styles.gaugeCenter}>
+          <Text style={[styles.gaugeScore, { color }]}>{score}</Text>
+          <Text style={styles.gaugeLabel}>/ 100</Text>
+        </View>
+      </View>
+    );
+  };
 
   // Sync body measurements from HealthKit
   const syncFromHealthKit = useCallback(async () => {
@@ -233,6 +366,209 @@ export function AnalyticsScreen() {
       >
         {/* Header */}
         <Text style={styles.title}>Analytics</Text>
+
+        {/* Recovery Section */}
+        {Platform.OS === 'ios' && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recovery</Text>
+              {loadingRecovery && (
+                <ActivityIndicator size="small" color={colors.primary} />
+              )}
+            </View>
+
+            {recoveryResult ? (
+              <>
+                {/* Recovery Score Card */}
+                <Card style={styles.recoveryCard}>
+                  <RecoveryGauge score={recoveryResult.score} status={recoveryResult.status} />
+                  <Text style={[styles.recoveryStatus, { color: getRecoveryColor(recoveryResult.status) }]}>
+                    {recoveryResult.status === 'recovered' ? 'Recovered' :
+                     recoveryResult.status === 'moderate' ? 'Moderate' : 'Strained'}
+                  </Text>
+                  <Text style={styles.recoveryRecommendation}>
+                    {recoveryResult.recommendation}
+                  </Text>
+                </Card>
+
+                {/* Health Metrics Grid */}
+                <View style={styles.metricsGrid}>
+                  {/* HRV */}
+                  <Card style={styles.metricCard}>
+                    <Text style={styles.metricLabel}>HRV</Text>
+                    <Text style={styles.metricValue}>
+                      {healthMetrics?.hrv?.value ? `${healthMetrics.hrv.value}` : '--'}
+                    </Text>
+                    <Text style={styles.metricUnit}>ms</Text>
+                    {baselines?.hrvBaseline && healthMetrics?.hrv && (
+                      <Text style={[
+                        styles.metricTrend,
+                        healthMetrics.hrv.value >= baselines.hrvBaseline
+                          ? styles.metricTrendPositive
+                          : styles.metricTrendNegative
+                      ]}>
+                        {healthMetrics.hrv.value >= baselines.hrvBaseline ? '↑' : '↓'} vs baseline
+                      </Text>
+                    )}
+                  </Card>
+
+                  {/* Resting HR */}
+                  <Card style={styles.metricCard}>
+                    <Text style={styles.metricLabel}>Resting HR</Text>
+                    <Text style={styles.metricValue}>
+                      {healthMetrics?.restingHeartRate?.value ? `${healthMetrics.restingHeartRate.value}` : '--'}
+                    </Text>
+                    <Text style={styles.metricUnit}>bpm</Text>
+                    {baselines?.rhrBaseline && healthMetrics?.restingHeartRate && (
+                      <Text style={[
+                        styles.metricTrend,
+                        healthMetrics.restingHeartRate.value <= baselines.rhrBaseline
+                          ? styles.metricTrendPositive
+                          : styles.metricTrendNegative
+                      ]}>
+                        {healthMetrics.restingHeartRate.value <= baselines.rhrBaseline ? '↓' : '↑'} vs baseline
+                      </Text>
+                    )}
+                  </Card>
+
+                  {/* Sleep */}
+                  <Card style={styles.metricCard}>
+                    <Text style={styles.metricLabel}>Sleep</Text>
+                    <Text style={styles.metricValue}>
+                      {healthMetrics?.sleepLastNight?.totalHours
+                        ? healthMetrics.sleepLastNight.totalHours.toFixed(1)
+                        : '--'}
+                    </Text>
+                    <Text style={styles.metricUnit}>hrs</Text>
+                    {healthMetrics?.sleepLastNight && (
+                      <Text style={[
+                        styles.metricTrend,
+                        healthMetrics.sleepLastNight.totalHours >= 7
+                          ? styles.metricTrendPositive
+                          : styles.metricTrendNegative
+                      ]}>
+                        {healthMetrics.sleepLastNight.totalHours >= 7 ? 'Good' : 'Low'}
+                      </Text>
+                    )}
+                  </Card>
+
+                  {/* SpO2 */}
+                  <Card style={styles.metricCard}>
+                    <Text style={styles.metricLabel}>SpO2</Text>
+                    <Text style={styles.metricValue}>
+                      {healthMetrics?.spO2?.value ? `${healthMetrics.spO2.value}` : '--'}
+                    </Text>
+                    <Text style={styles.metricUnit}>%</Text>
+                    {healthMetrics?.spO2 && (
+                      <Text style={[
+                        styles.metricTrend,
+                        healthMetrics.spO2.value >= 95
+                          ? styles.metricTrendPositive
+                          : styles.metricTrendNegative
+                      ]}>
+                        {healthMetrics.spO2.value >= 95 ? 'Normal' : 'Low'}
+                      </Text>
+                    )}
+                  </Card>
+                </View>
+
+                {/* Factor Breakdown (Expandable) */}
+                <TouchableOpacity
+                  style={styles.factorToggle}
+                  onPress={() => setShowFactorBreakdown(!showFactorBreakdown)}
+                >
+                  <Text style={styles.factorToggleText}>
+                    {showFactorBreakdown ? 'Hide' : 'Show'} Factor Breakdown
+                  </Text>
+                  <Text style={styles.factorToggleIcon}>
+                    {showFactorBreakdown ? '▲' : '▼'}
+                  </Text>
+                </TouchableOpacity>
+
+                {showFactorBreakdown && (
+                  <Card style={styles.factorBreakdownCard}>
+                    {recoveryResult.factors.hrv && (
+                      <View style={styles.factorRow}>
+                        <View style={styles.factorInfo}>
+                          <Text style={styles.factorName}>HRV</Text>
+                          <Text style={styles.factorDetail}>{recoveryResult.factors.hrv.detail}</Text>
+                        </View>
+                        <Text style={[
+                          styles.factorScore,
+                          recoveryResult.factors.hrv.score >= 70 ? styles.factorScoreGood :
+                          recoveryResult.factors.hrv.score >= 40 ? styles.factorScoreModerate :
+                          styles.factorScoreLow
+                        ]}>
+                          {recoveryResult.factors.hrv.score}/100
+                        </Text>
+                      </View>
+                    )}
+                    {recoveryResult.factors.rhr && (
+                      <View style={styles.factorRow}>
+                        <View style={styles.factorInfo}>
+                          <Text style={styles.factorName}>Resting Heart Rate</Text>
+                          <Text style={styles.factorDetail}>{recoveryResult.factors.rhr.detail}</Text>
+                        </View>
+                        <Text style={[
+                          styles.factorScore,
+                          recoveryResult.factors.rhr.score >= 70 ? styles.factorScoreGood :
+                          recoveryResult.factors.rhr.score >= 40 ? styles.factorScoreModerate :
+                          styles.factorScoreLow
+                        ]}>
+                          {recoveryResult.factors.rhr.score}/100
+                        </Text>
+                      </View>
+                    )}
+                    {recoveryResult.factors.sleep && (
+                      <View style={styles.factorRow}>
+                        <View style={styles.factorInfo}>
+                          <Text style={styles.factorName}>Sleep</Text>
+                          <Text style={styles.factorDetail}>{recoveryResult.factors.sleep.detail}</Text>
+                        </View>
+                        <Text style={[
+                          styles.factorScore,
+                          recoveryResult.factors.sleep.score >= 70 ? styles.factorScoreGood :
+                          recoveryResult.factors.sleep.score >= 40 ? styles.factorScoreModerate :
+                          styles.factorScoreLow
+                        ]}>
+                          {recoveryResult.factors.sleep.score}/100
+                        </Text>
+                      </View>
+                    )}
+                    {recoveryResult.factors.training && (
+                      <View style={[styles.factorRow, styles.factorRowLast]}>
+                        <View style={styles.factorInfo}>
+                          <Text style={styles.factorName}>Training Load</Text>
+                          <Text style={styles.factorDetail}>{recoveryResult.factors.training.detail}</Text>
+                        </View>
+                        <Text style={[
+                          styles.factorScore,
+                          recoveryResult.factors.training.score >= 70 ? styles.factorScoreGood :
+                          recoveryResult.factors.training.score >= 40 ? styles.factorScoreModerate :
+                          styles.factorScoreLow
+                        ]}>
+                          {recoveryResult.factors.training.score}/100
+                        </Text>
+                      </View>
+                    )}
+                  </Card>
+                )}
+              </>
+            ) : !loadingRecovery ? (
+              <Card style={styles.emptyRecoveryCard}>
+                <Text style={styles.emptyRecoveryTitle}>Connect Apple Health</Text>
+                <Text style={styles.emptyRecoveryText}>
+                  Enable Apple Health integration to see your recovery score based on HRV, heart rate, and sleep data.
+                </Text>
+                {!healthMetrics?.hrv && (
+                  <Text style={styles.emptyRecoveryHint}>
+                    Tip: Wear Apple Watch while sleeping for HRV-based recovery insights
+                  </Text>
+                )}
+              </Card>
+            ) : null}
+          </View>
+        )}
 
         {/* Week Selector */}
         <View style={styles.weekSelector}>
@@ -969,6 +1305,162 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginLeft: spacing.sm,
     minWidth: 20,
+  },
+  // Recovery styles
+  recoveryCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+  },
+  gaugeContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gaugeCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gaugeScore: {
+    fontSize: 40,
+    fontWeight: typography.weight.bold,
+  },
+  gaugeLabel: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+  },
+  recoveryStatus: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    marginTop: spacing.md,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  recoveryRecommendation: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    lineHeight: 20,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  metricCard: {
+    width: '48%',
+    alignItems: 'center',
+    padding: spacing.base,
+  },
+  metricLabel: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  metricValue: {
+    fontSize: 28,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
+  metricUnit: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+  },
+  metricTrend: {
+    fontSize: typography.size.xs,
+    marginTop: spacing.xs,
+  },
+  metricTrendPositive: {
+    color: '#4CAF50',
+  },
+  metricTrendNegative: {
+    color: '#F44336',
+  },
+  factorToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
+  },
+  factorToggleText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  factorToggleIcon: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    marginLeft: spacing.xs,
+  },
+  factorBreakdownCard: {
+    padding: spacing.sm,
+  },
+  factorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.backgroundTertiary,
+  },
+  factorRowLast: {
+    borderBottomWidth: 0,
+  },
+  factorInfo: {
+    flex: 1,
+  },
+  factorName: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
+  },
+  factorDetail: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  factorScore: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    marginLeft: spacing.md,
+  },
+  factorScoreGood: {
+    color: '#4CAF50',
+  },
+  factorScoreModerate: {
+    color: '#FFC107',
+  },
+  factorScoreLow: {
+    color: '#F44336',
+  },
+  emptyRecoveryCard: {
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  emptyRecoveryTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  emptyRecoveryText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyRecoveryHint: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    fontStyle: 'italic',
   },
 });
 

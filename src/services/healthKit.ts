@@ -50,6 +50,13 @@ const healthKitPermissions = {
       'Height',
       'LeanBodyMass',
       'BodyMassIndex',
+      // Recovery/health metrics
+      'HeartRateVariability',
+      'RestingHeartRate',
+      'RespiratoryRate',
+      'OxygenSaturation',
+      'AppleSleepingWristTemperature',
+      'HeartRate',
     ],
     write: [
       'Workout',
@@ -845,6 +852,437 @@ export async function getAllBodyMeasurements(): Promise<BodyMeasurementData> {
     bodyFatPercentage: bodyFat?.value ?? null,
     heightInches: height?.value ?? null,
     lastUpdated,
+  };
+}
+
+// ============== HEALTH METRICS FOR RECOVERY ==============
+
+export interface HealthMetricSample {
+  value: number;
+  date: string;
+}
+
+// Get the latest HRV (Heart Rate Variability SDNN) from HealthKit
+export async function getLatestHRV(): Promise<HealthMetricSample | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = {
+    startDate: subDays(new Date(), 7).toISOString(), // Look back 7 days
+    endDate: new Date().toISOString(),
+    ascending: false,
+    limit: 1,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestHRV timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getHeartRateVariabilitySamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting HRV:', err);
+          resolve(null);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve(null);
+          return;
+        }
+        const sample = results[0];
+        resolve({
+          value: Math.round(sample.value * 1000 * 10) / 10, // Convert to ms with 1 decimal
+          date: sample.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestHRV exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get HRV history for the past N days
+export async function getHRVHistory(days: number): Promise<HealthMetricSample[]> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return [];
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return [];
+
+  const options = {
+    startDate: subDays(new Date(), days).toISOString(),
+    endDate: new Date().toISOString(),
+    ascending: true,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getHRVHistory timed out');
+      resolve([]);
+    }, 10000);
+
+    try {
+      AppleHealthKit.getHeartRateVariabilitySamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting HRV history:', err);
+          resolve([]);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        // Group by date and take the average for each day
+        const byDate = new Map<string, { total: number; count: number }>();
+        results.forEach((sample: any) => {
+          const date = format(new Date(sample.startDate), 'yyyy-MM-dd');
+          const existing = byDate.get(date) || { total: 0, count: 0 };
+          existing.total += sample.value * 1000; // Convert to ms
+          existing.count += 1;
+          byDate.set(date, existing);
+        });
+
+        const history: HealthMetricSample[] = Array.from(byDate.entries())
+          .map(([date, data]) => ({
+            date,
+            value: Math.round((data.total / data.count) * 10) / 10,
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        resolve(history);
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getHRVHistory exception:', e);
+      resolve([]);
+    }
+  });
+}
+
+// Get the latest Resting Heart Rate from HealthKit
+export async function getLatestRestingHeartRate(): Promise<HealthMetricSample | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = {
+    startDate: subDays(new Date(), 7).toISOString(),
+    endDate: new Date().toISOString(),
+    ascending: false,
+    limit: 1,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestRestingHeartRate timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getRestingHeartRateSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting resting heart rate:', err);
+          resolve(null);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve(null);
+          return;
+        }
+        const sample = results[0];
+        resolve({
+          value: Math.round(sample.value),
+          date: sample.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestRestingHeartRate exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get Resting Heart Rate history for the past N days
+export async function getRestingHeartRateHistory(days: number): Promise<HealthMetricSample[]> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return [];
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return [];
+
+  const options = {
+    startDate: subDays(new Date(), days).toISOString(),
+    endDate: new Date().toISOString(),
+    ascending: true,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getRestingHeartRateHistory timed out');
+      resolve([]);
+    }, 10000);
+
+    try {
+      AppleHealthKit.getRestingHeartRateSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting resting heart rate history:', err);
+          resolve([]);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve([]);
+          return;
+        }
+
+        // Group by date and take the latest value for each day
+        const byDate = new Map<string, { value: number; timestamp: number }>();
+        results.forEach((sample: any) => {
+          const date = format(new Date(sample.startDate), 'yyyy-MM-dd');
+          const timestamp = new Date(sample.startDate).getTime();
+          const existing = byDate.get(date);
+          if (!existing || timestamp > existing.timestamp) {
+            byDate.set(date, { value: sample.value, timestamp });
+          }
+        });
+
+        const history: HealthMetricSample[] = Array.from(byDate.entries())
+          .map(([date, data]) => ({
+            date,
+            value: Math.round(data.value),
+          }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        resolve(history);
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getRestingHeartRateHistory exception:', e);
+      resolve([]);
+    }
+  });
+}
+
+// Get the latest Respiratory Rate from HealthKit
+export async function getLatestRespiratoryRate(): Promise<HealthMetricSample | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = {
+    startDate: subDays(new Date(), 7).toISOString(),
+    endDate: new Date().toISOString(),
+    ascending: false,
+    limit: 1,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestRespiratoryRate timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getRespiratoryRateSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting respiratory rate:', err);
+          resolve(null);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve(null);
+          return;
+        }
+        const sample = results[0];
+        resolve({
+          value: Math.round(sample.value * 10) / 10, // breaths/min with 1 decimal
+          date: sample.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestRespiratoryRate exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get the latest SpO2 (Oxygen Saturation) from HealthKit
+export async function getLatestSpO2(): Promise<HealthMetricSample | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = {
+    startDate: subDays(new Date(), 7).toISOString(),
+    endDate: new Date().toISOString(),
+    ascending: false,
+    limit: 1,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestSpO2 timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getOxygenSaturationSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error getting SpO2:', err);
+          resolve(null);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve(null);
+          return;
+        }
+        const sample = results[0];
+        // SpO2 comes as a decimal (0.98 = 98%)
+        resolve({
+          value: Math.round(sample.value * 100),
+          date: sample.startDate || new Date().toISOString(),
+        });
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestSpO2 exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get the latest Skin Temperature (sleeping wrist temperature) from HealthKit
+export async function getLatestSkinTemp(): Promise<HealthMetricSample | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  // This is Apple's sleeping wrist temperature - requires Apple Watch
+  const options = {
+    startDate: subDays(new Date(), 7).toISOString(),
+    endDate: new Date().toISOString(),
+    ascending: false,
+    limit: 1,
+  };
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getLatestSkinTemp timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      // Note: This requires iOS 16+ and Apple Watch Series 8+
+      // Method name may vary - trying getSamples with type
+      AppleHealthKit.getSamples(
+        {
+          ...options,
+          type: 'AppleSleepingWristTemperature',
+          unit: 'celsius',
+        },
+        (err: string, results: any[]) => {
+          clearTimeout(timeoutId);
+          if (err) {
+            console.log('Error getting skin temp:', err);
+            resolve(null);
+            return;
+          }
+          if (!results || results.length === 0) {
+            resolve(null);
+            return;
+          }
+          const sample = results[0];
+          resolve({
+            value: Math.round(sample.value * 10) / 10,
+            date: sample.startDate || new Date().toISOString(),
+          });
+        }
+      );
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getLatestSkinTemp exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get sleep data for last night specifically (convenience method)
+export async function getSleepDataLastNight(): Promise<{
+  totalHours: number;
+  deepSleepHours: number;
+  remHours: number;
+} | null> {
+  const today = new Date();
+  const sleepData = await getSleepData(today);
+
+  if (!sleepData) {
+    return null;
+  }
+
+  return {
+    totalHours: sleepData.totalHours,
+    deepSleepHours: sleepData.stages?.deep || 0,
+    remHours: sleepData.stages?.rem || 0,
+  };
+}
+
+// Get all health metrics at once for recovery score
+export interface HealthMetricsData {
+  hrv: HealthMetricSample | null;
+  restingHeartRate: HealthMetricSample | null;
+  respiratoryRate: HealthMetricSample | null;
+  spO2: HealthMetricSample | null;
+  skinTemp: HealthMetricSample | null;
+  sleepLastNight: { totalHours: number; deepSleepHours: number; remHours: number } | null;
+}
+
+export async function getAllHealthMetrics(): Promise<HealthMetricsData> {
+  const [hrv, restingHeartRate, respiratoryRate, spO2, skinTemp, sleepLastNight] = await Promise.all([
+    getLatestHRV(),
+    getLatestRestingHeartRate(),
+    getLatestRespiratoryRate(),
+    getLatestSpO2(),
+    getLatestSkinTemp(),
+    getSleepDataLastNight(),
+  ]);
+
+  return {
+    hrv,
+    restingHeartRate,
+    respiratoryRate,
+    spO2,
+    skinTemp,
+    sleepLastNight,
   };
 }
 
