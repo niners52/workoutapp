@@ -14,7 +14,8 @@
           "isClinicalDataEnabled": false
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-apple-authentication"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -24,6 +25,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tylerr82.workouttracker8052",
+      "usesAppleSignIn": true,
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "com.apple.developer.healthkit.background-delivery": true
