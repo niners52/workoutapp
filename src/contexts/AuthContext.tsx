@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../services/supabase';
+import { supabase, signInWithApple as signInWithAppleService } from '../services/supabase';
 
 interface AuthContextType {
   session: Session | null;
@@ -9,6 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -63,6 +64,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  const signInWithApple = useCallback(async () => {
+    try {
+      await signInWithAppleService();
+      // Auth state change listener will handle the rest
+    } catch (error: any) {
+      // Don't throw for user cancellation
+      if (error.code === '1001' || error.message?.includes('canceled')) {
+        return;
+      }
+      throw error;
+    }
+  }, []);
+
   const value: AuthContextType = {
     session,
     user: session?.user ?? null,
@@ -70,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: !!session,
     signUp,
     signIn,
+    signInWithApple,
     signOut,
   };
 
