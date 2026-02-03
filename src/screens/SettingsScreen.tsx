@@ -43,7 +43,10 @@ import {
   Supplement,
   ALL_TRACKABLE_MUSCLE_GROUPS,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  BodyFatFormula,
+  BiologicalSex,
 } from '../types';
+import { FORMULA_DESCRIPTIONS, ALL_FORMULAS } from '../services/bodyFatCalculator';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -68,6 +71,7 @@ export function SettingsScreen() {
   const [showMuscleTargets, setShowMuscleTargets] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
   const [showSupplements, setShowSupplements] = useState(false);
+  const [showBodyFatSettings, setShowBodyFatSettings] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
   const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
@@ -669,6 +673,96 @@ export function SettingsScreen() {
           </Card>
         </View>
 
+        {/* Body Fat Calculation */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => setShowBodyFatSettings(!showBodyFatSettings)}
+          >
+            <Text style={styles.sectionTitle}>Body Fat Calculation</Text>
+            <Text style={styles.expandIcon}>{showBodyFatSettings ? '−' : '+'}</Text>
+          </TouchableOpacity>
+
+          {showBodyFatSettings && (
+            <Card padding="none">
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Biological Sex</Text>
+                <View style={styles.segmentedControl}>
+                  <TouchableOpacity
+                    style={[
+                      styles.segment,
+                      userSettings.biologicalSex === 'male' && styles.segmentSelected,
+                    ]}
+                    onPress={() => updateUserSettings({ biologicalSex: 'male' })}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        userSettings.biologicalSex === 'male' && styles.segmentTextSelected,
+                      ]}
+                    >
+                      Male
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.segment,
+                      userSettings.biologicalSex === 'female' && styles.segmentSelected,
+                    ]}
+                    onPress={() => updateUserSettings({ biologicalSex: 'female' })}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        userSettings.biologicalSex === 'female' && styles.segmentTextSelected,
+                      ]}
+                    >
+                      Female
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Birth Year</Text>
+                <NumberInput
+                  value={userSettings.birthYear || new Date().getFullYear() - 30}
+                  onChangeValue={(value) => updateUserSettings({ birthYear: value })}
+                  min={1920}
+                  max={new Date().getFullYear() - 10}
+                  step={1}
+                />
+              </View>
+              <View style={[styles.settingRow, styles.settingRowLast, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+                <Text style={[styles.settingLabel, { marginBottom: spacing.md }]}>Formula</Text>
+                {ALL_FORMULAS.map((formula) => (
+                  <TouchableOpacity
+                    key={formula}
+                    style={[
+                      styles.formulaOption,
+                      userSettings.bodyFatFormula === formula && styles.formulaOptionSelected,
+                    ]}
+                    onPress={() => updateUserSettings({ bodyFatFormula: formula })}
+                  >
+                    <View style={styles.formulaHeader}>
+                      <View style={styles.formulaRadio}>
+                        {userSettings.bodyFatFormula === formula && (
+                          <View style={styles.formulaRadioInner} />
+                        )}
+                      </View>
+                      <Text style={styles.formulaName}>{FORMULA_DESCRIPTIONS[formula].name}</Text>
+                    </View>
+                    <Text style={styles.formulaDescription}>{FORMULA_DESCRIPTIONS[formula].description}</Text>
+                    <Text style={styles.formulaSites}>{FORMULA_DESCRIPTIONS[formula].sites}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </Card>
+          )}
+          <Text style={styles.hint}>
+            Used for caliper body fat testing on the Analytics screen
+          </Text>
+        </View>
+
         {/* Location Management */}
         <View style={styles.section}>
           <TouchableOpacity
@@ -1224,6 +1318,54 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     color: colors.primary,
     fontWeight: typography.weight.medium,
+  },
+  formulaOption: {
+    width: '100%',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  formulaOptionSelected: {
+    backgroundColor: colors.backgroundTertiary,
+  },
+  formulaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  formulaRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    marginRight: spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  formulaRadioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  formulaName: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.semibold,
+  },
+  formulaDescription: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginLeft: 28,
+    marginBottom: spacing.xs,
+  },
+  formulaSites: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginLeft: 28,
+    fontStyle: 'italic',
   },
 });
 

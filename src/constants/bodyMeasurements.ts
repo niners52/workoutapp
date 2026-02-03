@@ -39,6 +39,72 @@ export const MEASUREMENT_INSTRUCTIONS: Record<string, string> = {
   right_calf: 'Measure around the thickest part',
 };
 
+// Skinfold measurement types (for caliper body fat testing)
+// Values stored in millimeters
+export interface SkinfoldMeasurementType {
+  key: string;
+  label: string;
+  instruction: string;
+}
+
+export const SKINFOLD_MEASUREMENT_TYPES: SkinfoldMeasurementType[] = [
+  {
+    key: 'skinfold_chest',
+    label: 'Chest',
+    instruction: 'Diagonal fold halfway between the armpit crease and nipple (men), or 1/3 of the way from the armpit crease to the nipple (women)',
+  },
+  {
+    key: 'skinfold_midaxillary',
+    label: 'Midaxillary',
+    instruction: 'Vertical fold on the midaxillary line at the level of the xiphoid process (bottom of sternum)',
+  },
+  {
+    key: 'skinfold_tricep',
+    label: 'Tricep',
+    instruction: 'Vertical fold on the back of the upper arm, halfway between the shoulder and elbow',
+  },
+  {
+    key: 'skinfold_bicep',
+    label: 'Bicep',
+    instruction: 'Vertical fold on the front of the upper arm, halfway between the shoulder and elbow',
+  },
+  {
+    key: 'skinfold_subscapular',
+    label: 'Subscapular',
+    instruction: 'Diagonal fold just below the bottom tip of the shoulder blade',
+  },
+  {
+    key: 'skinfold_abdomen',
+    label: 'Abdomen',
+    instruction: 'Vertical fold 1 inch (2.5cm) to the right of the navel',
+  },
+  {
+    key: 'skinfold_suprailiac',
+    label: 'Suprailiac',
+    instruction: 'Diagonal fold just above the hip bone on the midaxillary line',
+  },
+  {
+    key: 'skinfold_thigh',
+    label: 'Thigh',
+    instruction: 'Vertical fold on the front of the thigh, halfway between the hip and knee',
+  },
+  {
+    key: 'skinfold_calf',
+    label: 'Calf',
+    instruction: 'Vertical fold on the inside of the calf at the point of largest circumference',
+  },
+];
+
+// Get skinfold measurement type config by key
+export function getSkinfoldType(key: string): SkinfoldMeasurementType | undefined {
+  return SKINFOLD_MEASUREMENT_TYPES.find(m => m.key === key);
+}
+
+// Check if a measurement key is a skinfold type
+export function isSkinfoldMeasurement(key: string): boolean {
+  return key.startsWith('skinfold_');
+}
+
 // Get measurement type config by key
 export function getMeasurementType(key: string): BodyMeasurementType | undefined {
   return BODY_MEASUREMENT_TYPES.find(m => m.key === key);

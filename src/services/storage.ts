@@ -1004,20 +1004,35 @@ export async function getBodyMeasurementByDate(date: string): Promise<BodyMeasur
 
 export async function addBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
   const measurements = await getBodyMeasurements();
-  // Check if there's already a measurement for this date
-  const existingIndex = measurements.findIndex(m => m.date === measurement.date);
-  if (existingIndex !== -1) {
-    // Merge with existing measurement
-    measurements[existingIndex] = {
-      ...measurements[existingIndex],
-      ...measurement,
-      // Keep existing values if new ones are undefined
-      weight: measurement.weight ?? measurements[existingIndex].weight,
-      bodyFatPercentage: measurement.bodyFatPercentage ?? measurements[existingIndex].bodyFatPercentage,
-      heightInches: measurement.heightInches ?? measurements[existingIndex].heightInches,
-    };
+
+  // For typed measurements (bodybuilding/skinfold), always add as new entry
+  if (measurement.type) {
+    // Check if there's already a measurement for this type on this date
+    const existingIndex = measurements.findIndex(
+      m => m.date === measurement.date && m.type === measurement.type
+    );
+    if (existingIndex !== -1) {
+      // Update existing typed measurement
+      measurements[existingIndex] = measurement;
+    } else {
+      measurements.push(measurement);
+    }
   } else {
-    measurements.push(measurement);
+    // For basic measurements (weight, body fat, height), merge by date
+    const existingIndex = measurements.findIndex(m => m.date === measurement.date && !m.type);
+    if (existingIndex !== -1) {
+      // Merge with existing measurement
+      measurements[existingIndex] = {
+        ...measurements[existingIndex],
+        ...measurement,
+        // Keep existing values if new ones are undefined
+        weight: measurement.weight ?? measurements[existingIndex].weight,
+        bodyFatPercentage: measurement.bodyFatPercentage ?? measurements[existingIndex].bodyFatPercentage,
+        heightInches: measurement.heightInches ?? measurements[existingIndex].heightInches,
+      };
+    } else {
+      measurements.push(measurement);
+    }
   }
   await setItem(STORAGE_KEYS.BODY_MEASUREMENTS, measurements);
 }

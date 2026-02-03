@@ -59,7 +59,7 @@ import {
   feetAndInchesToInches,
   inchesToFeetAndInches,
 } from '../services/units';
-import { BodyMeasurementsSection } from '../components/body/BodyMeasurementsSection';
+import { BodyMeasurementsSection, CaliperTestModal } from '../components/body';
 import { BodyMeasurementTypeKey } from '../types';
 import {
   WeeklyVolume,
@@ -103,6 +103,7 @@ export function AnalyticsScreen() {
   const [manualBodyFat, setManualBodyFat] = useState('');
   const [manualHeightFeet, setManualHeightFeet] = useState('');
   const [manualHeightInches, setManualHeightInches] = useState('');
+  const [caliperModalVisible, setCaliperModalVisible] = useState(false);
 
   // Recovery state
   const [recoveryResult, setRecoveryResult] = useState<RecoveryResult | null>(null);
@@ -323,6 +324,38 @@ export function AnalyticsScreen() {
     setManualHeightFeet('');
     setManualHeightInches('');
   }, [manualWeight, manualBodyFat, manualHeightFeet, manualHeightInches, userSettings.units, addBodyMeasurement]);
+
+  // Save caliper test results
+  const saveCaliperResults = useCallback(async (
+    bodyFatPercentage: number,
+    skinfoldMeasurements: Record<string, number>
+  ) => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+
+    // Save body fat percentage
+    const bodyFatMeasurement: BodyMeasurement = {
+      id: `body-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      date: today,
+      bodyFatPercentage,
+      source: 'manual',
+    };
+    await addBodyMeasurement(bodyFatMeasurement);
+
+    // Save each skinfold measurement
+    for (const [type, value] of Object.entries(skinfoldMeasurements)) {
+      const skinfoldMeasurement: BodyMeasurement = {
+        id: `body-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        date: today,
+        type: type as BodyMeasurementTypeKey,
+        value, // Skinfold values are stored in mm directly
+        source: 'manual',
+      };
+      await addBodyMeasurement(skinfoldMeasurement);
+    }
+
+    setCaliperModalVisible(false);
+    Alert.alert('Saved', `Body fat: ${bodyFatPercentage}% (from caliper test)`);
+  }, [addBodyMeasurement]);
 
   // Get the latest body measurement for display
   const latestMeasurement = getLatestBodyMeasurement();
@@ -705,6 +738,12 @@ export function AnalyticsScreen() {
                 </TouchableOpacity>
               )}
               <TouchableOpacity
+                style={styles.caliperButton}
+                onPress={() => setCaliperModalVisible(true)}
+              >
+                <Text style={styles.caliperButtonText}>Caliper</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={styles.logButton}
                 onPress={() => setLogModalVisible(true)}
               >
@@ -958,6 +997,14 @@ export function AnalyticsScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Caliper Test Modal */}
+      <CaliperTestModal
+        visible={caliperModalVisible}
+        onClose={() => setCaliperModalVisible(false)}
+        onSave={saveCaliperResults}
+        currentBodyWeight={latestMeasurement?.weight}
+      />
     </SafeAreaView>
   );
 }
@@ -1196,6 +1243,17 @@ const styles = StyleSheet.create({
   syncButtonText: {
     fontSize: typography.size.sm,
     color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  caliperButton: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  caliperButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.text,
     fontWeight: typography.weight.medium,
   },
   logButton: {

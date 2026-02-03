@@ -314,6 +314,10 @@ export const DEFAULT_WEEKLY_GOALS: WeeklyGoals = {
   trainingDays: 5,
 };
 
+// Body fat calculation types
+export type BodyFatFormula = 'jp3' | 'jp7' | 'dw4' | 'parillo9';
+export type BiologicalSex = 'male' | 'female';
+
 export interface UserSettings {
   weekStartDay: WeekStartDay;
   units: UnitSystem;
@@ -325,6 +329,10 @@ export interface UserSettings {
   dailyGoals: DailyGoals;
   weeklyGoals: WeeklyGoals;
   creatineSupplementId?: string; // ID of the supplement to track as "creatine" for streaks
+  // Body fat calculation settings
+  bodyFatFormula: BodyFatFormula;
+  biologicalSex: BiologicalSex | null;
+  birthYear: number | null;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -355,6 +363,10 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   },
   dailyGoals: DEFAULT_DAILY_GOALS,
   weeklyGoals: DEFAULT_WEEKLY_GOALS,
+  // Body fat calculation defaults
+  bodyFatFormula: 'jp3',
+  biologicalSex: null,
+  birthYear: null,
 };
 
 // Apple Health Data Types
@@ -443,7 +455,17 @@ export type BodyMeasurementTypeKey =
   | 'left_thigh'
   | 'right_thigh'
   | 'left_calf'
-  | 'right_calf';
+  | 'right_calf'
+  // Skinfold caliper measurements (in mm)
+  | 'skinfold_chest'
+  | 'skinfold_midaxillary'
+  | 'skinfold_tricep'
+  | 'skinfold_bicep'
+  | 'skinfold_subscapular'
+  | 'skinfold_abdomen'
+  | 'skinfold_suprailiac'
+  | 'skinfold_thigh'
+  | 'skinfold_calf';
 
 export interface BodyMeasurement {
   id: string;
