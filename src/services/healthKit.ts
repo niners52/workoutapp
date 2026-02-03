@@ -341,6 +341,65 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
   };
 }
 
+// Get today's total calories consumed (for calorie ring)
+export async function getTodayCalories(): Promise<number | null> {
+  if (Platform.OS !== 'ios') {
+    return null;
+  }
+
+  if (!AppleHealthKit) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) {
+    return null;
+  }
+
+  const today = new Date();
+  const startOfDayDate = startOfDay(today);
+  const now = new Date();
+
+  const options = {
+    startDate: startOfDayDate.toISOString(),
+    endDate: now.toISOString(),
+  };
+
+  return new Promise((resolve) => {
+    if (typeof AppleHealthKit.getEnergyConsumedSamples !== 'function') {
+      console.log('getEnergyConsumedSamples not available');
+      resolve(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      console.log('getTodayCalories timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getEnergyConsumedSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error fetching today calories:', err);
+          resolve(null);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve(0); // No data means 0 calories logged
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (Number(sample.value) || 0), 0);
+        resolve(Math.round(total));
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getTodayCalories exception:', e);
+      resolve(null);
+    }
+  });
+}
+
 export async function getNutritionDataRange(
   startDate: Date,
   endDate: Date

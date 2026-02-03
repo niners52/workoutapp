@@ -318,6 +318,9 @@ export const DEFAULT_WEEKLY_GOALS: WeeklyGoals = {
 export type BodyFatFormula = 'jp3' | 'jp7' | 'dw4' | 'parillo9';
 export type BiologicalSex = 'male' | 'female';
 
+// Nutrition mode types
+export type NutritionMode = 'recomp' | 'bulk' | 'cut';
+
 export interface UserSettings {
   weekStartDay: WeekStartDay;
   units: UnitSystem;
@@ -333,6 +336,10 @@ export interface UserSettings {
   bodyFatFormula: BodyFatFormula;
   biologicalSex: BiologicalSex | null;
   birthYear: number | null;
+  // Nutrition goal settings
+  nutritionMode: NutritionMode;
+  calorieGoal: number | null;
+  calorieTolerancePercent: number;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -367,6 +374,10 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   bodyFatFormula: 'jp3',
   biologicalSex: null,
   birthYear: null,
+  // Nutrition goal defaults
+  nutritionMode: 'recomp',
+  calorieGoal: null,
+  calorieTolerancePercent: 10,
 };
 
 // Apple Health Data Types

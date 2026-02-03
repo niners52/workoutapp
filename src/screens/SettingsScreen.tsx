@@ -45,6 +45,7 @@ import {
   MUSCLE_GROUP_DISPLAY_NAMES,
   BodyFatFormula,
   BiologicalSex,
+  NutritionMode,
 } from '../types';
 import { FORMULA_DESCRIPTIONS, ALL_FORMULAS } from '../services/bodyFatCalculator';
 import { RootStackParamList } from '../navigation/types';
@@ -72,6 +73,7 @@ export function SettingsScreen() {
   const [showLocations, setShowLocations] = useState(false);
   const [showSupplements, setShowSupplements] = useState(false);
   const [showBodyFatSettings, setShowBodyFatSettings] = useState(false);
+  const [showNutritionGoal, setShowNutritionGoal] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
   const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
@@ -671,6 +673,82 @@ export function SettingsScreen() {
               />
             </View>
           </Card>
+        </View>
+
+        {/* Nutrition Goal */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => setShowNutritionGoal(!showNutritionGoal)}
+          >
+            <Text style={styles.sectionTitle}>Nutrition Goal</Text>
+            <Text style={styles.expandIcon}>{showNutritionGoal ? '−' : '+'}</Text>
+          </TouchableOpacity>
+
+          {showNutritionGoal && (
+            <Card padding="none">
+              <View style={[styles.settingRow, { flexDirection: 'column', alignItems: 'flex-start' }]}>
+                <Text style={[styles.settingLabel, { marginBottom: spacing.md }]}>Mode</Text>
+                {(['recomp', 'bulk', 'cut'] as NutritionMode[]).map((mode) => (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[
+                      styles.nutritionModeOption,
+                      userSettings.nutritionMode === mode && styles.nutritionModeSelected,
+                    ]}
+                    onPress={() => updateUserSettings({ nutritionMode: mode })}
+                  >
+                    <View style={styles.formulaHeader}>
+                      <View style={styles.formulaRadio}>
+                        {userSettings.nutritionMode === mode && (
+                          <View style={styles.formulaRadioInner} />
+                        )}
+                      </View>
+                      <Text style={styles.formulaName}>
+                        {mode === 'recomp' ? 'Recomp' : mode === 'bulk' ? 'Bulk' : 'Cut'}
+                      </Text>
+                    </View>
+                    <Text style={styles.formulaDescription}>
+                      {mode === 'recomp' && 'Stay within a target range. Ring fills when within tolerance of goal.'}
+                      {mode === 'bulk' && 'Meet a minimum. Ring fills as you approach your calorie floor.'}
+                      {mode === 'cut' && 'Stay under a maximum. Ring turns red if you exceed it.'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>
+                  {userSettings.nutritionMode === 'bulk' ? 'Minimum Calories' :
+                   userSettings.nutritionMode === 'cut' ? 'Maximum Calories' : 'Daily Target'}
+                </Text>
+                <NumberInput
+                  value={userSettings.calorieGoal || 2000}
+                  onChangeValue={(value) => updateUserSettings({ calorieGoal: value })}
+                  min={1000}
+                  max={6000}
+                  step={50}
+                />
+              </View>
+              {userSettings.nutritionMode === 'recomp' && (
+                <View style={[styles.settingRow, styles.settingRowLast]}>
+                  <Text style={styles.settingLabel}>Tolerance %</Text>
+                  <NumberInput
+                    value={userSettings.calorieTolerancePercent || 10}
+                    onChangeValue={(value) => updateUserSettings({ calorieTolerancePercent: value })}
+                    min={5}
+                    max={15}
+                    step={1}
+                  />
+                </View>
+              )}
+              {userSettings.nutritionMode !== 'recomp' && (
+                <View style={styles.settingRowLast} />
+              )}
+            </Card>
+          )}
+          <Text style={styles.hint}>
+            Track daily calories with a progress ring on the Analytics screen
+          </Text>
         </View>
 
         {/* Body Fat Calculation */}
@@ -1366,6 +1444,16 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginLeft: 28,
     fontStyle: 'italic',
+  },
+  nutritionModeOption: {
+    width: '100%',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  nutritionModeSelected: {
+    backgroundColor: colors.backgroundTertiary,
   },
 });
 

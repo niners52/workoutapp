@@ -39,7 +39,11 @@ import {
   getHRVHistory,
   HealthMetricsData,
   HealthMetricSample,
+  getTodayCalories,
 } from '../services/healthKit';
+import { getTodayManualCalories, setManualCalories } from '../services/storage';
+import { calculateCalorieRingStatus, CalorieRingStatus } from '../services/calorieGoal';
+import { CalorieRing } from '../components/CalorieRing';
 import {
   calculateRecoveryScore,
   getStoredBaselines,
@@ -112,6 +116,12 @@ export function AnalyticsScreen() {
   const [baselines, setBaselines] = useState<Baselines | null>(null);
   const [loadingRecovery, setLoadingRecovery] = useState(false);
   const [showFactorBreakdown, setShowFactorBreakdown] = useState(false);
+
+  // Calorie tracking state
+  const [todayCalories, setTodayCalories] = useState<number | null>(null);
+  const [calorieRingStatus, setCalorieRingStatus] = useState<CalorieRingStatus | null>(null);
+  const [calorieModalVisible, setCalorieModalVisible] = useState(false);
+  const [manualCalorieInput, setManualCalorieInput] = useState('');
 
   const loadRecoveryData = useCallback(async () => {
     if (Platform.OS !== 'ios') {
@@ -188,6 +198,33 @@ export function AnalyticsScreen() {
 
       // Load recovery data
       await loadRecoveryData();
+
+      // Load today's calories for calorie ring
+      let calories: number | null = null;
+      if (Platform.OS === 'ios') {
+        calories = await getTodayCalories();
+      }
+      // Fall back to manual entry if HealthKit returns nothing
+      if (calories === null || calories === 0) {
+        const manualCals = await getTodayManualCalories();
+        if (manualCals !== null) {
+          calories = manualCals;
+        }
+      }
+      setTodayCalories(calories);
+
+      // Calculate calorie ring status if user has set a goal
+      if (userSettings.calorieGoal && calories !== null) {
+        const ringStatus = calculateCalorieRingStatus(
+          calories,
+          userSettings.calorieGoal,
+          userSettings.nutritionMode,
+          userSettings.calorieTolerancePercent
+        );
+        setCalorieRingStatus(ringStatus);
+      } else {
+        setCalorieRingStatus(null);
+      }
     } catch (error) {
       console.error('Failed to load analytics:', error);
     }
@@ -609,6 +646,48 @@ export function AnalyticsScreen() {
           </View>
         )}
 
+        {/* Calorie Ring Section */}
+        {userSettings.calorieGoal && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Today's Calories</Text>
+              {(todayCalories === null || todayCalories === 0) && (
+                <TouchableOpacity
+                  style={styles.logCaloriesButton}
+                  onPress={() => {
+                    setManualCalorieInput('');
+                    setCalorieModalVisible(true);
+                  }}
+                >
+                  <Text style={styles.logCaloriesButtonText}>Log Calories</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {calorieRingStatus ? (
+              <CalorieRing status={calorieRingStatus} />
+            ) : (
+              <Card style={styles.emptyCalorieCard}>
+                <Text style={styles.emptyCalorieTitle}>No Calorie Data</Text>
+                <Text style={styles.emptyCalorieText}>
+                  {Platform.OS === 'ios'
+                    ? 'Log your meals in Apple Health or tap "Log Calories" to manually enter today\'s intake.'
+                    : 'Tap "Log Calories" to manually enter today\'s calorie intake.'}
+                </Text>
+                <TouchableOpacity
+                  style={styles.emptyLogButton}
+                  onPress={() => {
+                    setManualCalorieInput('');
+                    setCalorieModalVisible(true);
+                  }}
+                >
+                  <Text style={styles.emptyLogButtonText}>Log Calories</Text>
+                </TouchableOpacity>
+              </Card>
+            )}
+          </View>
+        )}
+
         {/* Week Selector */}
         <View style={styles.weekSelector}>
           <TouchableOpacity
@@ -1005,6 +1084,64 @@ export function AnalyticsScreen() {
         onSave={saveCaliperResults}
         currentBodyWeight={latestMeasurement?.weight}
       />
+
+      {/* Manual Calorie Entry Modal */}
+      <Modal
+        visible={calorieModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCalorieModalVisible(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setCalorieModalVisible(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Log Calories</Text>
+            <TouchableOpacity
+              onPress={async () => {
+                const calories = parseInt(manualCalorieInput, 10);
+                if (isNaN(calories) || calories <= 0) {
+                  Alert.alert('Invalid Input', 'Please enter a valid calorie amount');
+                  return;
+                }
+                await setManualCalories(format(new Date(), 'yyyy-MM-dd'), calories);
+                setTodayCalories(calories);
+                if (userSettings.calorieGoal) {
+                  const ringStatus = calculateCalorieRingStatus(
+                    calories,
+                    userSettings.calorieGoal,
+                    userSettings.nutritionMode,
+                    userSettings.calorieTolerancePercent
+                  );
+                  setCalorieRingStatus(ringStatus);
+                }
+                setCalorieModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalSave}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Total Calories Today</Text>
+              <TextInput
+                style={styles.input}
+                value={manualCalorieInput}
+                onChangeText={setManualCalorieInput}
+                placeholder="e.g. 2000"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="number-pad"
+                autoFocus
+              />
+            </View>
+            <Text style={styles.calorieModalHint}>
+              Enter your total calorie intake for today. This will override any previous manual entry.
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1528,6 +1665,53 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.md,
     fontStyle: 'italic',
+  },
+  // Calorie Ring styles
+  logCaloriesButton: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  logCaloriesButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  emptyCalorieCard: {
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  emptyCalorieTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  emptyCalorieText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+  },
+  emptyLogButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  emptyLogButtonText: {
+    fontSize: typography.size.base,
+    color: colors.background,
+    fontWeight: typography.weight.semibold,
+  },
+  calorieModalHint: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: spacing.md,
   },
 });
 

@@ -1161,3 +1161,53 @@ export async function getTypedMeasurementHistory(
     .map(m => ({ date: m.date, value: m.value! }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+
+// ==================== MANUAL CALORIE ENTRIES ====================
+
+const MANUAL_CALORIES_PREFIX = '@workout_tracker/manual_calories/';
+
+export interface ManualCalorieEntry {
+  calories: number;
+  timestamp: string;
+}
+
+export async function getManualCalories(date: string): Promise<ManualCalorieEntry | null> {
+  try {
+    const key = `${MANUAL_CALORIES_PREFIX}${date}`;
+    const value = await AsyncStorage.getItem(key);
+    return value ? JSON.parse(value) : null;
+  } catch (error) {
+    console.error('Error reading manual calories:', error);
+    return null;
+  }
+}
+
+export async function setManualCalories(date: string, calories: number): Promise<void> {
+  try {
+    const key = `${MANUAL_CALORIES_PREFIX}${date}`;
+    const entry: ManualCalorieEntry = {
+      calories,
+      timestamp: new Date().toISOString(),
+    };
+    await AsyncStorage.setItem(key, JSON.stringify(entry));
+  } catch (error) {
+    console.error('Error writing manual calories:', error);
+    throw error;
+  }
+}
+
+export async function deleteManualCalories(date: string): Promise<void> {
+  try {
+    const key = `${MANUAL_CALORIES_PREFIX}${date}`;
+    await AsyncStorage.removeItem(key);
+  } catch (error) {
+    console.error('Error deleting manual calories:', error);
+    throw error;
+  }
+}
+
+export async function getTodayManualCalories(): Promise<number | null> {
+  const today = new Date().toISOString().split('T')[0];
+  const entry = await getManualCalories(today);
+  return entry?.calories ?? null;
+}
