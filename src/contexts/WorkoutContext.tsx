@@ -4,6 +4,15 @@ import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { liveActivityService } from '../services/liveActivity';
+import {
+  sendWorkoutStateToWatch,
+  sendRestTimerToWatch,
+  sendWorkoutEndedToWatch,
+  onWatchSetLogged,
+  onWatchRequestState,
+  isWatchConnectivityAvailable,
+  WatchWorkoutState,
+} from '../services/watchConnectivity';
 
 // Generate UUID using expo-crypto (uuid library crashes on React Native)
 const generateId = () => Crypto.randomUUID();
@@ -125,6 +134,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const notificationIdRef = useRef<string | null>(null);
   const workoutNotificationIdRef = useRef<string | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const lastWatchStateSentRef = useRef<number>(0);
+  const exerciseNamesRef = useRef<Map<string, string>>(new Map());
 
   // Helper to format seconds as MM:SS
   const formatTime = (seconds: number): string => {
@@ -675,6 +686,108 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     if (!activeWorkout) return [];
     return activeWorkout.sets.filter(s => s.exerciseId === exerciseId);
   }, [activeWorkout]);
+
+  // Build and send Watch workout state (debounced to max once per second)
+  const sendWatchState = useCallback(async () => {
+    if (!isWatchConnectivityAvailable() || !activeWorkout) return;
+
+    const now = Date.now();
+    if (now - lastWatchStateSentRef.current < 1000) return; // Debounce
+    lastWatchStateSentRef.current = now;
+
+    const currentExerciseId = activeWorkout.currentExerciseId;
+    let exerciseName = 'Unknown Exercise';
+
+    if (currentExerciseId) {
+      // Check cache first
+      if (exerciseNamesRef.current.has(currentExerciseId)) {
+        exerciseName = exerciseNamesRef.current.get(currentExerciseId) || exerciseName;
+      } else {
+        // Fetch from storage and cache
+        const exercise = await getExerciseById(currentExerciseId);
+        if (exercise) {
+          exerciseName = exercise.name;
+          exerciseNamesRef.current.set(currentExerciseId, exercise.name);
+        }
+      }
+    }
+
+    const setsForCurrentExercise = currentExerciseId
+      ? activeWorkout.sets.filter(s => s.exerciseId === currentExerciseId)
+      : [];
+    const lastSet = setsForCurrentExercise[setsForCurrentExercise.length - 1];
+
+    const watchState: WatchWorkoutState = {
+      isActive: true,
+      exerciseName,
+      exerciseIndex: activeWorkout.currentExerciseIndex,
+      totalExercises: activeWorkout.exerciseIds.length,
+      currentSetNumber: setsForCurrentExercise.length + 1,
+      targetSets: 3, // Default target
+      lastWeight: lastSet?.weight || 0,
+      lastReps: lastSet?.reps || 0,
+      restTimerActive: restTimer.isRunning,
+      restTimerRemaining: restTimer.secondsRemaining,
+      restTimerTotal: restTimer.totalSeconds,
+      unitSystem: userSettings?.units || 'imperial',
+    };
+
+    sendWorkoutStateToWatch(watchState);
+  }, [activeWorkout, restTimer, userSettings]);
+
+  // Send state to Watch when workout state changes
+  useEffect(() => {
+    if (activeWorkout) {
+      sendWatchState();
+    } else if (isWatchConnectivityAvailable()) {
+      sendWorkoutEndedToWatch();
+    }
+  }, [
+    activeWorkout?.workout.id,
+    activeWorkout?.currentExerciseId,
+    activeWorkout?.sets.length,
+    activeWorkout?.exerciseIds.length,
+  ]);
+
+  // Send rest timer updates to Watch
+  useEffect(() => {
+    if (!isWatchConnectivityAvailable() || !activeWorkout?.currentExerciseId) return;
+
+    const exerciseName = exerciseNamesRef.current.get(activeWorkout.currentExerciseId) || 'Exercise';
+    sendRestTimerToWatch(
+      restTimer.secondsRemaining,
+      restTimer.totalSeconds,
+      exerciseName,
+      restTimer.isRunning
+    );
+  }, [restTimer.secondsRemaining, restTimer.isRunning, activeWorkout?.currentExerciseId]);
+
+  // Subscribe to Watch events
+  useEffect(() => {
+    if (!isWatchConnectivityAvailable()) return;
+
+    // Handle set logged from Watch
+    const unsubSetLogged = onWatchSetLogged(async (data) => {
+      if (!activeWorkout) return;
+
+      // Get the exercise at the specified index
+      const exerciseId = activeWorkout.exerciseIds[data.exerciseIndex];
+      if (!exerciseId) return;
+
+      // Log the set
+      await logSet(data.reps, data.weight, exerciseId);
+    });
+
+    // Handle Watch requesting current state
+    const unsubRequestState = onWatchRequestState(() => {
+      sendWatchState();
+    });
+
+    return () => {
+      unsubSetLogged();
+      unsubRequestState();
+    };
+  }, [activeWorkout, logSet, sendWatchState]);
 
   const value: WorkoutContextType = {
     activeWorkout,
