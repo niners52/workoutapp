@@ -332,7 +332,7 @@ const withWatchAppTarget = (config) => {
         path: 'Assets.xcassets',
         sourceTree: '"<group>"',
       };
-      pbxFileReference[`${fileRefUuids['Assets.xcassets']}_comment`] = `${WATCH_TARGET_NAME}-Assets.xcassets`;
+      pbxFileReference[`${fileRefUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets';
 
       // Add Watch app product reference
       pbxFileReference[watchProductUuid] = {
@@ -359,9 +359,9 @@ const withWatchAppTarget = (config) => {
       pbxBuildFile[buildFileUuids['Assets.xcassets']] = {
         isa: 'PBXBuildFile',
         fileRef: fileRefUuids['Assets.xcassets'],
-        fileRef_comment: `${WATCH_TARGET_NAME}-Assets.xcassets`,
+        fileRef_comment: 'Assets.xcassets',
       };
-      pbxBuildFile[`${buildFileUuids['Assets.xcassets']}_comment`] = `${WATCH_TARGET_NAME}-Assets.xcassets in Resources`;
+      pbxBuildFile[`${buildFileUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets in Resources';
 
       // Add PBXBuildFile for Watch product in main app's embed phase
       pbxBuildFile[watchProductBuildFileUuid] = {
@@ -376,11 +376,11 @@ const withWatchAppTarget = (config) => {
       const pbxGroup = project.pbxGroupByName(WATCH_TARGET_NAME);
       if (!pbxGroup) {
         // Create an array of { uuid, name } for all files to include proper comments
-        // Using unique names for Info.plist and Assets.xcassets to avoid conflicts
+        // Note: Assets.xcassets name must match its path to satisfy Xcodeproj consistency checks
         const allFilesWithNames = [
           ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
           { uuid: fileRefUuids['Info.plist'], name: `${WATCH_TARGET_NAME}-Info.plist` },
-          { uuid: fileRefUuids['Assets.xcassets'], name: `${WATCH_TARGET_NAME}-Assets.xcassets` },
+          { uuid: fileRefUuids['Assets.xcassets'], name: 'Assets.xcassets' },
         ];
 
         // Add group to PBXGroup section
@@ -432,7 +432,7 @@ const withWatchAppTarget = (config) => {
         isa: 'PBXResourcesBuildPhase',
         buildActionMask: 2147483647,
         files: [
-          { value: buildFileUuids['Assets.xcassets'], comment: `${WATCH_TARGET_NAME}-Assets.xcassets in Resources` },
+          { value: buildFileUuids['Assets.xcassets'], comment: 'Assets.xcassets in Resources' },
         ],
         runOnlyForDeploymentPostprocessing: 0,
       };
