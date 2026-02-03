@@ -130,7 +130,7 @@ export function ExerciseDetailScreen() {
   const handleDelete = () => {
     Alert.alert(
       'Delete Exercise',
-      'Are you sure you want to delete this exercise? This will not delete your logged sets.',
+      `Are you sure you want to delete "${exercise?.name}"? It will be removed from all templates. Historical workout data will be preserved.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -358,17 +358,15 @@ export function ExerciseDetailScreen() {
           </Card>
         )}
 
-        {/* Delete Button - only for custom exercises */}
-        {exercise.isCustom && (
-          <View style={styles.actions}>
-            <Button
-              title="Delete Exercise"
-              onPress={handleDelete}
-              variant="destructive"
-              fullWidth
-            />
-          </View>
-        )}
+        {/* Delete Button */}
+        <View style={styles.actions}>
+          <Button
+            title="Delete Exercise"
+            onPress={handleDelete}
+            variant="destructive"
+            fullWidth
+          />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

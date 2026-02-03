@@ -6,6 +6,7 @@ import {
   SectionList,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -36,7 +37,7 @@ interface ExerciseSection {
 
 export function ExercisesScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, workouts } = useData();
+  const { exercises, workouts, deleteExercise, sets } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
   const [prSummaries, setPrSummaries] = useState<Map<string, ExercisePRs>>(new Map());
@@ -60,6 +61,29 @@ export function ExercisesScreen() {
     };
     loadPRs();
   }, [exercises, workoutDates]);
+
+  // Calculate set counts per exercise for identifying duplicates
+  const exerciseSetCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    sets.forEach(set => {
+      counts.set(set.exerciseId, (counts.get(set.exerciseId) || 0) + 1);
+    });
+    return counts;
+  }, [sets]);
+
+  // Find exercises with duplicate names
+  const duplicateNames = useMemo(() => {
+    const nameCounts = new Map<string, number>();
+    exercises.forEach(e => {
+      const name = e.name.toLowerCase();
+      nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
+    });
+    const duplicates = new Set<string>();
+    nameCounts.forEach((count, name) => {
+      if (count > 1) duplicates.add(name);
+    });
+    return duplicates;
+  }, [exercises]);
 
   // Helper to get primary muscles display
   const getPrimaryMusclesText = (exercise: Exercise): string => {
@@ -143,6 +167,37 @@ export function ExercisesScreen() {
     navigation.navigate('AddExercise');
   }, [navigation]);
 
+  const handleLongPress = useCallback((exercise: Exercise) => {
+    Alert.alert(
+      exercise.name,
+      'What would you like to do?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Exercise',
+          style: 'destructive',
+          onPress: () => {
+            // Show confirmation dialog
+            Alert.alert(
+              'Delete Exercise',
+              `Are you sure you want to delete "${exercise.name}"? It will be removed from all templates. Historical workout data will be preserved.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await deleteExercise(exercise.id);
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }, [deleteExercise]);
+
   // Fixed heights for getItemLayout
   const ITEM_HEIGHT = 62; // exerciseItem height
   const SECTION_HEADER_HEIGHT = 38; // sectionHeader height
@@ -150,12 +205,16 @@ export function ExercisesScreen() {
   const renderExercise = useCallback(({ item: exercise }: { item: Exercise }) => {
     const exercisePRs = prSummaries.get(exercise.id);
     const hasPR = exercisePRs && (exercisePRs.weightPR || exercisePRs.e1rmPR);
+    const setCount = exerciseSetCounts.get(exercise.id) || 0;
+    const isDuplicate = duplicateNames.has(exercise.name.toLowerCase());
 
     return (
       <TouchableOpacity
         style={styles.exerciseItem}
         onPress={() => handleExercisePress(exercise)}
+        onLongPress={() => handleLongPress(exercise)}
         activeOpacity={0.7}
+        delayLongPress={500}
       >
         <View style={styles.exerciseInfo}>
           <View style={styles.exerciseNameRow}>
@@ -167,6 +226,11 @@ export function ExercisesScreen() {
           <Text style={styles.exerciseDetail}>
             {getEquipmentText(exercise)} | {getPrimaryMusclesText(exercise)}
           </Text>
+          {isDuplicate && (
+            <Text style={styles.duplicateSubtitle}>
+              {setCount > 0 ? `${setCount} sets logged` : 'No sets logged'}
+            </Text>
+          )}
         </View>
         {exercise.isCustom && (
           <Text style={styles.customBadge}>Custom</Text>
@@ -174,7 +238,7 @@ export function ExercisesScreen() {
         <Text style={styles.chevron}>›</Text>
       </TouchableOpacity>
     );
-  }, [handleExercisePress, prSummaries]);
+  }, [handleExercisePress, handleLongPress, prSummaries, exerciseSetCounts, duplicateNames]);
 
   const renderSectionHeader = useCallback(({ section }: { section: ExerciseSection }) => (
     <View style={styles.sectionHeader}>
@@ -361,6 +425,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
     textTransform: 'capitalize',
+  },
+  duplicateSubtitle: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   customBadge: {
     fontSize: typography.size.xs,

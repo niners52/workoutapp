@@ -386,9 +386,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteExercise = useCallback(async (id: string) => {
     await deleteExerciseFromStorage(id);
     await refreshExercises();
+    await refreshTemplates(); // Templates may have been updated to remove this exercise
     // Fire-and-forget sync to cloud
     syncDeleteExercise(id).catch(e => console.log('Sync error:', e));
-  }, [refreshExercises]);
+  }, [refreshExercises, refreshTemplates]);
 
   // Template CRUD
   const addTemplate = useCallback(async (template: Template) => {

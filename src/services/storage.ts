@@ -379,9 +379,26 @@ export async function updateExercise(exercise: Exercise): Promise<void> {
 }
 
 export async function deleteExercise(id: string): Promise<void> {
+  // Remove the exercise from exercises list
   const exercises = await getExercises();
   const filtered = exercises.filter(e => e.id !== id);
   await setItem(STORAGE_KEYS.EXERCISES, filtered);
+
+  // Remove from any templates that reference this exercise
+  const templates = await getTemplates();
+  const updatedTemplates = templates.map(template => {
+    if (template.exerciseIds.includes(id)) {
+      return {
+        ...template,
+        exerciseIds: template.exerciseIds.filter(eid => eid !== id),
+      };
+    }
+    return template;
+  });
+  await setItem(STORAGE_KEYS.TEMPLATES, updatedTemplates);
+
+  // Note: We do NOT delete historical sets that used this exercise
+  // to preserve workout history integrity
 }
 
 // ==================== TEMPLATES ====================
