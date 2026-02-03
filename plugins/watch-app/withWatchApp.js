@@ -62,6 +62,21 @@ const withWatchAppFiles = (config) => {
         }
       }
 
+      // Create bridging header for Swift to access React Native ObjC types
+      const bridgingHeaderContent = `//
+//  ${projectName}-Bridging-Header.h
+//  ${projectName}
+//
+//  Bridging header to expose React Native ObjC types to Swift
+//
+
+#import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
+`;
+      const bridgingHeaderPath = path.join(mainAppDir, `${projectName}-Bridging-Header.h`);
+      fs.writeFileSync(bridgingHeaderPath, bridgingHeaderContent);
+      console.log(`[Watch Plugin] Created bridging header: ${bridgingHeaderPath}`);
+
       // Create Watch App directory
       const watchAppDir = path.join(platformProjectRoot, WATCH_TARGET_NAME);
       if (!fs.existsSync(watchAppDir)) {
@@ -142,6 +157,30 @@ const withWatchAppTarget = (config) => {
       const filePath = `${projectName}/${file}`;
       if (!project.hasFile(filePath)) {
         project.addSourceFile(filePath, { target: mainTarget.uuid }, mainGroupKey);
+      }
+    }
+
+    // Add bridging header to main target's build configurations
+    // This allows Swift code to access React Native ObjC types (RCTEventEmitter, etc.)
+    const pbxXCBuildConfig = project.hash.project.objects['XCBuildConfiguration'];
+
+    // Find main target's configuration list
+    const mainTargetObj = project.hash.project.objects['PBXNativeTarget'][mainTarget.uuid];
+    if (mainTargetObj && mainTargetObj.buildConfigurationList) {
+      const configListUuid = mainTargetObj.buildConfigurationList;
+      const configList = project.hash.project.objects['XCConfigurationList'][configListUuid];
+
+      if (configList && configList.buildConfigurations) {
+        configList.buildConfigurations.forEach(configRef => {
+          const configUuid = configRef.value;
+          if (pbxXCBuildConfig[configUuid] && pbxXCBuildConfig[configUuid].buildSettings) {
+            // Only set if not already set
+            if (!pbxXCBuildConfig[configUuid].buildSettings.SWIFT_OBJC_BRIDGING_HEADER) {
+              pbxXCBuildConfig[configUuid].buildSettings.SWIFT_OBJC_BRIDGING_HEADER = `"${projectName}/${projectName}-Bridging-Header.h"`;
+              console.log(`[Watch Plugin] Added bridging header to config: ${configRef.comment}`);
+            }
+          }
+        });
       }
     }
 
@@ -692,6 +731,45 @@ const withWatchAppTarget = (config) => {
     console.log(`[Watch Plugin] Final Watch target count: ${watchTargetCount}`);
     if (watchTargetCount > 1) {
       console.error(`[Watch Plugin] ERROR: ${watchTargetCount} Watch targets found - this will cause build errors!`);
+    }
+
+    // Verify Watch target compile sources don't include iOS bridge files
+    if (watchTargetUuidFound && finalTargets[watchTargetUuidFound]) {
+      const watchTarget = finalTargets[watchTargetUuidFound];
+      if (watchTarget.buildPhases) {
+        const sourcesPhase = watchTarget.buildPhases.find(p => p.comment === 'Sources');
+        if (sourcesPhase) {
+          const sourcesPhaseObj = pbxSourcesBuildPhaseSection[sourcesPhase.value];
+          if (sourcesPhaseObj && sourcesPhaseObj.files) {
+            console.log(`[Watch Plugin] Watch compile sources:`);
+            sourcesPhaseObj.files.forEach(f => {
+              console.log(`[Watch Plugin]   - ${f.comment}`);
+              // Warn if bridge files are found in Watch target
+              if (f.comment && (f.comment.includes('WatchConnectivityBridge') ||
+                                f.comment.includes('WatchConnectivityManager'))) {
+                console.error(`[Watch Plugin] ERROR: iOS bridge file found in Watch target: ${f.comment}`);
+              }
+            });
+          }
+        }
+      }
+    }
+
+    // Also verify main target compile sources include the bridge files
+    const mainTargetForVerify = finalTargets[mainTarget.uuid];
+    if (mainTargetForVerify && mainTargetForVerify.buildPhases) {
+      const mainSourcesPhase = mainTargetForVerify.buildPhases.find(p => p.comment === 'Sources');
+      if (mainSourcesPhase) {
+        const mainSourcesObj = pbxSourcesBuildPhaseSection[mainSourcesPhase.value];
+        if (mainSourcesObj && mainSourcesObj.files) {
+          const bridgeFiles = mainSourcesObj.files.filter(f =>
+            f.comment && (f.comment.includes('WatchConnectivityBridge') ||
+                          f.comment.includes('WatchConnectivityManager'))
+          );
+          console.log(`[Watch Plugin] Main target bridge files: ${bridgeFiles.length}`);
+          bridgeFiles.forEach(f => console.log(`[Watch Plugin]   - ${f.comment}`));
+        }
+      }
     }
 
     // Verify Watch target has exactly one Sources phase
