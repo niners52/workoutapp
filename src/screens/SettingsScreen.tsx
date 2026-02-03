@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card, ListItem, NumberInput, Button } from '../components/common';
+import { useWorkoutBarPadding } from '../components/workout';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -68,6 +69,7 @@ export function SettingsScreen() {
     updateSupplement,
     deleteSupplement,
   } = useData();
+  const workoutBarPadding = useWorkoutBarPadding();
 
   const [showMuscleTargets, setShowMuscleTargets] = useState(false);
   const [showLocations, setShowLocations] = useState(false);
@@ -384,7 +386,7 @@ export function SettingsScreen() {
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.container} contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}>
         <Text style={styles.title}>Settings</Text>
 
         {/* Account */}

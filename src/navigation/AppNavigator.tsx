@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography } from '../theme';
 import { RootStackParamList, MainTabParamList } from './types';
 import { useAuth } from '../contexts/AuthContext';
 import { isMigrationComplete } from '../services/cloudSync';
+import { ActiveWorkoutMiniBar, MINI_BAR_HEIGHT } from '../components/workout';
+import { useWorkout } from '../contexts/WorkoutContext';
 
 import {
   HomeScreen,
@@ -85,9 +87,94 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   );
 };
 
+// Custom tab bar that includes the mini-bar above it
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  const { isWorkoutActive } = useWorkout();
+
+  return (
+    <View style={customTabBarStyles.container}>
+      <ActiveWorkoutMiniBar />
+      <View style={[
+        customTabBarStyles.tabBar,
+        isWorkoutActive && customTabBarStyles.tabBarWithMiniBar,
+      ]}>
+        {state.routes.map((route: any, index: number) => {
+          const { options } = descriptors[route.key];
+          const label = options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+            ? options.title
+            : route.name;
+
+          const isFocused = state.index === index;
+
+          const onPress = () => {
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={customTabBarStyles.tabItem}
+              onPress={onPress}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+            >
+              <TabIcon name={route.name} focused={isFocused} />
+              <Text style={[
+                customTabBarStyles.label,
+                { color: isFocused ? colors.primary : colors.textTertiary },
+              ]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const customTabBarStyles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.backgroundSecondary,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.backgroundSecondary,
+    borderTopColor: colors.separator,
+    borderTopWidth: 0.5,
+    paddingVertical: 8,
+  },
+  tabBarWithMiniBar: {
+    borderTopWidth: 0,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  label: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.medium,
+    marginTop: 2,
+  },
+});
+
 function MainTabs() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,

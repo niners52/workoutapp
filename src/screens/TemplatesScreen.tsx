@@ -12,6 +12,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
+import { useWorkoutBarPadding } from '../components/workout';
 import { useData } from '../contexts/DataContext';
 import { Template } from '../types';
 import { RootStackParamList } from '../navigation/types';
@@ -26,6 +27,7 @@ interface TemplateSection {
 export function TemplatesScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { templates, exercises, deleteTemplate, locations } = useData();
+  const workoutBarPadding = useWorkoutBarPadding();
 
   // Group templates by location
   const templatesByLocation = locations.map(location => ({
@@ -123,7 +125,7 @@ export function TemplatesScreen() {
             keyExtractor={item => item.id}
             renderItem={renderTemplate}
             renderSectionHeader={renderSectionHeader}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
             stickySectionHeadersEnabled
           />
         )}

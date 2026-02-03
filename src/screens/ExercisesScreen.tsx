@@ -13,6 +13,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { SearchBar, Button } from '../components/common';
+import { useWorkoutBarPadding } from '../components/workout';
 import { useData } from '../contexts/DataContext';
 import {
   Exercise,
@@ -38,6 +39,7 @@ interface ExerciseSection {
 export function ExercisesScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { exercises, workouts, deleteExercise, sets } = useData();
+  const workoutBarPadding = useWorkoutBarPadding();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
   const [prSummaries, setPrSummaries] = useState<Map<string, ExercisePRs>>(new Map());
@@ -302,7 +304,7 @@ export function ExercisesScreen() {
           renderItem={renderExercise}
           renderSectionHeader={renderSectionHeader}
           stickySectionHeadersEnabled={false}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
           initialNumToRender={20}
           maxToRenderPerBatch={20}
           windowSize={10}

@@ -16,6 +16,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Button, Card, ProgressBar } from '../components/common';
 import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../components/goals';
 import { SupplementCheckbox } from '../components/supplements';
+import { useWorkoutBarPadding } from '../components/workout';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import {
@@ -59,6 +60,7 @@ export function HomeScreen() {
     getActiveRoutine,
   } = useData();
   const { isWorkoutActive } = useWorkout();
+  const workoutBarPadding = useWorkoutBarPadding();
 
   // Today's date for supplements
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -197,7 +199,7 @@ export function HomeScreen() {
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: 100 + workoutBarPadding }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -393,7 +395,7 @@ export function HomeScreen() {
       </ScrollView>
 
       {/* Start Workout Button */}
-      <View style={styles.buttonContainer}>
+      <View style={[styles.buttonContainer, { bottom: workoutBarPadding }]}>
         <Button
           title={isWorkoutActive ? 'Continue Workout' : 'Start Workout'}
           onPress={handleStartWorkout}
@@ -412,7 +414,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
-    paddingBottom: 100,
   },
   header: {
     marginBottom: spacing.md,

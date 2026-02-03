@@ -21,6 +21,7 @@ import {
 } from 'date-fns';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
+import { useWorkoutBarPadding } from '../components/workout';
 import { CalendarView, GoalStatusMap } from '../components/calendar';
 import { useData } from '../contexts/DataContext';
 import {
@@ -38,6 +39,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export function CalendarScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { workouts, templates, userSettings, refreshWorkouts } = useData();
+  const workoutBarPadding = useWorkoutBarPadding();
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -162,7 +164,7 @@ export function CalendarScreen() {
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

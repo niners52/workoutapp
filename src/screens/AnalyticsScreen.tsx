@@ -19,6 +19,7 @@ import { format, startOfWeek, endOfWeek, subWeeks, subDays } from 'date-fns';
 import Svg, { Circle } from 'react-native-svg';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
+import { useWorkoutBarPadding } from '../components/workout';
 import { MuscleGroupVolumeChart } from '../components/charts';
 import { useData } from '../contexts/DataContext';
 import {
@@ -85,6 +86,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export function AnalyticsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { userSettings, bodyMeasurements, addBodyMeasurement, getLatestBodyMeasurement, workouts, sets } = useData();
+  const workoutBarPadding = useWorkoutBarPadding();
 
   const [refreshing, setRefreshing] = useState(false);
   const [currentWeekVolume, setCurrentWeekVolume] = useState<WeeklyVolume | null>(null);
@@ -431,7 +433,7 @@ export function AnalyticsScreen() {
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
