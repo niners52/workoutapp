@@ -372,32 +372,37 @@ const withWatchAppTarget = (config) => {
       };
       pbxBuildFile[`${watchProductBuildFileUuid}_comment`] = `${WATCH_TARGET_NAME}.app in Embed Watch Content`;
 
-      // Create PBXGroup for Watch app
-      const pbxGroup = project.pbxGroupByName(WATCH_TARGET_NAME);
-      if (!pbxGroup) {
-        // Create an array of { uuid, name } for all files to include proper comments
-        // Note: Assets.xcassets name must match its path to satisfy Xcodeproj consistency checks
-        const allFilesWithNames = [
-          ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
-          { uuid: fileRefUuids['Info.plist'], name: `${WATCH_TARGET_NAME}-Info.plist` },
-          { uuid: fileRefUuids['Assets.xcassets'], name: 'Assets.xcassets' },
-        ];
+      // Create PBXGroup for Watch app (always create fresh to ensure all files are included)
+      // Note: Assets.xcassets name must match its path to satisfy Xcodeproj consistency checks
+      const allFilesWithNames = [
+        ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
+        { uuid: fileRefUuids['Info.plist'], name: `${WATCH_TARGET_NAME}-Info.plist` },
+        { uuid: fileRefUuids['Assets.xcassets'], name: 'Assets.xcassets' },
+      ];
 
-        // Add group to PBXGroup section
-        const pbxGroupSection = project.hash.project.objects['PBXGroup'];
-        pbxGroupSection[watchGroupUuid] = {
-          isa: 'PBXGroup',
-          children: allFilesWithNames.map(f => ({ value: f.uuid, comment: f.name })),
-          path: WATCH_TARGET_NAME,
-          sourceTree: '"<group>"',
-        };
-        pbxGroupSection[`${watchGroupUuid}_comment`] = WATCH_TARGET_NAME;
+      // Add group to PBXGroup section
+      const pbxGroupSection = project.hash.project.objects['PBXGroup'];
+      pbxGroupSection[watchGroupUuid] = {
+        isa: 'PBXGroup',
+        children: allFilesWithNames.map(f => ({ value: f.uuid, comment: f.name })),
+        path: WATCH_TARGET_NAME,
+        sourceTree: '"<group>"',
+      };
+      pbxGroupSection[`${watchGroupUuid}_comment`] = WATCH_TARGET_NAME;
 
-        // Add Watch group to main group
-        const mainGroup = pbxGroupSection[mainGroupKey];
-        if (mainGroup && mainGroup.children) {
-          mainGroup.children.push({ value: watchGroupUuid, comment: WATCH_TARGET_NAME });
+      // Remove any existing Watch group with different UUID to prevent duplicates
+      for (const key in pbxGroupSection) {
+        if (key === watchGroupUuid || key.endsWith('_comment')) continue;
+        if (pbxGroupSection[key].path === WATCH_TARGET_NAME && key !== watchGroupUuid) {
+          delete pbxGroupSection[key];
+          delete pbxGroupSection[`${key}_comment`];
         }
+      }
+
+      // Add Watch group to main group
+      const mainGroup = pbxGroupSection[mainGroupKey];
+      if (mainGroup && mainGroup.children) {
+        mainGroup.children.push({ value: watchGroupUuid, comment: WATCH_TARGET_NAME });
       }
 
       // Add Watch product to Products group
