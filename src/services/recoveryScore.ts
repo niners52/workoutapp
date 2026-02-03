@@ -191,10 +191,8 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     training: null,
   };
 
-  // Track available factors for weight redistribution
   const availableFactors: { key: keyof RecoveryResult['factors']; weight: number; score: number }[] = [];
 
-  // Base weights
   const weights = {
     hrv: 0.35,
     sleep: 0.30,
@@ -202,7 +200,12 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     training: 0.15,
   };
 
-  // HRV Score (higher is better, compare to personal baseline)
+  // HRV Score - more gradual curve
+  // 15%+ above baseline = 95-100
+  // At baseline = 75
+  // 15% below = 50
+  // 30% below = 30
+  // 40%+ below = 15
   if (inputs.hrv !== null && inputs.hrvBaseline !== null && inputs.hrvBaseline > 0) {
     const percentFromBaseline = ((inputs.hrv - inputs.hrvBaseline) / inputs.hrvBaseline) * 100;
 
@@ -210,21 +213,31 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     let status: string;
     let detail: string;
 
-    if (percentFromBaseline >= 10) {
-      score = 100;
+    if (percentFromBaseline >= 15) {
+      score = Math.min(100, 95 + (percentFromBaseline - 15) * 0.5);
       status = 'Excellent';
       detail = `${Math.round(percentFromBaseline)}% above baseline`;
     } else if (percentFromBaseline >= 0) {
-      score = 70 + (percentFromBaseline * 3); // 70-100 range
+      // 0% = 75, 15% = 95 (linear)
+      score = 75 + (percentFromBaseline / 15) * 20;
       status = 'Good';
-      detail = 'At or above baseline';
-    } else if (percentFromBaseline >= -10) {
-      score = 40 + ((10 + percentFromBaseline) * 3); // 40-70 range
+      detail = percentFromBaseline > 5
+        ? `${Math.round(percentFromBaseline)}% above baseline`
+        : 'At baseline';
+    } else if (percentFromBaseline >= -15) {
+      // -15% = 50, 0% = 75 (linear)
+      score = 50 + ((15 + percentFromBaseline) / 15) * 25;
       status = 'Below average';
       detail = `${Math.round(Math.abs(percentFromBaseline))}% below baseline`;
-    } else {
-      score = Math.max(10, 40 + (percentFromBaseline * 1.5)); // 10-40 range
+    } else if (percentFromBaseline >= -30) {
+      // -30% = 30, -15% = 50 (linear)
+      score = 30 + ((30 + percentFromBaseline) / 15) * 20;
       status = 'Low';
+      detail = `${Math.round(Math.abs(percentFromBaseline))}% below baseline`;
+    } else {
+      // Below -30%: gradual decline to minimum of 15
+      score = Math.max(15, 30 + (percentFromBaseline + 30) * 0.3);
+      status = 'Very low';
       detail = `${Math.round(Math.abs(percentFromBaseline))}% below baseline`;
     }
 
@@ -232,7 +245,12 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     availableFactors.push({ key: 'hrv', weight: weights.hrv, score });
   }
 
-  // RHR Score (lower is better, compare to personal baseline)
+  // RHR Score - more gradual curve
+  // 5+ bpm below baseline = 95-100
+  // At baseline = 75
+  // 5 bpm above = 50
+  // 10 bpm above = 30
+  // 15+ bpm above = 15
   if (inputs.restingHR !== null && inputs.rhrBaseline !== null && inputs.rhrBaseline > 0) {
     const diffFromBaseline = inputs.restingHR - inputs.rhrBaseline;
 
@@ -241,19 +259,29 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     let detail: string;
 
     if (diffFromBaseline <= -5) {
-      score = 100;
+      score = Math.min(100, 95 + Math.abs(diffFromBaseline + 5) * 1);
       status = 'Excellent';
       detail = `${Math.round(Math.abs(diffFromBaseline))} bpm below baseline`;
     } else if (diffFromBaseline <= 0) {
-      score = 70 + (Math.abs(diffFromBaseline) * 6); // 70-100 range
+      // 0 = 75, -5 = 95 (linear)
+      score = 75 + (Math.abs(diffFromBaseline) / 5) * 20;
       status = 'Good';
-      detail = 'At or below baseline';
+      detail = diffFromBaseline < -2
+        ? `${Math.round(Math.abs(diffFromBaseline))} bpm below baseline`
+        : 'At baseline';
     } else if (diffFromBaseline <= 5) {
-      score = 40 + ((5 - diffFromBaseline) * 6); // 40-70 range
+      // 0 = 75, 5 = 50 (linear)
+      score = 50 + ((5 - diffFromBaseline) / 5) * 25;
+      status = 'Slightly elevated';
+      detail = `${Math.round(diffFromBaseline)} bpm above baseline`;
+    } else if (diffFromBaseline <= 10) {
+      // 5 = 50, 10 = 30 (linear)
+      score = 30 + ((10 - diffFromBaseline) / 5) * 20;
       status = 'Elevated';
       detail = `${Math.round(diffFromBaseline)} bpm above baseline`;
     } else {
-      score = Math.max(10, 40 - (diffFromBaseline - 5) * 3); // 10-40 range
+      // Above 10: gradual decline to minimum of 15
+      score = Math.max(15, 30 - (diffFromBaseline - 10) * 1.5);
       status = 'High';
       detail = `${Math.round(diffFromBaseline)} bpm above baseline`;
     }
@@ -262,43 +290,45 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     availableFactors.push({ key: 'rhr', weight: weights.rhr, score });
   }
 
-  // Sleep Score
+  // Sleep Score - smooth continuous curve instead of hard steps
   if (inputs.sleepHours !== null) {
     let score: number;
     let status: string;
     let detail: string;
 
-    if (inputs.sleepHours >= 8) {
+    if (inputs.sleepHours >= 8.5) {
       score = 100;
       status = 'Excellent';
       detail = `${inputs.sleepHours.toFixed(1)} hours`;
     } else if (inputs.sleepHours >= 7) {
-      score = 80;
-      status = 'Good';
+      // 7 = 75, 8.5 = 100 (linear)
+      score = 75 + ((inputs.sleepHours - 7) / 1.5) * 25;
+      status = inputs.sleepHours >= 7.5 ? 'Good' : 'Adequate';
       detail = `${inputs.sleepHours.toFixed(1)} hours`;
-    } else if (inputs.sleepHours >= 6) {
-      score = 60;
-      status = 'Fair';
+    } else if (inputs.sleepHours >= 5.5) {
+      // 5.5 = 40, 7 = 75 (linear)
+      score = 40 + ((inputs.sleepHours - 5.5) / 1.5) * 35;
+      status = inputs.sleepHours >= 6.5 ? 'Fair' : 'Low';
       detail = `${inputs.sleepHours.toFixed(1)} hours - below target`;
-    } else if (inputs.sleepHours >= 5) {
-      score = 40;
-      status = 'Low';
+    } else if (inputs.sleepHours >= 4) {
+      // 4 = 20, 5.5 = 40 (linear)
+      score = 20 + ((inputs.sleepHours - 4) / 1.5) * 20;
+      status = 'Very low';
       detail = `Only ${inputs.sleepHours.toFixed(1)} hours`;
     } else {
-      score = 20;
-      status = 'Very low';
+      score = Math.max(10, inputs.sleepHours * 5);
+      status = 'Severely low';
       detail = `Only ${inputs.sleepHours.toFixed(1)} hours`;
     }
 
-    factors.sleep = { score, status, detail };
+    factors.sleep = { score: Math.round(score), status, detail };
     availableFactors.push({ key: 'sleep', weight: weights.sleep, score });
   }
 
-  // Training Load Score (was yesterday a rest day or heavy?)
-  // Rest day or light = 100, moderate = 70, heavy (>130% of average) = 40
+  // Training Load Score - keep similar but slightly more forgiving
   const trainingLoadRatio = inputs.trainingLoadAverage > 0
     ? inputs.trainingLoadYesterday / inputs.trainingLoadAverage
-    : inputs.trainingLoadYesterday > 0 ? 1.5 : 0; // Default to heavy if no baseline
+    : inputs.trainingLoadYesterday > 0 ? 1.5 : 0;
 
   let trainingScore: number;
   let trainingStatus: string;
@@ -313,40 +343,38 @@ export function calculateRecoveryScore(inputs: HealthInputs): RecoveryResult {
     trainingStatus = 'Light';
     trainingDetail = `${inputs.trainingLoadYesterday} sets (light day)`;
   } else if (trainingLoadRatio <= 1.0) {
-    trainingScore = 70;
+    // 0.5 = 90, 1.0 = 70 (linear)
+    trainingScore = 70 + ((1.0 - trainingLoadRatio) / 0.5) * 20;
     trainingStatus = 'Moderate';
     trainingDetail = `${inputs.trainingLoadYesterday} sets (average)`;
-  } else if (trainingLoadRatio <= 1.3) {
-    trainingScore = 50;
+  } else if (trainingLoadRatio <= 1.5) {
+    // 1.0 = 70, 1.5 = 45 (linear)
+    trainingScore = 45 + ((1.5 - trainingLoadRatio) / 0.5) * 25;
     trainingStatus = 'Heavy';
     trainingDetail = `${inputs.trainingLoadYesterday} sets (above average)`;
   } else {
-    trainingScore = 40;
+    trainingScore = Math.max(25, 45 - (trainingLoadRatio - 1.5) * 15);
     trainingStatus = 'Very heavy';
     trainingDetail = `${inputs.trainingLoadYesterday} sets (${Math.round(trainingLoadRatio * 100)}% of average)`;
   }
 
-  factors.training = { score: trainingScore, status: trainingStatus, detail: trainingDetail };
+  factors.training = { score: Math.round(trainingScore), status: trainingStatus, detail: trainingDetail };
   availableFactors.push({ key: 'training', weight: weights.training, score: trainingScore });
 
-  // Calculate weighted score, redistributing missing factor weights
+  // Calculate weighted score
   let totalWeight = availableFactors.reduce((sum, f) => sum + f.weight, 0);
   let weightedSum = availableFactors.reduce((sum, f) => sum + (f.score * f.weight), 0);
-
-  // Normalize to account for missing factors
   const overallScore = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 50;
 
-  // Determine status
   let status: 'recovered' | 'moderate' | 'strained';
-  if (overallScore >= 70) {
+  if (overallScore >= 67) {
     status = 'recovered';
-  } else if (overallScore >= 40) {
+  } else if (overallScore >= 34) {
     status = 'moderate';
   } else {
     status = 'strained';
   }
 
-  // Generate recommendation
   const recommendation = getRecoveryRecommendation(overallScore, factors);
 
   return {
