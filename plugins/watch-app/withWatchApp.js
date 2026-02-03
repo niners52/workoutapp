@@ -78,7 +78,7 @@ const withWatchAppFiles = (config) => {
         }
       }
 
-      // Create Watch App Info.plist (modern watchOS app, not legacy WatchKit)
+      // Create Watch App Info.plist (modern watchOS app with required App Store keys)
       const watchInfoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -93,6 +93,8 @@ const withWatchAppFiles = (config) => {
   <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>$(PRODUCT_NAME)</string>
   <key>CFBundlePackageType</key>
@@ -101,13 +103,111 @@ const withWatchAppFiles = (config) => {
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>MinimumOSVersion</key>
+  <string>10.0</string>
+  <key>WKCompanionAppBundleIdentifier</key>
+  <string>${bundleId}</string>
   <key>WKWatchOnly</key>
   <false/>
 </dict>
 </plist>`;
       fs.writeFileSync(path.join(watchAppDir, 'Info.plist'), watchInfoPlist);
 
-      // Note: No Assets.xcassets - Watch app uses SF Symbols and inline SwiftUI colors
+      // Create Assets.xcassets with AppIcon for App Store validation
+      const zlib = require('zlib');
+
+      // Function to generate a minimal valid PNG with solid color
+      function createSolidPNG(width, height, r, g, b) {
+        // Raw pixel data (RGBA) with filter bytes
+        const rawData = Buffer.alloc((width * 4 + 1) * height);
+        for (let y = 0; y < height; y++) {
+          rawData[y * (width * 4 + 1)] = 0; // filter byte (none)
+          for (let x = 0; x < width; x++) {
+            const offset = y * (width * 4 + 1) + 1 + x * 4;
+            rawData[offset] = r;
+            rawData[offset + 1] = g;
+            rawData[offset + 2] = b;
+            rawData[offset + 3] = 255; // alpha
+          }
+        }
+
+        const compressed = zlib.deflateSync(rawData);
+
+        // PNG signature
+        const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+        // CRC32 calculation
+        function crc32(data) {
+          let crc = 0xffffffff;
+          const table = [];
+          for (let i = 0; i < 256; i++) {
+            let c = i;
+            for (let j = 0; j < 8; j++) {
+              c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+            }
+            table[i] = c;
+          }
+          for (let i = 0; i < data.length; i++) {
+            crc = table[(crc ^ data[i]) & 0xff] ^ (crc >>> 8);
+          }
+          return (crc ^ 0xffffffff) >>> 0;
+        }
+
+        function createChunk(type, data) {
+          const length = Buffer.alloc(4);
+          length.writeUInt32BE(data.length);
+          const typeBuffer = Buffer.from(type);
+          const crcData = Buffer.concat([typeBuffer, data]);
+          const crc = crc32(crcData);
+          const crcBuffer = Buffer.alloc(4);
+          crcBuffer.writeUInt32BE(crc);
+          return Buffer.concat([length, typeBuffer, data, crcBuffer]);
+        }
+
+        // IHDR chunk
+        const ihdr = Buffer.alloc(13);
+        ihdr.writeUInt32BE(width, 0);
+        ihdr.writeUInt32BE(height, 4);
+        ihdr[8] = 8;  // bit depth
+        ihdr[9] = 6;  // color type (RGBA)
+        ihdr[10] = 0; // compression
+        ihdr[11] = 0; // filter
+        ihdr[12] = 0; // interlace
+
+        const ihdrChunk = createChunk('IHDR', ihdr);
+        const idatChunk = createChunk('IDAT', compressed);
+        const iendChunk = createChunk('IEND', Buffer.alloc(0));
+
+        return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
+      }
+
+      // Create Assets.xcassets directory structure
+      const assetsDir = path.join(watchAppDir, 'Assets.xcassets');
+      const appIconDir = path.join(assetsDir, 'AppIcon.appiconset');
+      fs.mkdirSync(appIconDir, { recursive: true });
+
+      // Create Contents.json for asset catalog root
+      fs.writeFileSync(path.join(assetsDir, 'Contents.json'), JSON.stringify({
+        "info": { "version": 1, "author": "xcode" }
+      }, null, 2));
+
+      // Create AppIcon Contents.json with a single 1024x1024 universal entry
+      fs.writeFileSync(path.join(appIconDir, 'Contents.json'), JSON.stringify({
+        "images": [
+          {
+            "filename": "icon.png",
+            "idiom": "universal",
+            "platform": "watchos",
+            "size": "1024x1024"
+          }
+        ],
+        "info": { "version": 1, "author": "xcode" }
+      }, null, 2));
+
+      // Generate 1024x1024 gold (#FFC52F) icon
+      const iconData = createSolidPNG(1024, 1024, 255, 197, 47);
+      fs.writeFileSync(path.join(appIconDir, 'icon.png'), iconData);
+      console.log(`[Watch Plugin] Created Watch app icon: ${path.join(appIconDir, 'icon.png')}`);
 
       return config;
     },
@@ -198,8 +298,10 @@ const withWatchAppTarget = (config) => {
         buildFileUuids[file] = generateUuid();
       });
 
-      // Create file reference for Info.plist (no Assets.xcassets - using inline colors)
+      // Create file references for Info.plist and Assets.xcassets
       fileRefUuids['Info.plist'] = generateUuid();
+      fileRefUuids['Assets.xcassets'] = generateUuid();
+      buildFileUuids['Assets.xcassets'] = generateUuid();
 
       // Add PBXFileReference entries for Swift files and resources
       const pbxFileReference = project.pbxFileReferenceSection();
@@ -223,6 +325,15 @@ const withWatchAppTarget = (config) => {
       };
       pbxFileReference[`${fileRefUuids['Info.plist']}_comment`] = `${WATCH_TARGET_NAME}-Info.plist`;
 
+      // Add Assets.xcassets file reference
+      pbxFileReference[fileRefUuids['Assets.xcassets']] = {
+        isa: 'PBXFileReference',
+        lastKnownFileType: 'folder.assetcatalog',
+        path: 'Assets.xcassets',
+        sourceTree: '"<group>"',
+      };
+      pbxFileReference[`${fileRefUuids['Assets.xcassets']}_comment`] = `${WATCH_TARGET_NAME}-Assets.xcassets`;
+
       // Add Watch app product reference
       pbxFileReference[watchProductUuid] = {
         isa: 'PBXFileReference',
@@ -244,6 +355,14 @@ const withWatchAppTarget = (config) => {
         pbxBuildFile[`${buildFileUuids[file]}_comment`] = `${file} in Sources`;
       });
 
+      // Add PBXBuildFile for Assets.xcassets (Resources)
+      pbxBuildFile[buildFileUuids['Assets.xcassets']] = {
+        isa: 'PBXBuildFile',
+        fileRef: fileRefUuids['Assets.xcassets'],
+        fileRef_comment: `${WATCH_TARGET_NAME}-Assets.xcassets`,
+      };
+      pbxBuildFile[`${buildFileUuids['Assets.xcassets']}_comment`] = `${WATCH_TARGET_NAME}-Assets.xcassets in Resources`;
+
       // Add PBXBuildFile for Watch product in main app's embed phase
       pbxBuildFile[watchProductBuildFileUuid] = {
         isa: 'PBXBuildFile',
@@ -257,11 +376,11 @@ const withWatchAppTarget = (config) => {
       const pbxGroup = project.pbxGroupByName(WATCH_TARGET_NAME);
       if (!pbxGroup) {
         // Create an array of { uuid, name } for all files to include proper comments
-        // Note: No Assets.xcassets - using inline SwiftUI colors instead
-        // Using unique name for Info.plist to avoid conflict with LiveActivity's Info.plist
+        // Using unique names for Info.plist and Assets.xcassets to avoid conflicts
         const allFilesWithNames = [
           ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
           { uuid: fileRefUuids['Info.plist'], name: `${WATCH_TARGET_NAME}-Info.plist` },
+          { uuid: fileRefUuids['Assets.xcassets'], name: `${WATCH_TARGET_NAME}-Assets.xcassets` },
         ];
 
         // Add group to PBXGroup section
@@ -306,13 +425,15 @@ const withWatchAppTarget = (config) => {
       };
       pbxSourcesBuildPhase[`${watchSourcesBuildPhaseUuid}_comment`] = 'Sources';
 
-      // Create Resources build phase (empty - no Assets.xcassets, using inline colors)
+      // Create Resources build phase with Assets.xcassets
       const pbxResourcesBuildPhase = project.hash.project.objects['PBXResourcesBuildPhase'] || {};
       project.hash.project.objects['PBXResourcesBuildPhase'] = pbxResourcesBuildPhase;
       pbxResourcesBuildPhase[watchResourcesBuildPhaseUuid] = {
         isa: 'PBXResourcesBuildPhase',
         buildActionMask: 2147483647,
-        files: [],
+        files: [
+          { value: buildFileUuids['Assets.xcassets'], comment: `${WATCH_TARGET_NAME}-Assets.xcassets in Resources` },
+        ],
         runOnlyForDeploymentPostprocessing: 0,
       };
       pbxResourcesBuildPhase[`${watchResourcesBuildPhaseUuid}_comment`] = 'Resources';
@@ -329,11 +450,11 @@ const withWatchAppTarget = (config) => {
       pbxFrameworksBuildPhase[`${watchFrameworksBuildPhaseUuid}_comment`] = 'Frameworks';
 
       // Create build configurations for Watch target
-      // Note: No ASSETCATALOG settings - using SF Symbols and inline SwiftUI colors
-      // watchOS 9.0+ only supports arm64 (Apple Watch Series 4+), no need for arm64_32
-      // Using modern watchOS app type (not legacy WatchKit), so no WK* settings
+      // App Store requires both arm64 and arm64_32 for watchOS - use $(ARCHS_STANDARD)
+      // Modern watchOS app type (not legacy WatchKit)
       const watchBuildSettings = {
-        ARCHS: 'arm64',
+        ARCHS: '"$(ARCHS_STANDARD)"',
+        ASSETCATALOG_COMPILER_APPICON_NAME: 'AppIcon',
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
@@ -343,6 +464,7 @@ const withWatchAppTarget = (config) => {
         INFOPLIST_KEY_UISupportedInterfaceOrientations: '"UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"',
         LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
         MARKETING_VERSION: '1.0',
+        ONLY_ACTIVE_ARCH: 'NO',
         PRODUCT_BUNDLE_IDENTIFIER: watchBundleId,
         PRODUCT_NAME: `"$(TARGET_NAME)"`,
         SDKROOT: 'watchos',
@@ -350,7 +472,7 @@ const withWatchAppTarget = (config) => {
         SWIFT_EMIT_LOC_STRINGS: 'YES',
         SWIFT_VERSION: '5.0',
         TARGETED_DEVICE_FAMILY: 4,
-        WATCHOS_DEPLOYMENT_TARGET: '9.0',
+        WATCHOS_DEPLOYMENT_TARGET: '10.0',
       };
 
       const pbxXCBuildConfiguration = project.hash.project.objects['XCBuildConfiguration'];
