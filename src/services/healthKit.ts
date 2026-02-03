@@ -653,9 +653,9 @@ export async function getLatestBodyFat(): Promise<{ value: number; date: string 
           resolve(null);
           return;
         }
-        // Body fat comes as a decimal (0.15 = 15%)
+        // Body fat may come as a decimal (0.15 = 15%) or already as percentage (15.0)
         resolve({
-          value: Math.round(result.value * 1000) / 10, // Convert to percentage with 1 decimal
+          value: result.value > 1 ? Math.round(result.value * 10) / 10 : Math.round(result.value * 1000) / 10,
           date: result.startDate || new Date().toISOString(),
         });
       });
@@ -821,8 +821,8 @@ export async function getBodyFatHistory(
           const timestamp = new Date(sample.startDate).getTime();
           const existing = byDate.get(date);
           if (!existing || timestamp > existing.timestamp) {
-            // Body fat comes as a decimal (0.15 = 15%)
-            byDate.set(date, { value: sample.value * 100, timestamp });
+            // Body fat may come as a decimal (0.15 = 15%) or already as percentage (15.0)
+            byDate.set(date, { value: sample.value > 1 ? sample.value : sample.value * 100, timestamp });
           }
         });
 
