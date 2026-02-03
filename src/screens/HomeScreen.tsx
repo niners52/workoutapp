@@ -11,6 +11,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, ProgressBar } from '../components/common';
 import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../components/goals';
@@ -269,7 +270,7 @@ export function HomeScreen() {
           <Text style={styles.sectionTitle}>Muscle Groups Needing Attention</Text>
           {shortfalls.length === 0 ? (
             <Card style={styles.onTrackCard}>
-              <Text style={styles.onTrackEmoji}>💪</Text>
+              <MaterialCommunityIcons name="arm-flex" size={32} color={colors.success} style={styles.onTrackIcon} />
               <Text style={styles.onTrackText}>You're on track this week!</Text>
               <Text style={styles.onTrackSubtext}>
                 All muscle groups are projected to hit their targets.
@@ -354,7 +355,7 @@ export function HomeScreen() {
                 ))
               ) : (
                 <View style={styles.restDayContainer}>
-                  <Text style={styles.restDayEmoji}>😴</Text>
+                  <Ionicons name="moon" size={32} color={colors.textSecondary} style={styles.restDayIcon} />
                   <Text style={styles.restDayText}>Rest Day</Text>
                   <Text style={styles.restDaySubtext}>Enjoy your recovery!</Text>
                 </View>
@@ -489,8 +490,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.md,
   },
-  restDayEmoji: {
-    fontSize: 32,
+  restDayIcon: {
     marginBottom: spacing.sm,
   },
   restDayText: {
@@ -506,8 +506,7 @@ const styles = StyleSheet.create({
   onTrackCard: {
     alignItems: 'center',
   },
-  onTrackEmoji: {
-    fontSize: 32,
+  onTrackIcon: {
     marginBottom: spacing.sm,
   },
   onTrackText: {

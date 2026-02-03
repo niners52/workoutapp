@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography } from '../theme';
 import { RootStackParamList, MainTabParamList } from './types';
 import { useAuth } from '../contexts/AuthContext';
@@ -41,21 +42,46 @@ import {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// Tab bar icons using emoji (can be replaced with proper icons)
+// Tab bar icon configuration
+const TAB_ICONS: Record<string, {
+  type: 'ionicons' | 'material';
+  active: string;
+  inactive: string;
+}> = {
+  Home: { type: 'ionicons', active: 'home', inactive: 'home-outline' },
+  Calendar: { type: 'ionicons', active: 'calendar', inactive: 'calendar-outline' },
+  Exercises: { type: 'material', active: 'dumbbell', inactive: 'dumbbell' },
+  Templates: { type: 'ionicons', active: 'document-text', inactive: 'document-text-outline' },
+  Analytics: { type: 'ionicons', active: 'stats-chart', inactive: 'stats-chart-outline' },
+  Settings: { type: 'ionicons', active: 'settings', inactive: 'settings-outline' },
+};
+
+const ACTIVE_TAB_COLOR = '#FFC52F';
+const INACTIVE_TAB_COLOR = '#8E8E93';
+
 const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
-  const icons: { [key: string]: string } = {
-    Home: '🏠',
-    Calendar: '📅',
-    Exercises: '💪',
-    Templates: '📋',
-    Analytics: '📊',
-    Settings: '⚙️',
-  };
+  const config = TAB_ICONS[name];
+  const iconName = focused ? config.active : config.inactive;
+  const color = focused ? ACTIVE_TAB_COLOR : INACTIVE_TAB_COLOR;
+  const size = 24;
+
+  if (config.type === 'material') {
+    return (
+      <MaterialCommunityIcons
+        name={iconName as keyof typeof MaterialCommunityIcons.glyphMap}
+        size={size}
+        color={color}
+        style={{ opacity: focused ? 1 : 0.8 }}
+      />
+    );
+  }
 
   return (
-    <Text style={{ fontSize: 24, opacity: focused ? 1 : 0.5 }}>
-      {icons[name]}
-    </Text>
+    <Ionicons
+      name={iconName as keyof typeof Ionicons.glyphMap}
+      size={size}
+      color={color}
+    />
   );
 };
 

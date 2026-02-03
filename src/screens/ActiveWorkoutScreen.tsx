@@ -14,6 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
@@ -474,7 +475,7 @@ export function ActiveWorkoutScreen() {
               style={styles.headerButton}
               onPress={() => navigation.navigate('MainTabs', { screen: 'Analytics' })}
             >
-              <Text style={styles.analyticsText}>📊</Text>
+              <Ionicons name="stats-chart" size={22} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={handleCancelWorkout}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -1064,7 +1065,10 @@ function ExerciseCard({
                 style={styles.timerButton}
                 onPress={onOpenRestTimer}
               >
-                <Text style={styles.timerButtonText}>⏱ Rest</Text>
+                <View style={styles.timerButtonContent}>
+                  <Ionicons name="timer-outline" size={16} color={colors.text} />
+                  <Text style={styles.timerButtonText}>Rest</Text>
+                </View>
               </TouchableOpacity>
             </View>
           </View>
@@ -1108,9 +1112,6 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     padding: spacing.xs,
-  },
-  analyticsText: {
-    fontSize: typography.size.xl,
   },
   workoutTitle: {
     fontSize: typography.size.lg,
@@ -1331,6 +1332,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.base,
     borderRadius: borderRadius.md,
+  },
+  timerButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   timerButtonText: {
     fontSize: typography.size.sm,

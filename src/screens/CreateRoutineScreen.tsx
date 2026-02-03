@@ -11,6 +11,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card, Button } from '../components/common';
 import { ProgressBar } from '../components/common/ProgressBar';
@@ -270,7 +271,7 @@ export function CreateRoutineScreen({ isEditing = false }: CreateRoutineScreenPr
                           >
                             <View style={styles.templateOptionRow}>
                               <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-                                {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                                {isSelected && <Ionicons name="checkmark" size={12} color={colors.text} />}
                               </View>
                               <Text
                                 style={[
@@ -496,11 +497,6 @@ const styles = StyleSheet.create({
   checkboxSelected: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
-  },
-  checkmark: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: typography.weight.bold,
   },
   selectedTemplates: {
     flexDirection: 'row',

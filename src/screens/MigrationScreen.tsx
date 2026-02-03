@@ -7,6 +7,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../theme';
 import { Button } from '../components/common';
 import { migrateLocalDataToSupabase, getMigrationStats } from '../services/cloudSync';
@@ -153,7 +154,7 @@ export function MigrationScreen({ onComplete }: MigrationScreenProps) {
 
         {status === 'done' && migrationCounts && (
           <View style={styles.content}>
-            <Text style={styles.successEmoji}>✅</Text>
+            <Ionicons name="checkmark-circle" size={48} color={colors.success} style={styles.statusIcon} />
             <Text style={styles.title}>Backup Complete!</Text>
             <Text style={styles.description}>
               Your data is now safely stored in the cloud.
@@ -190,7 +191,7 @@ export function MigrationScreen({ onComplete }: MigrationScreenProps) {
 
         {status === 'error' && (
           <View style={styles.content}>
-            <Text style={styles.errorEmoji}>⚠️</Text>
+            <Ionicons name="warning" size={48} color={colors.warning} style={styles.statusIcon} />
             <Text style={styles.title}>Backup Failed</Text>
             <Text style={styles.description}>
               {errorMessage || 'Something went wrong. Your local data is still safe.'}
@@ -292,12 +293,7 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textDecorationLine: 'underline',
   },
-  successEmoji: {
-    fontSize: 48,
-    marginBottom: spacing.lg,
-  },
-  errorEmoji: {
-    fontSize: 48,
+  statusIcon: {
     marginBottom: spacing.lg,
   },
 });

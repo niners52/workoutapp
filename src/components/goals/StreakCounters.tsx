@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card } from '../common';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { StreakCounts } from '../../services/streaks';
@@ -10,17 +11,40 @@ interface StreakCountersProps {
   dailyGoals: DailyGoals;
 }
 
+type IconType = 'ionicons' | 'material';
+
 interface StreakItemProps {
-  emoji: string;
+  iconType: IconType;
+  iconName: string;
   label: string;
   count: number;
   highlight?: boolean;
 }
 
-function StreakItem({ emoji, label, count, highlight }: StreakItemProps) {
+const STREAK_ACTIVE_COLOR = '#FFC52F';
+const STREAK_INACTIVE_COLOR = '#8E8E93';
+
+function StreakItem({ iconType, iconName, label, count, highlight }: StreakItemProps) {
+  const iconColor = count > 0 ? STREAK_ACTIVE_COLOR : STREAK_INACTIVE_COLOR;
+  const iconSize = 22;
+
   return (
     <View style={[styles.streakItem, highlight && styles.streakItemHighlight]}>
-      <Text style={styles.streakEmoji}>{emoji}</Text>
+      <View style={styles.iconContainer}>
+        {iconType === 'material' ? (
+          <MaterialCommunityIcons
+            name={iconName as keyof typeof MaterialCommunityIcons.glyphMap}
+            size={iconSize}
+            color={iconColor}
+          />
+        ) : (
+          <Ionicons
+            name={iconName as keyof typeof Ionicons.glyphMap}
+            size={iconSize}
+            color={iconColor}
+          />
+        )}
+      </View>
       <Text style={styles.streakLabel}>{label}</Text>
       <Text style={[styles.streakCount, highlight && styles.streakCountHighlight]}>
         {count} {count === 1 ? 'day' : 'days'}
@@ -38,16 +62,37 @@ export function StreakCounters({ streaks, dailyGoals }: StreakCountersProps) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <StreakItem emoji="😴" label="Sleep" count={streaks.sleep} />
-        <StreakItem emoji="🥩" label="Protein" count={streaks.protein} />
+        <StreakItem
+          iconType="ionicons"
+          iconName="moon"
+          label="Sleep"
+          count={streaks.sleep}
+        />
+        <StreakItem
+          iconType="material"
+          iconName="food-steak"
+          label="Protein"
+          count={streaks.protein}
+        />
         {dailyGoals.trackCreatine && (
-          <StreakItem emoji="💊" label="Creatine" count={streaks.creatine} />
+          <StreakItem
+            iconType="material"
+            iconName="pill"
+            label="Creatine"
+            count={streaks.creatine}
+          />
         )}
         {dailyGoals.trackTraining && (
-          <StreakItem emoji="💪" label="Training" count={streaks.training} />
+          <StreakItem
+            iconType="material"
+            iconName="arm-flex"
+            label="Training"
+            count={streaks.training}
+          />
         )}
         <StreakItem
-          emoji="⭐"
+          iconType="material"
+          iconName="fire"
           label="Perfect"
           count={streaks.perfect}
           highlight={streaks.perfect > 0}
@@ -84,8 +129,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
   },
-  streakEmoji: {
-    fontSize: 20,
+  iconContainer: {
     marginBottom: spacing.xs,
   },
   streakLabel: {

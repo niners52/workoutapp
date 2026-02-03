@@ -10,6 +10,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
@@ -299,9 +300,12 @@ export function StartWorkoutScreen() {
             onPress={() => handleTypeSelect(type)}
             activeOpacity={0.7}
           >
-            <Text style={styles.typeIcon}>
-              {type === 'push' ? '💪' : type === 'pull' ? '🏋️' : '🦵'}
-            </Text>
+            <MaterialCommunityIcons
+              name={type === 'push' ? 'arm-flex' : type === 'pull' ? 'weight-lifter' : 'human-handsdown'}
+              size={32}
+              color={colors.primary}
+              style={styles.typeIcon}
+            />
             <Text style={styles.typeName}>{TEMPLATE_TYPE_DISPLAY_NAMES[type]}</Text>
           </TouchableOpacity>
         ))}
@@ -318,7 +322,7 @@ export function StartWorkoutScreen() {
           <ActivityIndicator color={colors.primary} />
         ) : (
           <>
-            <Text style={styles.remainingWorkIcon}>📊</Text>
+            <Ionicons name="stats-chart" size={28} color={colors.primary} style={styles.remainingWorkIcon} />
             <View style={styles.remainingWorkContent}>
               <Text style={styles.remainingWorkTitle}>Remaining Weekly Work</Text>
               <Text style={styles.remainingWorkSubtitle}>
@@ -344,7 +348,7 @@ export function StartWorkoutScreen() {
 
       {shortfalls.length === 0 ? (
         <Card style={styles.caughtUpCard}>
-          <Text style={styles.caughtUpIcon}>🎉</Text>
+          <Ionicons name="happy" size={48} color={colors.success} style={styles.caughtUpIcon} />
           <Text style={styles.caughtUpTitle}>You're all caught up!</Text>
           <Text style={styles.caughtUpText}>
             All your muscle group targets have been met this week.
@@ -426,7 +430,7 @@ export function StartWorkoutScreen() {
             onPress={() => handleRemainingLocationSelect(location)}
             activeOpacity={0.7}
           >
-            <Text style={styles.locationIcon}>📍</Text>
+            <Ionicons name="location" size={28} color={colors.primary} style={styles.locationIcon} />
             <Text style={styles.locationName}>{location.name}</Text>
           </TouchableOpacity>
         ))}
@@ -476,7 +480,7 @@ export function StartWorkoutScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={styles.exerciseCheckbox}>
-                    {item.selected && <Text style={styles.exerciseCheckmark}>✓</Text>}
+                    {item.selected && <Ionicons name="checkmark" size={14} color={colors.primary} />}
                   </View>
                   <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{item.exercise.name}</Text>
@@ -550,7 +554,7 @@ export function StartWorkoutScreen() {
               onPress={() => handleLocationSelect(location)}
               activeOpacity={0.7}
             >
-              <Text style={styles.locationIcon}>📍</Text>
+              <Ionicons name="location" size={28} color={colors.primary} style={styles.locationIcon} />
               <Text style={styles.locationName}>{location.name}</Text>
             </TouchableOpacity>
           ))}
@@ -621,7 +625,7 @@ export function StartWorkoutScreen() {
             onPress={() => navigation.navigate('LogPastWorkout')}
             activeOpacity={0.7}
           >
-            <Text style={styles.pastWorkoutIcon}>📅</Text>
+            <Ionicons name="calendar" size={18} color={colors.text} style={styles.pastWorkoutIcon} />
             <Text style={styles.pastWorkoutText}>Log Past Workout</Text>
           </TouchableOpacity>
         </View>
@@ -798,7 +802,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   typeIcon: {
-    fontSize: 32,
     marginBottom: spacing.sm,
   },
   typeName: {
@@ -818,7 +821,6 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   remainingWorkIcon: {
-    fontSize: 28,
     marginRight: spacing.md,
   },
   remainingWorkContent: {
@@ -844,7 +846,6 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   caughtUpIcon: {
-    fontSize: 48,
     marginBottom: spacing.md,
   },
   caughtUpTitle: {
@@ -951,11 +952,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  exerciseCheckmark: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: typography.weight.bold,
-  },
   exerciseInfo: {
     flex: 1,
   },
@@ -1013,7 +1009,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   locationIcon: {
-    fontSize: 28,
     marginBottom: spacing.sm,
   },
   locationName: {
@@ -1074,7 +1069,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   pastWorkoutIcon: {
-    fontSize: 18,
     marginRight: spacing.sm,
   },
   pastWorkoutText: {

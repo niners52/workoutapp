@@ -9,6 +9,7 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { WorkoutShareButton } from '../components/WorkoutShareCard';
@@ -95,7 +96,7 @@ export function WorkoutSummaryScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.checkmark}>✓</Text>
+          <Ionicons name="checkmark-circle" size={48} color={colors.success} style={styles.checkmarkIcon} />
           <Text style={styles.title}>Workout Complete!</Text>
           <Text style={styles.subtitle}>
             {format(startTime, 'EEEE, MMM d')} at {format(startTime, 'h:mm a')}
@@ -195,9 +196,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  checkmark: {
-    fontSize: 48,
-    color: colors.success,
+  checkmarkIcon: {
     marginBottom: spacing.md,
   },
   title: {

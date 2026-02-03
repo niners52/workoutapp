@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { Supplement } from '../../types';
 
@@ -31,7 +32,7 @@ export function SupplementCheckbox({
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
       <View style={[styles.checkbox, isTaken && styles.checkboxChecked]}>
-        {isTaken && <Text style={styles.checkmark}>✓</Text>}
+        {isTaken && <Ionicons name="checkmark" size={14} color={colors.text} />}
       </View>
       <Text style={[styles.label, isTaken && styles.labelChecked]}>
         {supplement.name}
@@ -72,11 +73,6 @@ const styles = StyleSheet.create({
   checkboxChecked: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
-  },
-  checkmark: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '600',
   },
   label: {
     fontSize: typography.size.base,

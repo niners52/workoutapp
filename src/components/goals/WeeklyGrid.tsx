@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../common';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { DailyGoalStatus } from '../../services/streaks';
@@ -18,9 +19,9 @@ type GoalStatus = 'met' | 'missed' | 'future' | 'na';
 function StatusIcon({ status }: { status: GoalStatus }) {
   switch (status) {
     case 'met':
-      return <Text style={styles.checkmark}>✓</Text>;
+      return <Ionicons name="checkmark" size={14} color={colors.success} />;
     case 'missed':
-      return <Text style={styles.xmark}>✗</Text>;
+      return <Ionicons name="close" size={14} color={colors.textTertiary} />;
     case 'future':
       return <Text style={styles.dash}>-</Text>;
     case 'na':
@@ -205,15 +206,6 @@ const styles = StyleSheet.create({
   cellToday: {
     backgroundColor: colors.primary + '10',
     borderRadius: borderRadius.sm,
-  },
-  checkmark: {
-    fontSize: typography.size.sm,
-    color: colors.success,
-    fontWeight: typography.weight.bold,
-  },
-  xmark: {
-    fontSize: typography.size.sm,
-    color: colors.textTertiary,
   },
   dash: {
     fontSize: typography.size.sm,
