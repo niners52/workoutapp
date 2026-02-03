@@ -115,56 +115,7 @@ const withWatchAppFiles = (config) => {
 </plist>`;
       fs.writeFileSync(path.join(watchAppDir, 'Info.plist'), watchInfoPlist);
 
-      // Create Watch App Assets.xcassets
-      const assetsDir = path.join(watchAppDir, 'Assets.xcassets');
-      if (!fs.existsSync(assetsDir)) {
-        fs.mkdirSync(assetsDir, { recursive: true });
-      }
-
-      // Assets Contents.json
-      fs.writeFileSync(path.join(assetsDir, 'Contents.json'), JSON.stringify({
-        info: { author: 'xcode', version: 1 }
-      }, null, 2));
-
-      // AccentColor.colorset
-      const accentColorDir = path.join(assetsDir, 'AccentColor.colorset');
-      if (!fs.existsSync(accentColorDir)) {
-        fs.mkdirSync(accentColorDir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(accentColorDir, 'Contents.json'), JSON.stringify({
-        colors: [{
-          color: {
-            'color-space': 'srgb',
-            components: {
-              alpha: '1.000',
-              blue: '0.184',
-              green: '0.773',
-              red: '1.000'
-            }
-          },
-          idiom: 'universal'
-        }],
-        info: { author: 'xcode', version: 1 }
-      }, null, 2));
-
-      // AppIcon.appiconset
-      const appIconDir = path.join(assetsDir, 'AppIcon.appiconset');
-      if (!fs.existsSync(appIconDir)) {
-        fs.mkdirSync(appIconDir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(appIconDir, 'Contents.json'), JSON.stringify({
-        images: [
-          { idiom: 'watch', scale: '2x', 'screen-width': '<=145', size: '24x24' },
-          { idiom: 'watch', scale: '2x', 'screen-width': '>145', size: '27.5x27.5' },
-          { idiom: 'watch', scale: '2x', 'screen-width': '>183', size: '29x29' },
-          { idiom: 'watch', scale: '2x', 'screen-width': '<=145', size: '40x40' },
-          { idiom: 'watch', scale: '2x', 'screen-width': '>145', size: '44x44' },
-          { idiom: 'watch', scale: '2x', 'screen-width': '>183', size: '46x46' },
-          { idiom: 'watch', scale: '2x', 'screen-width': '>183', size: '51x51' },
-          { idiom: 'watch-marketing', scale: '1x', size: '1024x1024' }
-        ],
-        info: { author: 'xcode', version: 1 }
-      }, null, 2));
+      // Note: No Assets.xcassets - Watch app uses SF Symbols and inline SwiftUI colors
 
       return config;
     },
@@ -246,7 +197,6 @@ const withWatchAppTarget = (config) => {
 
       const fileRefUuids = {};
       const buildFileUuids = {};
-      const resourceBuildFileUuids = {};
 
       // Create file references for Swift files
       watchSwiftFiles.forEach(file => {
@@ -254,9 +204,7 @@ const withWatchAppTarget = (config) => {
         buildFileUuids[file] = generateUuid();
       });
 
-      // Create file references for resources
-      fileRefUuids['Assets.xcassets'] = generateUuid();
-      resourceBuildFileUuids['Assets.xcassets'] = generateUuid();
+      // Create file reference for Info.plist (no Assets.xcassets - using inline colors)
       fileRefUuids['Info.plist'] = generateUuid();
 
       // Add PBXFileReference entries for Swift files and resources
@@ -271,16 +219,7 @@ const withWatchAppTarget = (config) => {
         pbxFileReference[`${fileRefUuids[file]}_comment`] = file;
       });
 
-      // Add Assets.xcassets file reference
-      pbxFileReference[fileRefUuids['Assets.xcassets']] = {
-        isa: 'PBXFileReference',
-        lastKnownFileType: 'folder.assetcatalog',
-        path: 'Assets.xcassets',
-        sourceTree: '"<group>"',
-      };
-      pbxFileReference[`${fileRefUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets';
-
-      // Add Info.plist file reference
+      // Add Info.plist file reference (no Assets.xcassets - using inline colors)
       pbxFileReference[fileRefUuids['Info.plist']] = {
         isa: 'PBXFileReference',
         lastKnownFileType: 'text.plist.xml',
@@ -310,14 +249,6 @@ const withWatchAppTarget = (config) => {
         pbxBuildFile[`${buildFileUuids[file]}_comment`] = `${file} in Sources`;
       });
 
-      // Add PBXBuildFile entry for Assets.xcassets (Resources)
-      pbxBuildFile[resourceBuildFileUuids['Assets.xcassets']] = {
-        isa: 'PBXBuildFile',
-        fileRef: fileRefUuids['Assets.xcassets'],
-        fileRef_comment: 'Assets.xcassets',
-      };
-      pbxBuildFile[`${resourceBuildFileUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets in Resources';
-
       // Add PBXBuildFile for Watch product in main app's embed phase
       pbxBuildFile[watchProductBuildFileUuid] = {
         isa: 'PBXBuildFile',
@@ -331,9 +262,9 @@ const withWatchAppTarget = (config) => {
       const pbxGroup = project.pbxGroupByName(WATCH_TARGET_NAME);
       if (!pbxGroup) {
         // Create an array of { uuid, name } for all files to include proper comments
+        // Note: No Assets.xcassets - using inline SwiftUI colors instead
         const allFilesWithNames = [
           ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
-          { uuid: fileRefUuids['Assets.xcassets'], name: 'Assets.xcassets' },
           { uuid: fileRefUuids['Info.plist'], name: 'Info.plist' },
         ];
 
@@ -379,13 +310,13 @@ const withWatchAppTarget = (config) => {
       };
       pbxSourcesBuildPhase[`${watchSourcesBuildPhaseUuid}_comment`] = 'Sources';
 
-      // Create Resources build phase
+      // Create Resources build phase (empty - no Assets.xcassets, using inline colors)
       const pbxResourcesBuildPhase = project.hash.project.objects['PBXResourcesBuildPhase'] || {};
       project.hash.project.objects['PBXResourcesBuildPhase'] = pbxResourcesBuildPhase;
       pbxResourcesBuildPhase[watchResourcesBuildPhaseUuid] = {
         isa: 'PBXResourcesBuildPhase',
         buildActionMask: 2147483647,
-        files: [{ value: resourceBuildFileUuids['Assets.xcassets'], comment: 'Assets.xcassets in Resources' }],
+        files: [],
         runOnlyForDeploymentPostprocessing: 0,
       };
       pbxResourcesBuildPhase[`${watchResourcesBuildPhaseUuid}_comment`] = 'Resources';
@@ -402,9 +333,8 @@ const withWatchAppTarget = (config) => {
       pbxFrameworksBuildPhase[`${watchFrameworksBuildPhaseUuid}_comment`] = 'Frameworks';
 
       // Create build configurations for Watch target
+      // Note: No ASSETCATALOG settings - using SF Symbols and inline SwiftUI colors
       const watchBuildSettings = {
-        ASSETCATALOG_COMPILER_APPICON_NAME: 'AppIcon',
-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: 'AccentColor',
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
