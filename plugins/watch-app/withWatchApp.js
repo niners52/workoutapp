@@ -48,34 +48,13 @@ const withWatchAppFiles = (config) => {
         fs.mkdirSync(mainAppDir, { recursive: true });
       }
 
-      // Copy iOS bridge files to main app
-      const iosBridgeFiles = [
-        'WatchConnectivityManager.swift',
-        'WatchConnectivityBridge.swift',
-        'WatchConnectivityBridge.m',
-      ];
-      for (const file of iosBridgeFiles) {
-        const src = path.join(pluginDir, 'ios-bridge', file);
-        const dest = path.join(mainAppDir, file);
-        if (fs.existsSync(src)) {
-          fs.copyFileSync(src, dest);
-        }
+      // Copy iOS bridge file to main app (pure Obj-C, no Swift bridging header needed)
+      const bridgeSrc = path.join(pluginDir, 'ios-bridge', 'WatchConnectivityBridge.m');
+      const bridgeDest = path.join(mainAppDir, 'WatchConnectivityBridge.m');
+      if (fs.existsSync(bridgeSrc)) {
+        fs.copyFileSync(bridgeSrc, bridgeDest);
+        console.log(`[Watch Plugin] Copied bridge file: ${bridgeDest}`);
       }
-
-      // Create bridging header for Swift to access React Native ObjC types
-      const bridgingHeaderContent = `//
-//  ${projectName}-Bridging-Header.h
-//  ${projectName}
-//
-//  Bridging header to expose React Native ObjC types to Swift
-//
-
-#import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>
-`;
-      const bridgingHeaderPath = path.join(mainAppDir, `${projectName}-Bridging-Header.h`);
-      fs.writeFileSync(bridgingHeaderPath, bridgingHeaderContent);
-      console.log(`[Watch Plugin] Created bridging header: ${bridgingHeaderPath}`);
 
       // Create Watch App directory
       const watchAppDir = path.join(platformProjectRoot, WATCH_TARGET_NAME);
@@ -143,45 +122,14 @@ const withWatchAppTarget = (config) => {
     const bundleId = config.ios?.bundleIdentifier || 'com.app.identifier';
     const watchBundleId = `${bundleId}${WATCH_BUNDLE_ID_SUFFIX}`;
 
-    // Add iOS bridge source files to main app target
+    // Add iOS bridge source file to main app target (pure Obj-C, no bridging header needed)
     const mainTarget = project.getFirstTarget();
     const mainGroupKey = project.getFirstProject().firstProject.mainGroup;
 
-    const iosBridgeFiles = [
-      'WatchConnectivityManager.swift',
-      'WatchConnectivityBridge.swift',
-      'WatchConnectivityBridge.m',
-    ];
-
-    for (const file of iosBridgeFiles) {
-      const filePath = `${projectName}/${file}`;
-      if (!project.hasFile(filePath)) {
-        project.addSourceFile(filePath, { target: mainTarget.uuid }, mainGroupKey);
-      }
-    }
-
-    // Add bridging header to main target's build configurations
-    // This allows Swift code to access React Native ObjC types (RCTEventEmitter, etc.)
-    const pbxXCBuildConfig = project.hash.project.objects['XCBuildConfiguration'];
-
-    // Find main target's configuration list
-    const mainTargetObj = project.hash.project.objects['PBXNativeTarget'][mainTarget.uuid];
-    if (mainTargetObj && mainTargetObj.buildConfigurationList) {
-      const configListUuid = mainTargetObj.buildConfigurationList;
-      const configList = project.hash.project.objects['XCConfigurationList'][configListUuid];
-
-      if (configList && configList.buildConfigurations) {
-        configList.buildConfigurations.forEach(configRef => {
-          const configUuid = configRef.value;
-          if (pbxXCBuildConfig[configUuid] && pbxXCBuildConfig[configUuid].buildSettings) {
-            // Only set if not already set
-            if (!pbxXCBuildConfig[configUuid].buildSettings.SWIFT_OBJC_BRIDGING_HEADER) {
-              pbxXCBuildConfig[configUuid].buildSettings.SWIFT_OBJC_BRIDGING_HEADER = `"${projectName}/${projectName}-Bridging-Header.h"`;
-              console.log(`[Watch Plugin] Added bridging header to config: ${configRef.comment}`);
-            }
-          }
-        });
-      }
+    const bridgeFilePath = `${projectName}/WatchConnectivityBridge.m`;
+    if (!project.hasFile(bridgeFilePath)) {
+      project.addSourceFile(bridgeFilePath, { target: mainTarget.uuid }, mainGroupKey);
+      console.log(`[Watch Plugin] Added bridge file to main target: ${bridgeFilePath}`);
     }
 
     // Add WatchConnectivity framework to main target
@@ -733,7 +681,7 @@ const withWatchAppTarget = (config) => {
       console.error(`[Watch Plugin] ERROR: ${watchTargetCount} Watch targets found - this will cause build errors!`);
     }
 
-    // Verify Watch target compile sources don't include iOS bridge files
+    // Verify Watch target compile sources don't include iOS bridge file
     if (watchTargetUuidFound && finalTargets[watchTargetUuidFound]) {
       const watchTarget = finalTargets[watchTargetUuidFound];
       if (watchTarget.buildPhases) {
@@ -744,9 +692,8 @@ const withWatchAppTarget = (config) => {
             console.log(`[Watch Plugin] Watch compile sources:`);
             sourcesPhaseObj.files.forEach(f => {
               console.log(`[Watch Plugin]   - ${f.comment}`);
-              // Warn if bridge files are found in Watch target
-              if (f.comment && (f.comment.includes('WatchConnectivityBridge') ||
-                                f.comment.includes('WatchConnectivityManager'))) {
+              // Warn if bridge file is found in Watch target
+              if (f.comment && f.comment.includes('WatchConnectivityBridge')) {
                 console.error(`[Watch Plugin] ERROR: iOS bridge file found in Watch target: ${f.comment}`);
               }
             });
@@ -755,19 +702,21 @@ const withWatchAppTarget = (config) => {
       }
     }
 
-    // Also verify main target compile sources include the bridge files
+    // Also verify main target compile sources include the bridge file
     const mainTargetForVerify = finalTargets[mainTarget.uuid];
     if (mainTargetForVerify && mainTargetForVerify.buildPhases) {
       const mainSourcesPhase = mainTargetForVerify.buildPhases.find(p => p.comment === 'Sources');
       if (mainSourcesPhase) {
         const mainSourcesObj = pbxSourcesBuildPhaseSection[mainSourcesPhase.value];
         if (mainSourcesObj && mainSourcesObj.files) {
-          const bridgeFiles = mainSourcesObj.files.filter(f =>
-            f.comment && (f.comment.includes('WatchConnectivityBridge') ||
-                          f.comment.includes('WatchConnectivityManager'))
+          const bridgeFile = mainSourcesObj.files.find(f =>
+            f.comment && f.comment.includes('WatchConnectivityBridge')
           );
-          console.log(`[Watch Plugin] Main target bridge files: ${bridgeFiles.length}`);
-          bridgeFiles.forEach(f => console.log(`[Watch Plugin]   - ${f.comment}`));
+          if (bridgeFile) {
+            console.log(`[Watch Plugin] Main target bridge file: ${bridgeFile.comment}`);
+          } else {
+            console.error(`[Watch Plugin] WARNING: Bridge file not found in main target compile sources`);
+          }
         }
       }
     }
