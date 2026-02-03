@@ -84,7 +84,7 @@ const withWatchAppFiles = (config) => {
         }
       }
 
-      // Create Watch App Info.plist
+      // Create Watch App Info.plist (modern watchOS app, not legacy WatchKit)
       const watchInfoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -107,10 +107,8 @@ const withWatchAppFiles = (config) => {
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
-  <key>WKApplication</key>
-  <true/>
-  <key>WKCompanionAppBundleIdentifier</key>
-  <string>${bundleId}</string>
+  <key>WKWatchOnly</key>
+  <false/>
 </dict>
 </plist>`;
       fs.writeFileSync(path.join(watchAppDir, 'Info.plist'), watchInfoPlist);
@@ -346,7 +344,7 @@ const withWatchAppTarget = (config) => {
       // Create build configurations for Watch target
       // Note: No ASSETCATALOG settings - using SF Symbols and inline SwiftUI colors
       // watchOS 9.0+ only supports arm64 (Apple Watch Series 4+), no need for arm64_32
-      // VALID_ARCHS is deprecated, just use ARCHS = arm64
+      // Using modern watchOS app type (not legacy WatchKit), so no WK* settings
       const watchBuildSettings = {
         ARCHS: 'arm64',
         CODE_SIGN_STYLE: 'Automatic',
@@ -356,8 +354,6 @@ const withWatchAppTarget = (config) => {
         INFOPLIST_FILE: `${WATCH_TARGET_NAME}/Info.plist`,
         INFOPLIST_KEY_CFBundleDisplayName: '"Workout Tracker"',
         INFOPLIST_KEY_UISupportedInterfaceOrientations: '"UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"',
-        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: bundleId,
-        INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: 'NO',
         LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
         MARKETING_VERSION: '1.0',
         PRODUCT_BUNDLE_IDENTIFIER: watchBundleId,
@@ -415,7 +411,7 @@ const withWatchAppTarget = (config) => {
         productName: WATCH_TARGET_NAME,
         productReference: watchProductUuid,
         productReference_comment: `${WATCH_TARGET_NAME}.app`,
-        productType: '"com.apple.product-type.application.watchapp2"',
+        productType: '"com.apple.product-type.application"',
       };
       pbxNativeTarget[`${watchTargetUuid}_comment`] = WATCH_TARGET_NAME;
 
