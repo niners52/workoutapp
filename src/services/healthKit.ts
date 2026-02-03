@@ -408,11 +408,21 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
       }
       console.log('Sleep samples found:', results.length, 'First sample:', JSON.stringify(results[0]));
 
-      // Filter for sleep samples that ended on the target date (the morning of)
+      // Sleep for "today" means the overnight session: evening before through morning of target date
+      // Include all samples from 6PM yesterday through 12PM (noon) today
+      const eveningBefore = new Date(date);
+      eveningBefore.setDate(eveningBefore.getDate() - 1);
+      eveningBefore.setHours(18, 0, 0, 0); // 6 PM yesterday
+
+      const morningOf = new Date(date);
+      morningOf.setHours(12, 0, 0, 0); // 12 PM today
+
       const targetDateStr = format(date, 'yyyy-MM-dd');
       const sleepSamples = results.filter((sample: any) => {
-        const sampleEndDate = new Date(sample.endDate);
-        return format(sampleEndDate, 'yyyy-MM-dd') === targetDateStr;
+        const sampleStart = new Date(sample.startDate);
+        const sampleEnd = new Date(sample.endDate);
+        // Include if the sample overlaps with the overnight window
+        return sampleStart >= eveningBefore && sampleEnd <= morningOf;
       });
 
       if (sleepSamples.length === 0) {
