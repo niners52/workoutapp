@@ -345,8 +345,9 @@ const withWatchAppTarget = (config) => {
 
       // Create build configurations for Watch target
       // Note: No ASSETCATALOG settings - using SF Symbols and inline SwiftUI colors
+      // watchOS 9.0+ only supports arm64 (Apple Watch Series 4+), no need for arm64_32
       const watchBuildSettings = {
-        ARCHS: '"arm64_32 arm64"',
+        ARCHS: '"$(ARCHS_STANDARD)"',
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
@@ -358,7 +359,7 @@ const withWatchAppTarget = (config) => {
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: 'NO',
         LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
         MARKETING_VERSION: '1.0',
-        ONLY_ACTIVE_ARCH: 'NO',
+        ONLY_ACTIVE_ARCH: 'YES',
         PRODUCT_BUNDLE_IDENTIFIER: watchBundleId,
         PRODUCT_NAME: `"$(TARGET_NAME)"`,
         SDKROOT: 'watchos',
@@ -366,6 +367,7 @@ const withWatchAppTarget = (config) => {
         SWIFT_EMIT_LOC_STRINGS: 'YES',
         SWIFT_VERSION: '5.0',
         TARGETED_DEVICE_FAMILY: 4,
+        VALID_ARCHS: 'arm64',
         WATCHOS_DEPLOYMENT_TARGET: '9.0',
       };
 
