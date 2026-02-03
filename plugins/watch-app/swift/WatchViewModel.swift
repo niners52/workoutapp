@@ -1,6 +1,7 @@
 import Foundation
 import WatchConnectivity
 import Combine
+import SwiftUI
 
 class WatchViewModel: NSObject, ObservableObject, WCSessionDelegate {
     @Published var isWorkoutActive = false
