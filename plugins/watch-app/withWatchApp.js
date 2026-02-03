@@ -330,17 +330,18 @@ const withWatchAppTarget = (config) => {
       // Create PBXGroup for Watch app
       const pbxGroup = project.pbxGroupByName(WATCH_TARGET_NAME);
       if (!pbxGroup) {
-        const allFileRefs = [
-          ...watchSwiftFiles.map(f => fileRefUuids[f]),
-          fileRefUuids['Assets.xcassets'],
-          fileRefUuids['Info.plist'],
+        // Create an array of { uuid, name } for all files to include proper comments
+        const allFilesWithNames = [
+          ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
+          { uuid: fileRefUuids['Assets.xcassets'], name: 'Assets.xcassets' },
+          { uuid: fileRefUuids['Info.plist'], name: 'Info.plist' },
         ];
 
         // Add group to PBXGroup section
         const pbxGroupSection = project.hash.project.objects['PBXGroup'];
         pbxGroupSection[watchGroupUuid] = {
           isa: 'PBXGroup',
-          children: allFileRefs.map(uuid => ({ value: uuid, comment: null })),
+          children: allFilesWithNames.map(f => ({ value: f.uuid, comment: f.name })),
           path: WATCH_TARGET_NAME,
           sourceTree: '"<group>"',
         };
