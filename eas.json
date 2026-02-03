@@ -9,14 +9,26 @@
       "distribution": "internal",
       "channel": "development",
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "appExtensions": [
+          {
+            "targetName": "WorkoutTrackerWatch",
+            "bundleIdentifier": "com.tylerr82.workouttracker8052.watchkitapp"
+          }
+        ]
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "appExtensions": [
+          {
+            "targetName": "WorkoutTrackerWatch",
+            "bundleIdentifier": "com.tylerr82.workouttracker8052.watchkitapp"
+          }
+        ]
       }
     },
     "production": {
@@ -24,7 +36,13 @@
       "ios": {
         "resourceClass": "m-medium",
         "buildConfiguration": "Release",
-        "credentialsSource": "remote"
+        "credentialsSource": "remote",
+        "appExtensions": [
+          {
+            "targetName": "WorkoutTrackerWatch",
+            "bundleIdentifier": "com.tylerr82.workouttracker8052.watchkitapp"
+          }
+        ]
       },
       "autoIncrement": true
     }
