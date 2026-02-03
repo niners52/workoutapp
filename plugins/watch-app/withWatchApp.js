@@ -1,7 +1,6 @@
 const {
   withXcodeProject,
   withEntitlementsPlist,
-  withInfoPlist,
   withDangerousMod,
 } = require('@expo/config-plugins');
 const fs = require('fs');
@@ -15,6 +14,13 @@ const path = require('path');
 const WATCH_TARGET_NAME = 'WorkoutTrackerWatch';
 const WATCH_BUNDLE_ID_SUFFIX = '.watchkitapp';
 const DEVELOPMENT_TEAM = 'K3HQYRNVMR';
+
+// Helper to generate a unique UUID for pbxproj
+function generateUuid() {
+  return [...Array(24)]
+    .map(() => Math.floor(Math.random() * 16).toString(16).toUpperCase())
+    .join('');
+}
 
 // Add WatchConnectivity framework entitlements
 const withWatchEntitlements = (config) => {
@@ -191,154 +197,364 @@ const withWatchAppTarget = (config) => {
     }
 
     // Add WatchConnectivity framework to main target
-    const frameworksBuildPhase = project.pbxFrameworksBuildPhaseObj(mainTarget.uuid);
-    if (frameworksBuildPhase) {
-      // Check if WatchConnectivity is already added
-      let hasWatchConnectivity = false;
-      const buildFiles = project.pbxBuildFileSection();
-      for (const key in buildFiles) {
-        const file = buildFiles[key];
-        if (file.fileRef && file.fileRef_comment === 'WatchConnectivity.framework') {
-          hasWatchConnectivity = true;
-          break;
-        }
+    let hasWatchConnectivity = false;
+    const buildFiles = project.pbxBuildFileSection();
+    for (const key in buildFiles) {
+      const file = buildFiles[key];
+      if (file.fileRef && file.fileRef_comment === 'WatchConnectivity.framework') {
+        hasWatchConnectivity = true;
+        break;
       }
+    }
 
-      if (!hasWatchConnectivity) {
-        project.addFramework('WatchConnectivity.framework', { weak: false });
-      }
+    if (!hasWatchConnectivity) {
+      project.addFramework('WatchConnectivity.framework', { weak: false });
     }
 
     // Check if watch target already exists
     const existingTargets = project.pbxNativeTargetSection();
     let watchTargetExists = false;
-    let watchTargetUuid = null;
 
     for (const key in existingTargets) {
       if (existingTargets[key].name === WATCH_TARGET_NAME) {
         watchTargetExists = true;
-        watchTargetUuid = key;
         break;
       }
     }
 
     if (!watchTargetExists) {
-      // Create watch app target
-      const watchTarget = project.addTarget(
-        WATCH_TARGET_NAME,
-        'watch2_app',
-        WATCH_TARGET_NAME,
-        watchBundleId
-      );
+      // Generate UUIDs for all the new entries we'll create
+      const watchGroupUuid = generateUuid();
+      const watchTargetUuid = generateUuid();
+      const watchProductUuid = generateUuid();
+      const watchProductBuildFileUuid = generateUuid();
+      const watchConfigListUuid = generateUuid();
+      const watchDebugConfigUuid = generateUuid();
+      const watchReleaseConfigUuid = generateUuid();
+      const watchSourcesBuildPhaseUuid = generateUuid();
+      const watchResourcesBuildPhaseUuid = generateUuid();
+      const watchFrameworksBuildPhaseUuid = generateUuid();
 
-      if (watchTarget) {
-        watchTargetUuid = watchTarget.uuid;
+      // File references and build files for Watch app
+      const watchSwiftFiles = [
+        'WorkoutTrackerWatchApp.swift',
+        'ContentView.swift',
+        'WorkoutActiveView.swift',
+        'LogSetView.swift',
+        'WatchViewModel.swift',
+      ];
 
-        // Create a group for watch app files
-        const watchSwiftFiles = [
-          'WorkoutTrackerWatchApp.swift',
-          'ContentView.swift',
-          'WorkoutActiveView.swift',
-          'LogSetView.swift',
-          'WatchViewModel.swift',
-          'Info.plist',
-          'Assets.xcassets',
+      const fileRefUuids = {};
+      const buildFileUuids = {};
+      const resourceBuildFileUuids = {};
+
+      // Create file references for Swift files
+      watchSwiftFiles.forEach(file => {
+        fileRefUuids[file] = generateUuid();
+        buildFileUuids[file] = generateUuid();
+      });
+
+      // Create file references for resources
+      fileRefUuids['Assets.xcassets'] = generateUuid();
+      resourceBuildFileUuids['Assets.xcassets'] = generateUuid();
+      fileRefUuids['Info.plist'] = generateUuid();
+
+      // Add PBXFileReference entries for Swift files and resources
+      const pbxFileReference = project.pbxFileReferenceSection();
+      watchSwiftFiles.forEach(file => {
+        pbxFileReference[fileRefUuids[file]] = {
+          isa: 'PBXFileReference',
+          lastKnownFileType: 'sourcecode.swift',
+          path: file,
+          sourceTree: '"<group>"',
+        };
+        pbxFileReference[`${fileRefUuids[file]}_comment`] = file;
+      });
+
+      // Add Assets.xcassets file reference
+      pbxFileReference[fileRefUuids['Assets.xcassets']] = {
+        isa: 'PBXFileReference',
+        lastKnownFileType: 'folder.assetcatalog',
+        path: 'Assets.xcassets',
+        sourceTree: '"<group>"',
+      };
+      pbxFileReference[`${fileRefUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets';
+
+      // Add Info.plist file reference
+      pbxFileReference[fileRefUuids['Info.plist']] = {
+        isa: 'PBXFileReference',
+        lastKnownFileType: 'text.plist.xml',
+        path: 'Info.plist',
+        sourceTree: '"<group>"',
+      };
+      pbxFileReference[`${fileRefUuids['Info.plist']}_comment`] = 'Info.plist';
+
+      // Add Watch app product reference
+      pbxFileReference[watchProductUuid] = {
+        isa: 'PBXFileReference',
+        explicitFileType: '"wrapper.application"',
+        includeInIndex: 0,
+        path: `${WATCH_TARGET_NAME}.app`,
+        sourceTree: 'BUILT_PRODUCTS_DIR',
+      };
+      pbxFileReference[`${watchProductUuid}_comment`] = `${WATCH_TARGET_NAME}.app`;
+
+      // Add PBXBuildFile entries for Swift files (Sources)
+      const pbxBuildFile = project.pbxBuildFileSection();
+      watchSwiftFiles.forEach(file => {
+        pbxBuildFile[buildFileUuids[file]] = {
+          isa: 'PBXBuildFile',
+          fileRef: fileRefUuids[file],
+          fileRef_comment: file,
+        };
+        pbxBuildFile[`${buildFileUuids[file]}_comment`] = `${file} in Sources`;
+      });
+
+      // Add PBXBuildFile entry for Assets.xcassets (Resources)
+      pbxBuildFile[resourceBuildFileUuids['Assets.xcassets']] = {
+        isa: 'PBXBuildFile',
+        fileRef: fileRefUuids['Assets.xcassets'],
+        fileRef_comment: 'Assets.xcassets',
+      };
+      pbxBuildFile[`${resourceBuildFileUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets in Resources';
+
+      // Add PBXBuildFile for Watch product in main app's embed phase
+      pbxBuildFile[watchProductBuildFileUuid] = {
+        isa: 'PBXBuildFile',
+        fileRef: watchProductUuid,
+        fileRef_comment: `${WATCH_TARGET_NAME}.app`,
+        settings: { ATTRIBUTES: ['RemoveHeadersOnCopy'] },
+      };
+      pbxBuildFile[`${watchProductBuildFileUuid}_comment`] = `${WATCH_TARGET_NAME}.app in Embed Watch Content`;
+
+      // Create PBXGroup for Watch app
+      const pbxGroup = project.pbxGroupByName(WATCH_TARGET_NAME);
+      if (!pbxGroup) {
+        const allFileRefs = [
+          ...watchSwiftFiles.map(f => fileRefUuids[f]),
+          fileRefUuids['Assets.xcassets'],
+          fileRefUuids['Info.plist'],
         ];
 
-        const watchGroup = project.addPbxGroup(
-          watchSwiftFiles,
-          WATCH_TARGET_NAME,
-          WATCH_TARGET_NAME
-        );
+        // Add group to PBXGroup section
+        const pbxGroupSection = project.hash.project.objects['PBXGroup'];
+        pbxGroupSection[watchGroupUuid] = {
+          isa: 'PBXGroup',
+          children: allFileRefs.map(uuid => ({ value: uuid, comment: null })),
+          path: WATCH_TARGET_NAME,
+          sourceTree: '"<group>"',
+        };
+        pbxGroupSection[`${watchGroupUuid}_comment`] = WATCH_TARGET_NAME;
 
-        // Add watch group to main project
-        project.addToPbxGroup(watchGroup.uuid, mainGroupKey);
-
-        // Add Swift source files to watch target
-        const swiftFiles = [
-          `${WATCH_TARGET_NAME}/WorkoutTrackerWatchApp.swift`,
-          `${WATCH_TARGET_NAME}/ContentView.swift`,
-          `${WATCH_TARGET_NAME}/WorkoutActiveView.swift`,
-          `${WATCH_TARGET_NAME}/LogSetView.swift`,
-          `${WATCH_TARGET_NAME}/WatchViewModel.swift`,
-        ];
-
-        for (const file of swiftFiles) {
-          project.addSourceFile(file, { target: watchTargetUuid }, watchGroup.uuid);
-        }
-
-        // Add Assets.xcassets to watch target resources
-        project.addResourceFile(
-          `${WATCH_TARGET_NAME}/Assets.xcassets`,
-          { target: watchTargetUuid },
-          watchGroup.uuid
-        );
-      }
-    }
-
-    // Configure build settings for watch target
-    const configurations = project.pbxXCBuildConfigurationSection();
-    for (const key in configurations) {
-      const config = configurations[key];
-      if (config.buildSettings) {
-        const targetName = config.buildSettings.PRODUCT_NAME;
-        const productBundleId = config.buildSettings.PRODUCT_BUNDLE_IDENTIFIER;
-
-        // Check if this configuration belongs to watch target
-        if (targetName === `"${WATCH_TARGET_NAME}"` ||
-            targetName === '"$(TARGET_NAME)"' && productBundleId === watchBundleId) {
-          config.buildSettings.ASSETCATALOG_COMPILER_APPICON_NAME = 'AppIcon';
-          config.buildSettings.ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = 'AccentColor';
-          config.buildSettings.CODE_SIGN_STYLE = 'Automatic';
-          config.buildSettings.CURRENT_PROJECT_VERSION = '1';
-          config.buildSettings.DEVELOPMENT_TEAM = DEVELOPMENT_TEAM;
-          config.buildSettings.GENERATE_INFOPLIST_FILE = 'YES';
-          config.buildSettings.INFOPLIST_FILE = `${WATCH_TARGET_NAME}/Info.plist`;
-          config.buildSettings.INFOPLIST_KEY_CFBundleDisplayName = '"Workout Tracker"';
-          config.buildSettings.INFOPLIST_KEY_UISupportedInterfaceOrientations = '"UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"';
-          config.buildSettings.INFOPLIST_KEY_WKCompanionAppBundleIdentifier = bundleId;
-          config.buildSettings.INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = 'NO';
-          config.buildSettings.LD_RUNPATH_SEARCH_PATHS = '"$(inherited) @executable_path/Frameworks"';
-          config.buildSettings.MARKETING_VERSION = '1.0';
-          config.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = watchBundleId;
-          config.buildSettings.PRODUCT_NAME = `"${WATCH_TARGET_NAME}"`;
-          config.buildSettings.SDKROOT = 'watchos';
-          config.buildSettings.SKIP_INSTALL = 'YES';
-          config.buildSettings.SWIFT_EMIT_LOC_STRINGS = 'YES';
-          config.buildSettings.SWIFT_VERSION = '5.0';
-          config.buildSettings.TARGETED_DEVICE_FAMILY = '4';
-          config.buildSettings.WATCHOS_DEPLOYMENT_TARGET = '9.0';
+        // Add Watch group to main group
+        const mainGroup = pbxGroupSection[mainGroupKey];
+        if (mainGroup && mainGroup.children) {
+          mainGroup.children.push({ value: watchGroupUuid, comment: WATCH_TARGET_NAME });
         }
       }
-    }
 
-    // Add embed watch content build phase to main target
-    if (watchTargetUuid) {
-      // Check if embed phase already exists
-      let embedPhaseExists = false;
-      const copyFilesBuildPhases = project.pbxCopyFilesBuildPhaseSection();
-      for (const key in copyFilesBuildPhases) {
-        const phase = copyFilesBuildPhases[key];
-        if (phase.name === '"Embed Watch Content"') {
-          embedPhaseExists = true;
+      // Add Watch product to Products group
+      const productsGroupKey = project.pbxGroupByName('Products');
+      if (productsGroupKey) {
+        const pbxGroupSection = project.hash.project.objects['PBXGroup'];
+        for (const key in pbxGroupSection) {
+          if (pbxGroupSection[key].name === 'Products' || pbxGroupSection[`${key}_comment`] === 'Products') {
+            if (pbxGroupSection[key].children) {
+              pbxGroupSection[key].children.push({ value: watchProductUuid, comment: `${WATCH_TARGET_NAME}.app` });
+            }
+            break;
+          }
+        }
+      }
+
+      // Create Sources build phase
+      const pbxSourcesBuildPhase = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
+      project.hash.project.objects['PBXSourcesBuildPhase'] = pbxSourcesBuildPhase;
+      pbxSourcesBuildPhase[watchSourcesBuildPhaseUuid] = {
+        isa: 'PBXSourcesBuildPhase',
+        buildActionMask: 2147483647,
+        files: watchSwiftFiles.map(f => ({ value: buildFileUuids[f], comment: `${f} in Sources` })),
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      pbxSourcesBuildPhase[`${watchSourcesBuildPhaseUuid}_comment`] = 'Sources';
+
+      // Create Resources build phase
+      const pbxResourcesBuildPhase = project.hash.project.objects['PBXResourcesBuildPhase'] || {};
+      project.hash.project.objects['PBXResourcesBuildPhase'] = pbxResourcesBuildPhase;
+      pbxResourcesBuildPhase[watchResourcesBuildPhaseUuid] = {
+        isa: 'PBXResourcesBuildPhase',
+        buildActionMask: 2147483647,
+        files: [{ value: resourceBuildFileUuids['Assets.xcassets'], comment: 'Assets.xcassets in Resources' }],
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      pbxResourcesBuildPhase[`${watchResourcesBuildPhaseUuid}_comment`] = 'Resources';
+
+      // Create Frameworks build phase (empty for now)
+      const pbxFrameworksBuildPhase = project.hash.project.objects['PBXFrameworksBuildPhase'] || {};
+      project.hash.project.objects['PBXFrameworksBuildPhase'] = pbxFrameworksBuildPhase;
+      pbxFrameworksBuildPhase[watchFrameworksBuildPhaseUuid] = {
+        isa: 'PBXFrameworksBuildPhase',
+        buildActionMask: 2147483647,
+        files: [],
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      pbxFrameworksBuildPhase[`${watchFrameworksBuildPhaseUuid}_comment`] = 'Frameworks';
+
+      // Create build configurations for Watch target
+      const watchBuildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME: 'AppIcon',
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: 'AccentColor',
+        CODE_SIGN_STYLE: 'Automatic',
+        CURRENT_PROJECT_VERSION: 1,
+        DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
+        GENERATE_INFOPLIST_FILE: 'YES',
+        INFOPLIST_FILE: `${WATCH_TARGET_NAME}/Info.plist`,
+        INFOPLIST_KEY_CFBundleDisplayName: '"Workout Tracker"',
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: '"UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"',
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: bundleId,
+        INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: 'NO',
+        LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
+        MARKETING_VERSION: '1.0',
+        PRODUCT_BUNDLE_IDENTIFIER: watchBundleId,
+        PRODUCT_NAME: `"$(TARGET_NAME)"`,
+        SDKROOT: 'watchos',
+        SKIP_INSTALL: 'YES',
+        SWIFT_EMIT_LOC_STRINGS: 'YES',
+        SWIFT_VERSION: '5.0',
+        TARGETED_DEVICE_FAMILY: 4,
+        WATCHOS_DEPLOYMENT_TARGET: '9.0',
+      };
+
+      const pbxXCBuildConfiguration = project.hash.project.objects['XCBuildConfiguration'];
+      pbxXCBuildConfiguration[watchDebugConfigUuid] = {
+        isa: 'XCBuildConfiguration',
+        buildSettings: { ...watchBuildSettings, DEBUG_INFORMATION_FORMAT: '"dwarf-with-dsym"' },
+        name: 'Debug',
+      };
+      pbxXCBuildConfiguration[`${watchDebugConfigUuid}_comment`] = 'Debug';
+
+      pbxXCBuildConfiguration[watchReleaseConfigUuid] = {
+        isa: 'XCBuildConfiguration',
+        buildSettings: { ...watchBuildSettings, DEBUG_INFORMATION_FORMAT: '"dwarf-with-dsym"' },
+        name: 'Release',
+      };
+      pbxXCBuildConfiguration[`${watchReleaseConfigUuid}_comment`] = 'Release';
+
+      // Create XCConfigurationList for Watch target
+      const pbxXCConfigurationList = project.hash.project.objects['XCConfigurationList'];
+      pbxXCConfigurationList[watchConfigListUuid] = {
+        isa: 'XCConfigurationList',
+        buildConfigurations: [
+          { value: watchDebugConfigUuid, comment: 'Debug' },
+          { value: watchReleaseConfigUuid, comment: 'Release' },
+        ],
+        defaultConfigurationIsVisible: 0,
+        defaultConfigurationName: 'Release',
+      };
+      pbxXCConfigurationList[`${watchConfigListUuid}_comment`] = `Build configuration list for PBXNativeTarget "${WATCH_TARGET_NAME}"`;
+
+      // Create the Watch native target
+      const pbxNativeTarget = project.hash.project.objects['PBXNativeTarget'];
+      pbxNativeTarget[watchTargetUuid] = {
+        isa: 'PBXNativeTarget',
+        buildConfigurationList: watchConfigListUuid,
+        buildConfigurationList_comment: `Build configuration list for PBXNativeTarget "${WATCH_TARGET_NAME}"`,
+        buildPhases: [
+          { value: watchSourcesBuildPhaseUuid, comment: 'Sources' },
+          { value: watchFrameworksBuildPhaseUuid, comment: 'Frameworks' },
+          { value: watchResourcesBuildPhaseUuid, comment: 'Resources' },
+        ],
+        buildRules: [],
+        dependencies: [],
+        name: WATCH_TARGET_NAME,
+        productName: WATCH_TARGET_NAME,
+        productReference: watchProductUuid,
+        productReference_comment: `${WATCH_TARGET_NAME}.app`,
+        productType: '"com.apple.product-type.application.watchapp2"',
+      };
+      pbxNativeTarget[`${watchTargetUuid}_comment`] = WATCH_TARGET_NAME;
+
+      // Add Watch target to project's targets array
+      const pbxProject = project.hash.project.objects['PBXProject'];
+      for (const key in pbxProject) {
+        if (pbxProject[key].targets) {
+          pbxProject[key].targets.push({ value: watchTargetUuid, comment: WATCH_TARGET_NAME });
           break;
         }
       }
 
-      if (!embedPhaseExists) {
-        const embedPhase = project.addBuildPhase(
-          [`${WATCH_TARGET_NAME}.app`],
-          'PBXCopyFilesBuildPhase',
-          'Embed Watch Content',
-          mainTarget.uuid,
-          'watch2_app'
-        );
+      // Create Embed Watch Content build phase for main target
+      const embedPhaseUuid = generateUuid();
+      const pbxCopyFilesBuildPhase = project.hash.project.objects['PBXCopyFilesBuildPhase'] || {};
+      project.hash.project.objects['PBXCopyFilesBuildPhase'] = pbxCopyFilesBuildPhase;
 
-        if (embedPhase) {
-          // Set destination to Watch folder (16)
-          embedPhase.buildPhase.dstSubfolderSpec = 16;
-          embedPhase.buildPhase.dstPath = '$(CONTENTS_FOLDER_PATH)/Watch';
+      pbxCopyFilesBuildPhase[embedPhaseUuid] = {
+        isa: 'PBXCopyFilesBuildPhase',
+        buildActionMask: 2147483647,
+        dstPath: '"$(CONTENTS_FOLDER_PATH)/Watch"',
+        dstSubfolderSpec: 16,
+        files: [{ value: watchProductBuildFileUuid, comment: `${WATCH_TARGET_NAME}.app in Embed Watch Content` }],
+        name: '"Embed Watch Content"',
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      pbxCopyFilesBuildPhase[`${embedPhaseUuid}_comment`] = 'Embed Watch Content';
+
+      // Add embed phase to main target's build phases
+      const mainTargetUuid = mainTarget.uuid;
+      if (pbxNativeTarget[mainTargetUuid] && pbxNativeTarget[mainTargetUuid].buildPhases) {
+        pbxNativeTarget[mainTargetUuid].buildPhases.push({
+          value: embedPhaseUuid,
+          comment: 'Embed Watch Content',
+        });
+      }
+
+      // Add target dependency so Watch app is built when main app is built
+      const dependencyUuid = generateUuid();
+      const containerProxyUuid = generateUuid();
+
+      // Get the project root UUID
+      let projectRootUuid = null;
+      for (const key in pbxProject) {
+        if (pbxProject[key].isa === 'PBXProject') {
+          projectRootUuid = key;
+          break;
         }
+      }
+
+      // Create PBXContainerItemProxy
+      const pbxContainerItemProxy = project.hash.project.objects['PBXContainerItemProxy'] || {};
+      project.hash.project.objects['PBXContainerItemProxy'] = pbxContainerItemProxy;
+      pbxContainerItemProxy[containerProxyUuid] = {
+        isa: 'PBXContainerItemProxy',
+        containerPortal: projectRootUuid,
+        containerPortal_comment: 'Project object',
+        proxyType: 1,
+        remoteGlobalIDString: watchTargetUuid,
+        remoteInfo: WATCH_TARGET_NAME,
+      };
+      pbxContainerItemProxy[`${containerProxyUuid}_comment`] = 'PBXContainerItemProxy';
+
+      // Create PBXTargetDependency
+      const pbxTargetDependency = project.hash.project.objects['PBXTargetDependency'] || {};
+      project.hash.project.objects['PBXTargetDependency'] = pbxTargetDependency;
+      pbxTargetDependency[dependencyUuid] = {
+        isa: 'PBXTargetDependency',
+        target: watchTargetUuid,
+        target_comment: WATCH_TARGET_NAME,
+        targetProxy: containerProxyUuid,
+        targetProxy_comment: 'PBXContainerItemProxy',
+      };
+      pbxTargetDependency[`${dependencyUuid}_comment`] = 'PBXTargetDependency';
+
+      // Add dependency to main target
+      if (pbxNativeTarget[mainTargetUuid]) {
+        if (!pbxNativeTarget[mainTargetUuid].dependencies) {
+          pbxNativeTarget[mainTargetUuid].dependencies = [];
+        }
+        pbxNativeTarget[mainTargetUuid].dependencies.push({
+          value: dependencyUuid,
+          comment: 'PBXTargetDependency',
+        });
       }
     }
 
