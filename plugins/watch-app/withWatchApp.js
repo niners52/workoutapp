@@ -346,8 +346,9 @@ const withWatchAppTarget = (config) => {
       // Create build configurations for Watch target
       // Note: No ASSETCATALOG settings - using SF Symbols and inline SwiftUI colors
       // watchOS 9.0+ only supports arm64 (Apple Watch Series 4+), no need for arm64_32
+      // VALID_ARCHS is deprecated, just use ARCHS = arm64
       const watchBuildSettings = {
-        ARCHS: '"$(ARCHS_STANDARD)"',
+        ARCHS: 'arm64',
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
@@ -359,7 +360,6 @@ const withWatchAppTarget = (config) => {
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: 'NO',
         LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
         MARKETING_VERSION: '1.0',
-        ONLY_ACTIVE_ARCH: 'YES',
         PRODUCT_BUNDLE_IDENTIFIER: watchBundleId,
         PRODUCT_NAME: `"$(TARGET_NAME)"`,
         SDKROOT: 'watchos',
@@ -367,7 +367,6 @@ const withWatchAppTarget = (config) => {
         SWIFT_EMIT_LOC_STRINGS: 'YES',
         SWIFT_VERSION: '5.0',
         TARGETED_DEVICE_FAMILY: 4,
-        VALID_ARCHS: 'arm64',
         WATCHOS_DEPLOYMENT_TARGET: '9.0',
       };
 
@@ -555,14 +554,27 @@ const withWatchAppTarget = (config) => {
     if (watchTargetUuidFound) {
       const watchTarget = pbxNativeTargetSection[watchTargetUuidFound];
 
-      // Deduplicate build phases array on Watch target
+      // Deduplicate Watch target build phases BY TYPE (not UUID)
+      // Only keep ONE Sources phase, ONE Frameworks phase, ONE Resources phase
       if (watchTarget.buildPhases && Array.isArray(watchTarget.buildPhases)) {
-        const seenPhases = new Set();
+        const seenTypes = new Set();
         watchTarget.buildPhases = watchTarget.buildPhases.filter(phase => {
-          const key = phase.value;
-          if (seenPhases.has(key)) return false;
-          seenPhases.add(key);
+          const type = phase.comment; // "Sources", "Frameworks", "Resources"
+          if (!type) return true; // keep phases without comments
+          if (seenTypes.has(type)) {
+            console.log(`[Watch Plugin] Removing duplicate ${type} phase: ${phase.value}`);
+            return false;
+          }
+          seenTypes.add(type);
           return true;
+        });
+      }
+
+      // Debug: dump final build phases
+      console.log(`[Watch Plugin] Final Watch buildPhases:`);
+      if (watchTarget.buildPhases) {
+        watchTarget.buildPhases.forEach((p, i) => {
+          console.log(`[Watch Plugin]   ${i}: ${p.comment} (${p.value})`);
         });
       }
 
