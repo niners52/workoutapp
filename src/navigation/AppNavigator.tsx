@@ -33,6 +33,7 @@ import {
   RoutineDetailScreen,
   HealthKitDataScreen,
   WorkoutSummaryScreen,
+  MeasurementHistoryScreen,
   AuthScreen,
   MigrationScreen,
 } from '../screens';
@@ -354,6 +355,13 @@ export function AppNavigator() {
             title: 'Workout Complete',
             headerShown: false,
             gestureEnabled: false,
+          }}
+        />
+        <Stack.Screen
+          name="MeasurementHistory"
+          component={MeasurementHistoryScreen}
+          options={{
+            title: 'Measurement History',
           }}
         />
       </Stack.Navigator>

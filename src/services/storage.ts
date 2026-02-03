@@ -10,6 +10,7 @@ import {
   SupplementIntake,
   Routine,
   BodyMeasurement,
+  BodyMeasurementTypeKey,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
@@ -1047,4 +1048,101 @@ export async function getLatestBodyMeasurement(): Promise<BodyMeasurement | unde
   const measurements = await getBodyMeasurements();
   if (measurements.length === 0) return undefined;
   return measurements.sort((a, b) => b.date.localeCompare(a.date))[0];
+}
+
+// ==================== TYPED BODY MEASUREMENTS (for bodybuilding) ====================
+
+export async function getBodyMeasurementsByType(type: BodyMeasurementTypeKey): Promise<BodyMeasurement[]> {
+  const measurements = await getBodyMeasurements();
+  return measurements.filter(m => m.type === type).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function getLatestBodyMeasurementByType(type: BodyMeasurementTypeKey): Promise<BodyMeasurement | undefined> {
+  const measurements = await getBodyMeasurementsByType(type);
+  return measurements[0];
+}
+
+export async function getLatestAllTypedMeasurements(): Promise<Record<BodyMeasurementTypeKey, BodyMeasurement | undefined>> {
+  const measurements = await getBodyMeasurements();
+  const typed = measurements.filter(m => m.type && m.value !== undefined);
+
+  const result: Partial<Record<BodyMeasurementTypeKey, BodyMeasurement>> = {};
+
+  // Sort by date descending and group by type
+  typed.sort((a, b) => b.date.localeCompare(a.date));
+
+  for (const m of typed) {
+    if (m.type && !result[m.type]) {
+      result[m.type] = m;
+    }
+  }
+
+  return result as Record<BodyMeasurementTypeKey, BodyMeasurement | undefined>;
+}
+
+export async function getMeasurementValue30DaysAgo(type: BodyMeasurementTypeKey): Promise<number | undefined> {
+  const measurements = await getBodyMeasurementsByType(type);
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+  // Find the closest measurement to 30 days ago (within a 7-day window)
+  const sevenDaysBefore = new Date(thirtyDaysAgo);
+  sevenDaysBefore.setDate(sevenDaysBefore.getDate() - 7);
+  const sevenDaysBeforeStr = sevenDaysBefore.toISOString().split('T')[0];
+
+  const nearbyMeasurements = measurements.filter(
+    m => m.date >= sevenDaysBeforeStr && m.date <= thirtyDaysAgoStr
+  );
+
+  if (nearbyMeasurements.length === 0) return undefined;
+
+  // Return the one closest to 30 days ago
+  return nearbyMeasurements[0].value;
+}
+
+export async function addTypedBodyMeasurement(
+  type: BodyMeasurementTypeKey,
+  value: number,
+  date: string = new Date().toISOString().split('T')[0]
+): Promise<BodyMeasurement> {
+  const measurement: BodyMeasurement = {
+    id: `body-${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    date,
+    type,
+    value,
+    source: 'manual',
+  };
+
+  await addBodyMeasurement(measurement);
+  return measurement;
+}
+
+export async function addMultipleTypedMeasurements(
+  measurements: { type: BodyMeasurementTypeKey; value: number }[],
+  date: string = new Date().toISOString().split('T')[0]
+): Promise<BodyMeasurement[]> {
+  const created: BodyMeasurement[] = [];
+
+  for (const { type, value } of measurements) {
+    const measurement = await addTypedBodyMeasurement(type, value, date);
+    created.push(measurement);
+  }
+
+  return created;
+}
+
+export async function getTypedMeasurementHistory(
+  type: BodyMeasurementTypeKey,
+  startDate: Date,
+  endDate: Date = new Date()
+): Promise<{ date: string; value: number }[]> {
+  const measurements = await getBodyMeasurementsByType(type);
+  const startStr = startDate.toISOString().split('T')[0];
+  const endStr = endDate.toISOString().split('T')[0];
+
+  return measurements
+    .filter(m => m.date >= startStr && m.date <= endStr && m.value !== undefined)
+    .map(m => ({ date: m.date, value: m.value! }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }

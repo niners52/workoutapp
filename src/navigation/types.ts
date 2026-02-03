@@ -33,6 +33,7 @@ export type RootStackParamList = {
     totalSets: number;
     muscleGroupSets: { muscleGroup: string; sets: number; isSecondary: boolean }[];
   };
+  MeasurementHistory: { measurementType: string };
 };
 
 // Bottom Tab Navigator

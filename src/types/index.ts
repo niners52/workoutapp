@@ -429,12 +429,31 @@ export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'
 export const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // Body Measurements
+// Body measurement types for bodybuilding tracking
+export type BodyMeasurementTypeKey =
+  | 'neck'
+  | 'shoulders'
+  | 'chest'
+  | 'left_arm'
+  | 'right_arm'
+  | 'left_forearm'
+  | 'right_forearm'
+  | 'waist'
+  | 'hips'
+  | 'left_thigh'
+  | 'right_thigh'
+  | 'left_calf'
+  | 'right_calf';
+
 export interface BodyMeasurement {
   id: string;
   date: string; // 'YYYY-MM-DD' format
   weight?: number; // stored in lbs
   bodyFatPercentage?: number;
   heightInches?: number; // stored in inches
+  // For bodybuilding measurements
+  type?: BodyMeasurementTypeKey; // measurement type (neck, chest, arm, etc.)
+  value?: number; // stored in inches
   source: 'healthkit' | 'manual';
   syncedAt?: string; // ISO datetime when synced from HealthKit
 }

@@ -59,6 +59,8 @@ import {
   feetAndInchesToInches,
   inchesToFeetAndInches,
 } from '../services/units';
+import { BodyMeasurementsSection } from '../components/body/BodyMeasurementsSection';
+import { BodyMeasurementTypeKey } from '../types';
 import {
   WeeklyVolume,
   BodyMeasurement,
@@ -340,6 +342,10 @@ export function AnalyticsScreen() {
         weekStart: displayVolume.weekStart,
       });
     }
+  };
+
+  const handleMeasurementHistoryPress = (type: BodyMeasurementTypeKey) => {
+    navigation.navigate('MeasurementHistory', { measurementType: type });
   };
 
   const dayOffset = userSettings.weekStartDay === 'sunday' ? 0 : 1;
@@ -771,6 +777,9 @@ export function AnalyticsScreen() {
             </Card>
           )}
         </View>
+
+        {/* Bodybuilding Body Measurements */}
+        <BodyMeasurementsSection onNavigateToHistory={handleMeasurementHistoryPress} />
 
         {/* Category Summary */}
         {categoryVolumes.length > 0 && (

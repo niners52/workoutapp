@@ -206,3 +206,42 @@ export function inputToInches(value: number, units: UnitSystem): number {
 export function heightUnit(units: UnitSystem): string {
   return units === 'metric' ? 'cm' : 'in';
 }
+
+// ============== BODY MEASUREMENT CONVERSIONS ==============
+
+/**
+ * Convert body measurement (stored in inches) for display.
+ * Returns cm for metric, inches for imperial.
+ */
+export function displayMeasurement(inches: number, units: UnitSystem): number {
+  if (units === 'metric') {
+    return Math.round(inches * INCHES_TO_CM * 10) / 10;
+  }
+  return Math.round(inches * 10) / 10;
+}
+
+/**
+ * Convert body measurement from user input to internal storage (inches).
+ */
+export function measurementInputToInches(value: number, units: UnitSystem): number {
+  if (units === 'metric') {
+    return Math.round(value * CM_TO_INCHES * 10) / 10;
+  }
+  return value;
+}
+
+/**
+ * Get the body measurement unit label.
+ */
+export function measurementUnit(units: UnitSystem): string {
+  return units === 'metric' ? 'cm' : 'in';
+}
+
+/**
+ * Format body measurement with unit for display.
+ * e.g., "15.5 in" or "39.4 cm"
+ */
+export function formatMeasurement(inches: number, units: UnitSystem): string {
+  const value = displayMeasurement(inches, units);
+  return `${value} ${measurementUnit(units)}`;
+}

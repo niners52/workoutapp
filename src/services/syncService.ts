@@ -446,6 +446,8 @@ export async function syncBodyMeasurement(measurement: BodyMeasurement): Promise
       weight: measurement.weight ?? null,
       body_fat_percentage: measurement.bodyFatPercentage ?? null,
       height_inches: measurement.heightInches ?? null,
+      type: measurement.type ?? null,
+      value: measurement.value ?? null,
       source: measurement.source,
       synced_at: measurement.syncedAt ?? null,
     };
@@ -760,6 +762,8 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       weight: row.weight ?? undefined,
       bodyFatPercentage: row.body_fat_percentage ?? undefined,
       heightInches: row.height_inches ?? undefined,
+      type: row.type ?? undefined,
+      value: row.value ?? undefined,
       source: row.source || 'manual',
       syncedAt: row.synced_at ?? undefined,
     }));
