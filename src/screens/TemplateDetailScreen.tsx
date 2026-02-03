@@ -15,7 +15,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
-import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, Equipment, MuscleGroup } from '../types';
+import { MUSCLE_GROUP_DISPLAY_NAMES, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, Equipment, PrimaryMuscleGroup } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -37,7 +37,7 @@ export function TemplateDetailScreen() {
     // Find the muscle group key from display name
     const muscleKey = Object.entries(MUSCLE_GROUP_DISPLAY_NAMES).find(
       ([, displayName]) => displayName === muscleDisplayName
-    )?.[0] as MuscleGroup | undefined;
+    )?.[0] as PrimaryMuscleGroup | undefined;
 
     if (!muscleKey) return [];
 
@@ -311,7 +311,7 @@ export function TemplateDetailScreen() {
                 const isInTemplate = template?.exerciseIds.includes(exercise.id);
                 const isPrimary = exercise.primaryMuscleGroups?.some(m =>
                   MUSCLE_GROUP_DISPLAY_NAMES[m] === selectedMuscle
-                ) || MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup || ''] === selectedMuscle;
+                ) || (exercise.primaryMuscleGroup && MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup] === selectedMuscle);
 
                 return (
                   <TouchableOpacity

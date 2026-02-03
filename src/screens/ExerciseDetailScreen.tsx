@@ -152,7 +152,7 @@ export function ExerciseDetailScreen() {
     ? MUSCLE_GROUP_DISPLAY_NAMES[exercise.primaryMuscleGroup]
     : 'Unknown';
 
-  const secondaryMuscles = exercise.secondaryMuscleGroups
+  const secondaryMuscles = (exercise.secondaryMuscleGroups || [])
     .map(mg => MUSCLE_GROUP_DISPLAY_NAMES[mg])
     .join(', ');
 

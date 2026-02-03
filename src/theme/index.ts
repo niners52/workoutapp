@@ -14,6 +14,8 @@ export const colors = {
   backgroundSecondary: '#12284B', // Navy (cards, modals, input backgrounds)
   backgroundTertiary: '#1A3A5C', // Lighter navy (hover states, borders, dividers)
   backgroundElevated: '#234875', // Even lighter navy for elevated elements
+  surface: '#12284B', // Alias for backgroundSecondary
+  surfaceLight: '#1A3A5C', // Alias for backgroundTertiary
 
   // Text colors
   text: '#FFFFFF', // White (headings, primary text)

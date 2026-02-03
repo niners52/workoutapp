@@ -20,7 +20,7 @@ import {
   DAY_NAMES,
   MUSCLE_GROUP_DISPLAY_NAMES,
   EQUIPMENT_DISPLAY_NAMES,
-  MuscleGroup,
+  PrimaryMuscleGroup,
 } from '../types';
 import { calculateProjectedVolumeForRoutine, aggregateIntoCategories } from '../services/analytics';
 
@@ -59,7 +59,7 @@ export function RoutineDetailScreen() {
   }, [routine, templates]);
 
   // Get exercises for a muscle group (by muscle group key)
-  const getExercisesForMuscle = (muscleKey: MuscleGroup) => {
+  const getExercisesForMuscle = (muscleKey: PrimaryMuscleGroup) => {
     return exercises.filter(exercise => {
       const primaryMuscles = exercise.primaryMuscleGroups?.length
         ? exercise.primaryMuscleGroups
@@ -78,7 +78,7 @@ export function RoutineDetailScreen() {
     });
   };
 
-  const handleMusclePress = (muscleKey: MuscleGroup) => {
+  const handleMusclePress = (muscleKey: PrimaryMuscleGroup) => {
     setSelectedMuscle(muscleKey);
     setMuscleModalVisible(true);
   };
@@ -262,7 +262,7 @@ export function RoutineDetailScreen() {
                           <TouchableOpacity
                             key={mg.muscleGroup}
                             style={styles.subVolumeRow}
-                            onPress={() => handleMusclePress(mg.muscleGroup)}
+                            onPress={() => handleMusclePress(mg.muscleGroup as PrimaryMuscleGroup)}
                             activeOpacity={0.7}
                           >
                             <View style={styles.subVolumeLabelRow}>
@@ -338,16 +338,16 @@ export function RoutineDetailScreen() {
         >
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              {selectedMuscle ? MUSCLE_GROUP_DISPLAY_NAMES[selectedMuscle as MuscleGroup] : ''} Exercises
+              {selectedMuscle ? MUSCLE_GROUP_DISPLAY_NAMES[selectedMuscle as PrimaryMuscleGroup] : ''} Exercises
             </Text>
             <Text style={styles.modalSubtitle}>
-              {selectedMuscle && getExercisesForMuscle(selectedMuscle as MuscleGroup).length} exercises available
+              {selectedMuscle && getExercisesForMuscle(selectedMuscle as PrimaryMuscleGroup).length} exercises available
             </Text>
 
             <ScrollView style={styles.exerciseList} showsVerticalScrollIndicator={false}>
-              {selectedMuscle && getExercisesForMuscle(selectedMuscle as MuscleGroup).map(exercise => {
+              {selectedMuscle && getExercisesForMuscle(selectedMuscle as PrimaryMuscleGroup).map(exercise => {
                 const isInRoutine = routineExerciseIds.has(exercise.id);
-                const isPrimary = exercise.primaryMuscleGroups?.includes(selectedMuscle as MuscleGroup)
+                const isPrimary = exercise.primaryMuscleGroups?.includes(selectedMuscle as PrimaryMuscleGroup)
                   || exercise.primaryMuscleGroup === selectedMuscle;
 
                 return (

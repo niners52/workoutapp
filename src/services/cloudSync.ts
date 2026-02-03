@@ -160,7 +160,6 @@ export async function migrateLocalDataToSupabase(): Promise<{
           cable_accessory: ex.cableAccessory || null,
           machine_weight_type: ex.machineWeightType || null,
           location_ids: ex.locationIds || [],
-          notes: ex.notes || null,
           is_custom: ex.isCustom ?? true,
         }));
 
@@ -187,7 +186,6 @@ export async function migrateLocalDataToSupabase(): Promise<{
         type: t.type || null,
         location_id: t.locationId || null,
         exercise_ids: t.exerciseIds || [],
-        notes: t.notes || null,
       }));
 
       const { error } = await supabase
@@ -259,7 +257,6 @@ export async function migrateLocalDataToSupabase(): Promise<{
           template_id: w.templateId || null,
           started_at: w.startedAt,
           completed_at: w.completedAt || null,
-          notes: w.notes || null,
         }));
 
         const { error } = await supabase
@@ -288,7 +285,6 @@ export async function migrateLocalDataToSupabase(): Promise<{
           reps: s.reps,
           weight: s.weight,
           logged_at: s.loggedAt || new Date().toISOString(),
-          sort_order: s.sortOrder ?? 0,
         }));
 
         const { error } = await supabase

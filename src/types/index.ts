@@ -242,8 +242,8 @@ export interface Exercise {
   id: string;
   name: string;
   primaryMuscleGroup?: PrimaryMuscleGroup; // Deprecated: use primaryMuscleGroups
-  primaryMuscleGroups: PrimaryMuscleGroup[]; // Can have multiple primary muscles
-  secondaryMuscleGroups: PrimaryMuscleGroup[];
+  primaryMuscleGroups?: PrimaryMuscleGroup[]; // Can have multiple primary muscles (optional for backward compat)
+  secondaryMuscleGroups?: PrimaryMuscleGroup[];
   equipment: Equipment;
   cableAccessory?: CableAccessory; // Only used when equipment is 'cable'
   machineWeightType?: MachineWeightType; // Only used when equipment is 'machine'

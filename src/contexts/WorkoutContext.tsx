@@ -15,6 +15,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 import {
@@ -351,6 +353,20 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     return workout.id;
   }, [updateWorkoutNotification]);
 
+  const stopRestTimer = useCallback(async () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+    // Cancel scheduled notification
+    if (notificationIdRef.current) {
+      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
+      notificationIdRef.current = null;
+    }
+    // Stop the Live Activity
+    await liveActivityService.stopTimer();
+    setRestTimer(prev => ({ ...prev, isRunning: false, endTime: null, liveActivityId: null }));
+  }, []);
+
   const finishWorkout = useCallback(async () => {
     if (!activeWorkout) return;
 
@@ -627,20 +643,6 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       liveActivityId,
     });
   }, [userSettings]);
-
-  const stopRestTimer = useCallback(async () => {
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-    }
-    // Cancel scheduled notification
-    if (notificationIdRef.current) {
-      await Notifications.cancelScheduledNotificationAsync(notificationIdRef.current);
-      notificationIdRef.current = null;
-    }
-    // Stop the Live Activity
-    await liveActivityService.stopTimer();
-    setRestTimer(prev => ({ ...prev, isRunning: false, endTime: null, liveActivityId: null }));
-  }, []);
 
   const resetRestTimer = useCallback(async () => {
     if (timerIntervalRef.current) {
