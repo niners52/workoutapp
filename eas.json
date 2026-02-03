@@ -20,12 +20,6 @@
       }
     },
     "production": {
-      "appExtensions": [
-        {
-          "targetName": "WorkoutTrackerWatch",
-          "bundleIdentifier": "com.tylerr82.workouttracker8052.watchkitapp"
-        }
-      ],
       "channel": "production",
       "ios": {
         "resourceClass": "m-medium",
