@@ -496,11 +496,12 @@ const withWatchAppTarget = (config) => {
       pbxTargetDependency[`${dependencyUuid}_comment`] = 'PBXTargetDependency';
 
       // Add dependency to main target
-      if (pbxNativeTarget[mainTargetUuid]) {
-        if (!pbxNativeTarget[mainTargetUuid].dependencies) {
-          pbxNativeTarget[mainTargetUuid].dependencies = [];
+      const mainTargetUuidForDep = mainTarget.uuid;
+      if (pbxNativeTarget[mainTargetUuidForDep]) {
+        if (!pbxNativeTarget[mainTargetUuidForDep].dependencies) {
+          pbxNativeTarget[mainTargetUuidForDep].dependencies = [];
         }
-        pbxNativeTarget[mainTargetUuid].dependencies.push({
+        pbxNativeTarget[mainTargetUuidForDep].dependencies.push({
           value: dependencyUuid,
           comment: 'PBXTargetDependency',
         });
