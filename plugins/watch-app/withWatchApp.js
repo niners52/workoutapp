@@ -163,12 +163,21 @@ const withWatchAppTarget = (config) => {
     }
 
     // Check if watch target already exists
+    // Note: name might be stored with or without quotes depending on serialization
     const existingTargets = project.pbxNativeTargetSection();
     let watchTargetExists = false;
+    let existingWatchTargetUuid = null;
 
     for (const key in existingTargets) {
-      if (existingTargets[key].name === WATCH_TARGET_NAME) {
+      if (key.endsWith('_comment')) continue;
+      const targetName = existingTargets[key].name;
+      // Check both quoted and unquoted versions
+      if (targetName === WATCH_TARGET_NAME ||
+          targetName === `"${WATCH_TARGET_NAME}"` ||
+          targetName === `'${WATCH_TARGET_NAME}'`) {
         watchTargetExists = true;
+        existingWatchTargetUuid = key;
+        console.log(`[Watch Plugin] Found existing Watch target: ${key}`);
         break;
       }
     }
@@ -518,13 +527,26 @@ const withWatchAppTarget = (config) => {
     const pbxCopyFilesBuildPhaseSection = project.hash.project.objects['PBXCopyFilesBuildPhase'] || {};
     const pbxProjectSection = project.hash.project.objects['PBXProject'];
 
-    // Find the Watch target UUID
+    // Find the Watch target UUID (check both quoted and unquoted names)
     let watchTargetUuidFound = null;
+    const allWatchTargetUuids = [];
     for (const key in pbxNativeTargetSection) {
       if (key.endsWith('_comment')) continue;
-      if (pbxNativeTargetSection[key].name === WATCH_TARGET_NAME) {
-        watchTargetUuidFound = key;
-        break;
+      const targetName = pbxNativeTargetSection[key].name;
+      if (targetName === WATCH_TARGET_NAME ||
+          targetName === `"${WATCH_TARGET_NAME}"` ||
+          targetName === `'${WATCH_TARGET_NAME}'`) {
+        allWatchTargetUuids.push(key);
+        if (!watchTargetUuidFound) watchTargetUuidFound = key;
+      }
+    }
+
+    // Remove duplicate Watch targets (keep only the first one)
+    if (allWatchTargetUuids.length > 1) {
+      console.log(`[Watch Plugin] WARNING: Found ${allWatchTargetUuids.length} Watch targets, removing duplicates`);
+      for (let i = 1; i < allWatchTargetUuids.length; i++) {
+        delete pbxNativeTargetSection[allWatchTargetUuids[i]];
+        delete pbxNativeTargetSection[`${allWatchTargetUuids[i]}_comment`];
       }
     }
 
@@ -644,6 +666,47 @@ const withWatchAppTarget = (config) => {
           seen.add(fileKey);
           return true;
         });
+      }
+    }
+
+    // ============== VERIFICATION ==============
+    // Count Watch targets to ensure no duplicates
+    const finalTargets = project.hash.project.objects['PBXNativeTarget'];
+    const watchTargetCount = Object.keys(finalTargets).filter(key => {
+      if (key.endsWith('_comment')) return false;
+      const name = finalTargets[key].name;
+      return name === WATCH_TARGET_NAME ||
+             name === `"${WATCH_TARGET_NAME}"` ||
+             name === `'${WATCH_TARGET_NAME}'`;
+    }).length;
+    console.log(`[Watch Plugin] Final Watch target count: ${watchTargetCount}`);
+    if (watchTargetCount > 1) {
+      console.error(`[Watch Plugin] ERROR: ${watchTargetCount} Watch targets found - this will cause build errors!`);
+    }
+
+    // Verify Watch target has exactly one Sources phase
+    if (watchTargetUuidFound && finalTargets[watchTargetUuidFound]) {
+      const watchTarget = finalTargets[watchTargetUuidFound];
+      if (watchTarget.buildPhases) {
+        const sourcePhases = watchTarget.buildPhases.filter(p =>
+          p.comment && p.comment.includes('Sources')
+        );
+        console.log(`[Watch Plugin] Watch target Sources phases: ${sourcePhases.length}`);
+        if (sourcePhases.length > 1) {
+          console.error(`[Watch Plugin] ERROR: ${sourcePhases.length} Sources phases found - this will cause build errors!`);
+        }
+      }
+    }
+
+    // Count Embed Watch Content phases on main target
+    const mainTargetFinal = finalTargets[mainTarget.uuid];
+    if (mainTargetFinal && mainTargetFinal.buildPhases) {
+      const embedPhases = mainTargetFinal.buildPhases.filter(p =>
+        p.comment && p.comment.includes('Embed Watch')
+      );
+      console.log(`[Watch Plugin] Main target Embed Watch phases: ${embedPhases.length}`);
+      if (embedPhases.length > 1) {
+        console.error(`[Watch Plugin] ERROR: ${embedPhases.length} Embed Watch phases found - this will cause build errors!`);
       }
     }
 
