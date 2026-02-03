@@ -219,14 +219,15 @@ const withWatchAppTarget = (config) => {
         pbxFileReference[`${fileRefUuids[file]}_comment`] = file;
       });
 
-      // Add Info.plist file reference (no Assets.xcassets - using inline colors)
+      // Add Info.plist file reference with unique name to avoid conflicts with other targets
+      // Using full path in comment to distinguish from LiveActivity's Info.plist
       pbxFileReference[fileRefUuids['Info.plist']] = {
         isa: 'PBXFileReference',
         lastKnownFileType: 'text.plist.xml',
         path: 'Info.plist',
         sourceTree: '"<group>"',
       };
-      pbxFileReference[`${fileRefUuids['Info.plist']}_comment`] = 'Info.plist';
+      pbxFileReference[`${fileRefUuids['Info.plist']}_comment`] = `${WATCH_TARGET_NAME}-Info.plist`;
 
       // Add Watch app product reference
       pbxFileReference[watchProductUuid] = {
@@ -263,9 +264,10 @@ const withWatchAppTarget = (config) => {
       if (!pbxGroup) {
         // Create an array of { uuid, name } for all files to include proper comments
         // Note: No Assets.xcassets - using inline SwiftUI colors instead
+        // Using unique name for Info.plist to avoid conflict with LiveActivity's Info.plist
         const allFilesWithNames = [
           ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
-          { uuid: fileRefUuids['Info.plist'], name: 'Info.plist' },
+          { uuid: fileRefUuids['Info.plist'], name: `${WATCH_TARGET_NAME}-Info.plist` },
         ];
 
         // Add group to PBXGroup section
@@ -335,6 +337,7 @@ const withWatchAppTarget = (config) => {
       // Create build configurations for Watch target
       // Note: No ASSETCATALOG settings - using SF Symbols and inline SwiftUI colors
       const watchBuildSettings = {
+        ARCHS: '"arm64_32 arm64"',
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
@@ -346,6 +349,7 @@ const withWatchAppTarget = (config) => {
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: 'NO',
         LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
         MARKETING_VERSION: '1.0',
+        ONLY_ACTIVE_ARCH: 'NO',
         PRODUCT_BUNDLE_IDENTIFIER: watchBundleId,
         PRODUCT_NAME: `"$(TARGET_NAME)"`,
         SDKROOT: 'watchos',
@@ -414,29 +418,43 @@ const withWatchAppTarget = (config) => {
         }
       }
 
-      // Create Embed Watch Content build phase for main target
-      const embedPhaseUuid = generateUuid();
+      // Create Embed Watch Content build phase for main target (if not already present)
       const pbxCopyFilesBuildPhase = project.hash.project.objects['PBXCopyFilesBuildPhase'] || {};
       project.hash.project.objects['PBXCopyFilesBuildPhase'] = pbxCopyFilesBuildPhase;
 
-      pbxCopyFilesBuildPhase[embedPhaseUuid] = {
-        isa: 'PBXCopyFilesBuildPhase',
-        buildActionMask: 2147483647,
-        dstPath: '"$(CONTENTS_FOLDER_PATH)/Watch"',
-        dstSubfolderSpec: 16,
-        files: [{ value: watchProductBuildFileUuid, comment: `${WATCH_TARGET_NAME}.app in Embed Watch Content` }],
-        name: '"Embed Watch Content"',
-        runOnlyForDeploymentPostprocessing: 0,
-      };
-      pbxCopyFilesBuildPhase[`${embedPhaseUuid}_comment`] = 'Embed Watch Content';
+      // Check if Embed Watch Content phase already exists
+      let existingEmbedPhaseUuid = null;
+      for (const key in pbxCopyFilesBuildPhase) {
+        if (key.endsWith('_comment')) continue;
+        const phase = pbxCopyFilesBuildPhase[key];
+        if (phase.name === '"Embed Watch Content"') {
+          existingEmbedPhaseUuid = key;
+          break;
+        }
+      }
 
-      // Add embed phase to main target's build phases
-      const mainTargetUuid = mainTarget.uuid;
-      if (pbxNativeTarget[mainTargetUuid] && pbxNativeTarget[mainTargetUuid].buildPhases) {
-        pbxNativeTarget[mainTargetUuid].buildPhases.push({
-          value: embedPhaseUuid,
-          comment: 'Embed Watch Content',
-        });
+      const embedPhaseUuid = existingEmbedPhaseUuid || generateUuid();
+
+      if (!existingEmbedPhaseUuid) {
+        pbxCopyFilesBuildPhase[embedPhaseUuid] = {
+          isa: 'PBXCopyFilesBuildPhase',
+          buildActionMask: 2147483647,
+          dstPath: '"$(CONTENTS_FOLDER_PATH)/Watch"',
+          dstSubfolderSpec: 16,
+          files: [{ value: watchProductBuildFileUuid, comment: `${WATCH_TARGET_NAME}.app in Embed Watch Content` }],
+          name: '"Embed Watch Content"',
+          runOnlyForDeploymentPostprocessing: 0,
+        };
+        pbxCopyFilesBuildPhase[`${embedPhaseUuid}_comment`] = 'Embed Watch Content';
+
+        // Add embed phase to main target's build phases
+        const mainTargetUuid = mainTarget.uuid;
+        if (pbxNativeTarget[mainTargetUuid] && pbxNativeTarget[mainTargetUuid].buildPhases) {
+          pbxNativeTarget[mainTargetUuid].buildPhases.push({
+            value: embedPhaseUuid,
+            comment: 'Embed Watch Content',
+          });
+        }
       }
 
       // Add target dependency so Watch app is built when main app is built

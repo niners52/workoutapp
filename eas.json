@@ -22,7 +22,9 @@
     "production": {
       "channel": "production",
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "m-medium",
+        "buildConfiguration": "Release",
+        "credentialsSource": "remote"
       },
       "autoIncrement": true
     }
