@@ -508,6 +508,145 @@ const withWatchAppTarget = (config) => {
       }
     }
 
+    // ============== DEDUPLICATION CLEANUP ==============
+    // Clean up any duplicate entries that might cause "Multiple commands produce" errors
+
+    const pbxNativeTargetSection = project.hash.project.objects['PBXNativeTarget'];
+    const pbxSourcesBuildPhaseSection = project.hash.project.objects['PBXSourcesBuildPhase'] || {};
+    const pbxResourcesBuildPhaseSection = project.hash.project.objects['PBXResourcesBuildPhase'] || {};
+    const pbxFrameworksBuildPhaseSection = project.hash.project.objects['PBXFrameworksBuildPhase'] || {};
+    const pbxCopyFilesBuildPhaseSection = project.hash.project.objects['PBXCopyFilesBuildPhase'] || {};
+    const pbxProjectSection = project.hash.project.objects['PBXProject'];
+
+    // Find the Watch target UUID
+    let watchTargetUuidFound = null;
+    for (const key in pbxNativeTargetSection) {
+      if (key.endsWith('_comment')) continue;
+      if (pbxNativeTargetSection[key].name === WATCH_TARGET_NAME) {
+        watchTargetUuidFound = key;
+        break;
+      }
+    }
+
+    if (watchTargetUuidFound) {
+      const watchTarget = pbxNativeTargetSection[watchTargetUuidFound];
+
+      // Deduplicate build phases array on Watch target
+      if (watchTarget.buildPhases && Array.isArray(watchTarget.buildPhases)) {
+        const seenPhases = new Set();
+        watchTarget.buildPhases = watchTarget.buildPhases.filter(phase => {
+          const key = phase.value;
+          if (seenPhases.has(key)) return false;
+          seenPhases.add(key);
+          return true;
+        });
+      }
+
+      // For each build phase referenced by Watch target, deduplicate files
+      if (watchTarget.buildPhases) {
+        watchTarget.buildPhases.forEach(phaseRef => {
+          const phaseUuid = phaseRef.value;
+
+          // Deduplicate Sources
+          if (pbxSourcesBuildPhaseSection[phaseUuid] && pbxSourcesBuildPhaseSection[phaseUuid].files) {
+            const seen = new Set();
+            pbxSourcesBuildPhaseSection[phaseUuid].files = pbxSourcesBuildPhaseSection[phaseUuid].files.filter(f => {
+              const key = f.value;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+          }
+
+          // Deduplicate Resources
+          if (pbxResourcesBuildPhaseSection[phaseUuid] && pbxResourcesBuildPhaseSection[phaseUuid].files) {
+            const seen = new Set();
+            pbxResourcesBuildPhaseSection[phaseUuid].files = pbxResourcesBuildPhaseSection[phaseUuid].files.filter(f => {
+              const key = f.value;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+          }
+
+          // Deduplicate Frameworks
+          if (pbxFrameworksBuildPhaseSection[phaseUuid] && pbxFrameworksBuildPhaseSection[phaseUuid].files) {
+            const seen = new Set();
+            pbxFrameworksBuildPhaseSection[phaseUuid].files = pbxFrameworksBuildPhaseSection[phaseUuid].files.filter(f => {
+              const key = f.value;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+          }
+        });
+      }
+    }
+
+    // Deduplicate Watch target entries in project targets array
+    for (const key in pbxProjectSection) {
+      if (key.endsWith('_comment')) continue;
+      if (pbxProjectSection[key].targets && Array.isArray(pbxProjectSection[key].targets)) {
+        const seen = new Set();
+        pbxProjectSection[key].targets = pbxProjectSection[key].targets.filter(t => {
+          const targetKey = t.value;
+          if (seen.has(targetKey)) return false;
+          seen.add(targetKey);
+          return true;
+        });
+      }
+    }
+
+    // Deduplicate Embed Watch Content phases on main target and their files
+    const mainTargetUuidCleanup = mainTarget.uuid;
+    if (pbxNativeTargetSection[mainTargetUuidCleanup]) {
+      const mainTargetObj = pbxNativeTargetSection[mainTargetUuidCleanup];
+
+      // Deduplicate build phases on main target
+      if (mainTargetObj.buildPhases && Array.isArray(mainTargetObj.buildPhases)) {
+        const seenPhases = new Set();
+        const seenEmbedWatch = [];
+
+        mainTargetObj.buildPhases = mainTargetObj.buildPhases.filter(phase => {
+          const key = phase.value;
+          // Track Embed Watch Content phases
+          if (phase.comment === 'Embed Watch Content') {
+            seenEmbedWatch.push(key);
+            if (seenEmbedWatch.length > 1) return false; // Remove duplicate embed phases
+          }
+          if (seenPhases.has(key)) return false;
+          seenPhases.add(key);
+          return true;
+        });
+      }
+
+      // Deduplicate dependencies on main target
+      if (mainTargetObj.dependencies && Array.isArray(mainTargetObj.dependencies)) {
+        const seen = new Set();
+        mainTargetObj.dependencies = mainTargetObj.dependencies.filter(dep => {
+          const key = dep.value;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+    }
+
+    // Deduplicate files in all Embed Watch Content / Copy Files phases
+    for (const key in pbxCopyFilesBuildPhaseSection) {
+      if (key.endsWith('_comment')) continue;
+      const phase = pbxCopyFilesBuildPhaseSection[key];
+      if (phase.files && Array.isArray(phase.files)) {
+        const seen = new Set();
+        phase.files = phase.files.filter(f => {
+          const fileKey = f.value;
+          if (seen.has(fileKey)) return false;
+          seen.add(fileKey);
+          return true;
+        });
+      }
+    }
+
     return config;
   });
 };
