@@ -191,23 +191,52 @@ const withWatchAppFiles = (config) => {
         "info": { "version": 1, "author": "xcode" }
       }, null, 2));
 
-      // Create AppIcon Contents.json with a single 1024x1024 universal entry
+      // All required watchOS icon sizes for App Store submission
+      const watchIconSizes = [
+        { size: 48,  scale: '2x', sizeStr: '24x24',    role: 'notificationCenter', subtype: '38mm' },
+        { size: 55,  scale: '2x', sizeStr: '27.5x27.5', role: 'notificationCenter', subtype: '42mm' },
+        { size: 58,  scale: '2x', sizeStr: '29x29',    role: 'companionSettings', subtype: null },
+        { size: 87,  scale: '3x', sizeStr: '29x29',    role: 'companionSettings', subtype: null },
+        { size: 80,  scale: '2x', sizeStr: '40x40',    role: 'appLauncher',       subtype: '38mm' },
+        { size: 88,  scale: '2x', sizeStr: '44x44',    role: 'longLook',          subtype: '42mm' },
+        { size: 100, scale: '2x', sizeStr: '50x50',    role: 'longLook',          subtype: '44mm' },
+        { size: 172, scale: '2x', sizeStr: '86x86',    role: 'quickLook',         subtype: '38mm' },
+        { size: 196, scale: '2x', sizeStr: '98x98',    role: 'quickLook',         subtype: '42mm' },
+        { size: 216, scale: '2x', sizeStr: '108x108',  role: 'quickLook',         subtype: '44mm' },
+        { size: 1024, scale: '1x', sizeStr: '1024x1024', role: null,              subtype: null },
+      ];
+
+      // Build Contents.json images array
+      const images = watchIconSizes.map(icon => {
+        const filename = `icon-${icon.size}.png`;
+        const entry = {
+          filename: filename,
+          idiom: 'watch',
+          scale: icon.scale,
+          size: icon.sizeStr,
+        };
+        if (icon.role) entry.role = icon.role;
+        if (icon.subtype) entry.subtype = icon.subtype;
+        // The 1024 App Store icon uses different idiom
+        if (icon.size === 1024) {
+          entry.idiom = 'watch-marketing';
+          delete entry.role;
+          delete entry.subtype;
+        }
+        return entry;
+      });
+
       fs.writeFileSync(path.join(appIconDir, 'Contents.json'), JSON.stringify({
-        "images": [
-          {
-            "filename": "icon.png",
-            "idiom": "universal",
-            "platform": "watchos",
-            "size": "1024x1024"
-          }
-        ],
-        "info": { "version": 1, "author": "xcode" }
+        images: images,
+        info: { version: 1, author: 'xcode' }
       }, null, 2));
 
-      // Generate 1024x1024 gold (#FFC52F) icon
-      const iconData = createSolidPNG(1024, 1024, 255, 197, 47);
-      fs.writeFileSync(path.join(appIconDir, 'icon.png'), iconData);
-      console.log(`[Watch Plugin] Created Watch app icon: ${path.join(appIconDir, 'icon.png')}`);
+      // Generate a PNG for each required size (solid gold #FFC52F)
+      for (const icon of watchIconSizes) {
+        const iconData = createSolidPNG(icon.size, icon.size, 255, 197, 47);
+        fs.writeFileSync(path.join(appIconDir, `icon-${icon.size}.png`), iconData);
+      }
+      console.log(`[Watch Plugin] Created ${watchIconSizes.length} Watch app icons`);
 
       return config;
     },
@@ -479,7 +508,7 @@ const withWatchAppTarget = (config) => {
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
-        GENERATE_INFOPLIST_FILE: 'YES',
+        GENERATE_INFOPLIST_FILE: 'NO',
         INFOPLIST_FILE: `${WATCH_TARGET_NAME}/Info.plist`,
         INFOPLIST_KEY_CFBundleDisplayName: '"Workout Tracker"',
         INFOPLIST_KEY_CFBundleIconName: 'AppIcon',
