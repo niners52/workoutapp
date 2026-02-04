@@ -183,8 +183,8 @@ const withWatchAppFiles = (config) => {
         return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
       }
 
-      // Create Assets.xcassets directory structure
-      const assetsDir = path.join(watchAppDir, 'Assets.xcassets');
+      // Create WatchAssets.xcassets directory structure (unique name to avoid collision with main app)
+      const assetsDir = path.join(watchAppDir, 'WatchAssets.xcassets');
       const appIconDir = path.join(assetsDir, 'AppIcon.appiconset');
       fs.mkdirSync(appIconDir, { recursive: true });
 
@@ -193,52 +193,23 @@ const withWatchAppFiles = (config) => {
         "info": { "version": 1, "author": "xcode" }
       }, null, 2));
 
-      // All required watchOS icon sizes for App Store submission
-      const watchIconSizes = [
-        { size: 48,  scale: '2x', sizeStr: '24x24',    role: 'notificationCenter', subtype: '38mm' },
-        { size: 55,  scale: '2x', sizeStr: '27.5x27.5', role: 'notificationCenter', subtype: '42mm' },
-        { size: 58,  scale: '2x', sizeStr: '29x29',    role: 'companionSettings', subtype: null },
-        { size: 87,  scale: '3x', sizeStr: '29x29',    role: 'companionSettings', subtype: null },
-        { size: 80,  scale: '2x', sizeStr: '40x40',    role: 'appLauncher',       subtype: '38mm' },
-        { size: 88,  scale: '2x', sizeStr: '44x44',    role: 'longLook',          subtype: '42mm' },
-        { size: 100, scale: '2x', sizeStr: '50x50',    role: 'longLook',          subtype: '44mm' },
-        { size: 172, scale: '2x', sizeStr: '86x86',    role: 'quickLook',         subtype: '38mm' },
-        { size: 196, scale: '2x', sizeStr: '98x98',    role: 'quickLook',         subtype: '42mm' },
-        { size: 216, scale: '2x', sizeStr: '108x108',  role: 'quickLook',         subtype: '44mm' },
-        { size: 1024, scale: '1x', sizeStr: '1024x1024', role: null,              subtype: null },
-      ];
-
-      // Build Contents.json images array
-      const images = watchIconSizes.map(icon => {
-        const filename = `icon-${icon.size}.png`;
-        const entry = {
-          filename: filename,
-          idiom: 'watch',
-          scale: icon.scale,
-          size: icon.sizeStr,
-        };
-        if (icon.role) entry.role = icon.role;
-        if (icon.subtype) entry.subtype = icon.subtype;
-        // The 1024 App Store icon uses different idiom
-        if (icon.size === 1024) {
-          entry.idiom = 'watch-marketing';
-          delete entry.role;
-          delete entry.subtype;
-        }
-        return entry;
-      });
-
+      // Create AppIcon Contents.json with a single 1024x1024 universal entry
       fs.writeFileSync(path.join(appIconDir, 'Contents.json'), JSON.stringify({
-        images: images,
-        info: { version: 1, author: 'xcode' }
+        "images": [
+          {
+            "filename": "icon.png",
+            "idiom": "universal",
+            "platform": "watchos",
+            "size": "1024x1024"
+          }
+        ],
+        "info": { "version": 1, "author": "xcode" }
       }, null, 2));
 
-      // Generate a PNG for each required size (solid gold #FFC52F)
-      for (const icon of watchIconSizes) {
-        const iconData = createSolidPNG(icon.size, icon.size, 255, 197, 47);
-        fs.writeFileSync(path.join(appIconDir, `icon-${icon.size}.png`), iconData);
-      }
-      console.log(`[Watch Plugin] Created ${watchIconSizes.length} Watch app icons`);
+      // Generate 1024x1024 gold (#FFC52F) icon
+      const iconData = createSolidPNG(1024, 1024, 255, 197, 47);
+      fs.writeFileSync(path.join(appIconDir, 'icon.png'), iconData);
+      console.log(`[Watch Plugin] Created Watch app icon: ${path.join(appIconDir, 'icon.png')}`);
 
       return config;
     },
@@ -329,11 +300,10 @@ const withWatchAppTarget = (config) => {
         buildFileUuids[file] = generateUuid();
       });
 
-      // Create file references for Info.plist and Assets.xcassets
-      // Note: Assets.xcassets only gets PBXFileReference, NOT PBXBuildFile
-      // (PBXBuildFile triggers xcodeproj gem orphan check which fails)
+      // Create file references for Info.plist and WatchAssets.xcassets
       fileRefUuids['Info.plist'] = generateUuid();
-      fileRefUuids['Assets.xcassets'] = generateUuid();
+      fileRefUuids['WatchAssets.xcassets'] = generateUuid();
+      buildFileUuids['WatchAssets.xcassets'] = generateUuid();
 
       // Add PBXFileReference entries for Swift files and resources
       const pbxFileReference = project.pbxFileReferenceSection();
@@ -357,14 +327,14 @@ const withWatchAppTarget = (config) => {
       };
       pbxFileReference[`${fileRefUuids['Info.plist']}_comment`] = `${WATCH_TARGET_NAME}-Info.plist`;
 
-      // Add Assets.xcassets file reference
-      pbxFileReference[fileRefUuids['Assets.xcassets']] = {
+      // Add WatchAssets.xcassets file reference
+      pbxFileReference[fileRefUuids['WatchAssets.xcassets']] = {
         isa: 'PBXFileReference',
         lastKnownFileType: 'folder.assetcatalog',
-        path: 'Assets.xcassets',
+        path: 'WatchAssets.xcassets',
         sourceTree: '"<group>"',
       };
-      pbxFileReference[`${fileRefUuids['Assets.xcassets']}_comment`] = 'Assets.xcassets';
+      pbxFileReference[`${fileRefUuids['WatchAssets.xcassets']}_comment`] = 'WatchAssets.xcassets';
 
       // Add Watch app product reference
       pbxFileReference[watchProductUuid] = {
@@ -387,8 +357,13 @@ const withWatchAppTarget = (config) => {
         pbxBuildFile[`${buildFileUuids[file]}_comment`] = `${file} in Sources`;
       });
 
-      // Note: NO PBXBuildFile for Assets.xcassets - it triggers xcodeproj orphan check
-      // Asset catalog compilation is handled via ASSETCATALOG_COMPILER build settings instead
+      // Add PBXBuildFile for WatchAssets.xcassets (Resources)
+      pbxBuildFile[buildFileUuids['WatchAssets.xcassets']] = {
+        isa: 'PBXBuildFile',
+        fileRef: fileRefUuids['WatchAssets.xcassets'],
+        fileRef_comment: 'WatchAssets.xcassets',
+      };
+      pbxBuildFile[`${buildFileUuids['WatchAssets.xcassets']}_comment`] = 'WatchAssets.xcassets in Resources';
 
       // Add PBXBuildFile for Watch product in main app's embed phase
       pbxBuildFile[watchProductBuildFileUuid] = {
@@ -400,11 +375,10 @@ const withWatchAppTarget = (config) => {
       pbxBuildFile[`${watchProductBuildFileUuid}_comment`] = `${WATCH_TARGET_NAME}.app in Embed Watch Content`;
 
       // Create PBXGroup for Watch app (always create fresh to ensure all files are included)
-      // Note: Assets.xcassets name must match its path to satisfy Xcodeproj consistency checks
       const allFilesWithNames = [
         ...watchSwiftFiles.map(f => ({ uuid: fileRefUuids[f], name: f })),
         { uuid: fileRefUuids['Info.plist'], name: `${WATCH_TARGET_NAME}-Info.plist` },
-        { uuid: fileRefUuids['Assets.xcassets'], name: 'Assets.xcassets' },
+        { uuid: fileRefUuids['WatchAssets.xcassets'], name: 'WatchAssets.xcassets' },
       ];
 
       // Add group to PBXGroup section
@@ -457,13 +431,15 @@ const withWatchAppTarget = (config) => {
       };
       pbxSourcesBuildPhase[`${watchSourcesBuildPhaseUuid}_comment`] = 'Sources';
 
-      // Create Resources build phase (empty - Assets.xcassets compiled via ASSETCATALOG_COMPILER settings)
+      // Create Resources build phase with WatchAssets.xcassets
       const pbxResourcesBuildPhase = project.hash.project.objects['PBXResourcesBuildPhase'] || {};
       project.hash.project.objects['PBXResourcesBuildPhase'] = pbxResourcesBuildPhase;
       pbxResourcesBuildPhase[watchResourcesBuildPhaseUuid] = {
         isa: 'PBXResourcesBuildPhase',
         buildActionMask: 2147483647,
-        files: [],
+        files: [
+          { value: buildFileUuids['WatchAssets.xcassets'], comment: 'WatchAssets.xcassets in Resources' },
+        ],
         runOnlyForDeploymentPostprocessing: 0,
       };
       pbxResourcesBuildPhase[`${watchResourcesBuildPhaseUuid}_comment`] = 'Resources';
@@ -479,28 +455,6 @@ const withWatchAppTarget = (config) => {
       };
       pbxFrameworksBuildPhase[`${watchFrameworksBuildPhaseUuid}_comment`] = 'Frameworks';
 
-      // Shell Script Build Phase to compile Watch asset catalog
-      // NOTE: No double-quote characters allowed in the script - they break pbxproj quoting
-      // NOTE: Use regular strings (not template literals) to preserve $ characters
-      const assetScriptPhaseUuid = generateUuid();
-      const pbxShellScriptBuildPhase = project.hash.project.objects['PBXShellScriptBuildPhase'] || {};
-      project.hash.project.objects['PBXShellScriptBuildPhase'] = pbxShellScriptBuildPhase;
-
-      pbxShellScriptBuildPhase[assetScriptPhaseUuid] = {
-        isa: 'PBXShellScriptBuildPhase',
-        buildActionMask: 2147483647,
-        files: [],
-        inputFileListPaths: [],
-        inputPaths: [],
-        name: '"Compile Watch Assets"',
-        outputFileListPaths: [],
-        outputPaths: [],
-        runOnlyForDeploymentPostprocessing: 0,
-        shellPath: '/bin/sh',
-        shellScript: '"xcrun actool --output-format human-readable-text --notices --warnings --platform watchos --minimum-deployment-target 10.0 --app-icon AppIcon --compress-pngs --output-partial-info-plist $TARGET_TEMP_DIR/assetcatalog_generated_info.plist --compile $BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH $PROJECT_DIR/WorkoutTrackerWatch/Assets.xcassets"',
-      };
-      pbxShellScriptBuildPhase[assetScriptPhaseUuid + '_comment'] = 'Compile Watch Assets';
-
       // Create build configurations for Watch target
       // App Store requires both arm64 and arm64_32 for watchOS - use $(ARCHS_STANDARD)
       // Modern watchOS app type (not legacy WatchKit)
@@ -510,7 +464,7 @@ const withWatchAppTarget = (config) => {
         CODE_SIGN_STYLE: 'Automatic',
         CURRENT_PROJECT_VERSION: 1,
         DEVELOPMENT_TEAM: DEVELOPMENT_TEAM,
-        GENERATE_INFOPLIST_FILE: 'NO',
+        GENERATE_INFOPLIST_FILE: 'YES',
         INFOPLIST_FILE: `${WATCH_TARGET_NAME}/Info.plist`,
         INFOPLIST_KEY_CFBundleDisplayName: '"Workout Tracker"',
         INFOPLIST_KEY_CFBundleIconName: 'AppIcon',
@@ -565,7 +519,6 @@ const withWatchAppTarget = (config) => {
         buildPhases: [
           { value: watchSourcesBuildPhaseUuid, comment: 'Sources' },
           { value: watchFrameworksBuildPhaseUuid, comment: 'Frameworks' },
-          { value: assetScriptPhaseUuid, comment: 'Compile Watch Assets' },
           { value: watchResourcesBuildPhaseUuid, comment: 'Resources' },
         ],
         buildRules: [],
