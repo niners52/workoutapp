@@ -448,6 +448,28 @@ const withWatchAppTarget = (config) => {
       };
       pbxFrameworksBuildPhase[`${watchFrameworksBuildPhaseUuid}_comment`] = 'Frameworks';
 
+      // Shell Script Build Phase to compile Watch asset catalog
+      // NOTE: No double-quote characters allowed in the script - they break pbxproj quoting
+      // NOTE: Use regular strings (not template literals) to preserve $ characters
+      const assetScriptPhaseUuid = generateUuid();
+      const pbxShellScriptBuildPhase = project.hash.project.objects['PBXShellScriptBuildPhase'] || {};
+      project.hash.project.objects['PBXShellScriptBuildPhase'] = pbxShellScriptBuildPhase;
+
+      pbxShellScriptBuildPhase[assetScriptPhaseUuid] = {
+        isa: 'PBXShellScriptBuildPhase',
+        buildActionMask: 2147483647,
+        files: [],
+        inputFileListPaths: [],
+        inputPaths: [],
+        name: '"Compile Watch Assets"',
+        outputFileListPaths: [],
+        outputPaths: [],
+        runOnlyForDeploymentPostprocessing: 0,
+        shellPath: '/bin/sh',
+        shellScript: '"xcrun actool --output-format human-readable-text --notices --warnings --platform watchos --minimum-deployment-target 10.0 --app-icon AppIcon --compress-pngs --output-partial-info-plist $TARGET_TEMP_DIR/assetcatalog_generated_info.plist --compile $BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH $PROJECT_DIR/WorkoutTrackerWatch/Assets.xcassets"',
+      };
+      pbxShellScriptBuildPhase[assetScriptPhaseUuid + '_comment'] = 'Compile Watch Assets';
+
       // Create build configurations for Watch target
       // App Store requires both arm64 and arm64_32 for watchOS - use $(ARCHS_STANDARD)
       // Modern watchOS app type (not legacy WatchKit)
@@ -512,6 +534,7 @@ const withWatchAppTarget = (config) => {
         buildPhases: [
           { value: watchSourcesBuildPhaseUuid, comment: 'Sources' },
           { value: watchFrameworksBuildPhaseUuid, comment: 'Frameworks' },
+          { value: assetScriptPhaseUuid, comment: 'Compile Watch Assets' },
           { value: watchResourcesBuildPhaseUuid, comment: 'Resources' },
         ],
         buildRules: [],
