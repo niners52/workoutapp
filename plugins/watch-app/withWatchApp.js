@@ -357,7 +357,7 @@ const withWatchAppTarget = (config) => {
       });
 
       // Note: NO PBXBuildFile for Assets.xcassets - it triggers xcodeproj orphan check
-      // Asset catalog compilation is handled via Shell Script Build Phase instead
+      // Asset catalog compilation is handled via ASSETCATALOG_COMPILER build settings instead
 
       // Add PBXBuildFile for Watch product in main app's embed phase
       pbxBuildFile[watchProductBuildFileUuid] = {
@@ -426,7 +426,7 @@ const withWatchAppTarget = (config) => {
       };
       pbxSourcesBuildPhase[`${watchSourcesBuildPhaseUuid}_comment`] = 'Sources';
 
-      // Create Resources build phase (empty - Assets.xcassets handled by shell script)
+      // Create Resources build phase (empty - Assets.xcassets compiled via ASSETCATALOG_COMPILER settings)
       const pbxResourcesBuildPhase = project.hash.project.objects['PBXResourcesBuildPhase'] || {};
       project.hash.project.objects['PBXResourcesBuildPhase'] = pbxResourcesBuildPhase;
       pbxResourcesBuildPhase[watchResourcesBuildPhaseUuid] = {
@@ -448,49 +448,6 @@ const withWatchAppTarget = (config) => {
       };
       pbxFrameworksBuildPhase[`${watchFrameworksBuildPhaseUuid}_comment`] = 'Frameworks';
 
-      // Create Shell Script Build Phase to compile asset catalog
-      // (Assets.xcassets can't be in Resources build phase due to xcodeproj gem orphan check bug)
-      const assetScriptPhaseUuid = generateUuid();
-      const pbxShellScriptBuildPhase = project.hash.project.objects['PBXShellScriptBuildPhase'] || {};
-      project.hash.project.objects['PBXShellScriptBuildPhase'] = pbxShellScriptBuildPhase;
-
-      const assetCompileScript = [
-        'set -e',
-        'ACTOOL_DIR="${PROJECT_DIR}/WorkoutTrackerWatch/Assets.xcassets"',
-        'if [ -d "$ACTOOL_DIR" ]; then',
-        '  xcrun actool \\\\',
-        '    --output-format human-readable-text \\\\',
-        '    --notices --warnings \\\\',
-        '    --platform watchos \\\\',
-        '    --minimum-deployment-target 10.0 \\\\',
-        '    --app-icon AppIcon \\\\',
-        '    --compress-pngs \\\\',
-        '    --output-partial-info-plist "${TARGET_TEMP_DIR}/assetcatalog_generated_info.plist" \\\\',
-        '    --compile "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}" \\\\',
-        '    "$ACTOOL_DIR"',
-        '  # Merge partial info plist with compiled app Info.plist',
-        '  if [ -f "${TARGET_TEMP_DIR}/assetcatalog_generated_info.plist" ]; then',
-        '    /usr/libexec/PlistBuddy -c "Merge ${TARGET_TEMP_DIR}/assetcatalog_generated_info.plist" \\\\',
-        '      "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Info.plist" 2>/dev/null || true',
-        '  fi',
-        'fi',
-      ].join('\\n');
-
-      pbxShellScriptBuildPhase[assetScriptPhaseUuid] = {
-        isa: 'PBXShellScriptBuildPhase',
-        buildActionMask: 2147483647,
-        files: [],
-        inputFileListPaths: [],
-        inputPaths: [],
-        name: '"Compile Watch Assets"',
-        outputFileListPaths: [],
-        outputPaths: [],
-        runOnlyForDeploymentPostprocessing: 0,
-        shellPath: '/bin/sh',
-        shellScript: `"${assetCompileScript}"`,
-      };
-      pbxShellScriptBuildPhase[`${assetScriptPhaseUuid}_comment`] = 'Compile Watch Assets';
-
       // Create build configurations for Watch target
       // App Store requires both arm64 and arm64_32 for watchOS - use $(ARCHS_STANDARD)
       // Modern watchOS app type (not legacy WatchKit)
@@ -503,6 +460,7 @@ const withWatchAppTarget = (config) => {
         GENERATE_INFOPLIST_FILE: 'YES',
         INFOPLIST_FILE: `${WATCH_TARGET_NAME}/Info.plist`,
         INFOPLIST_KEY_CFBundleDisplayName: '"Workout Tracker"',
+        INFOPLIST_KEY_CFBundleIconName: 'AppIcon',
         INFOPLIST_KEY_UISupportedInterfaceOrientations: '"UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown"',
         LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks"',
         MARKETING_VERSION: '1.0',
@@ -554,7 +512,6 @@ const withWatchAppTarget = (config) => {
         buildPhases: [
           { value: watchSourcesBuildPhaseUuid, comment: 'Sources' },
           { value: watchFrameworksBuildPhaseUuid, comment: 'Frameworks' },
-          { value: assetScriptPhaseUuid, comment: 'Compile Watch Assets' },
           { value: watchResourcesBuildPhaseUuid, comment: 'Resources' },
         ],
         buildRules: [],
