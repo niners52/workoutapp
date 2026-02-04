@@ -105,6 +105,8 @@ const withWatchAppFiles = (config) => {
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>MinimumOSVersion</key>
   <string>10.0</string>
+  <key>WKApplication</key>
+  <true/>
   <key>WKCompanionAppBundleIdentifier</key>
   <string>${bundleId}</string>
   <key>WKWatchOnly</key>
