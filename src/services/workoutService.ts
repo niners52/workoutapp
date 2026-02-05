@@ -34,13 +34,16 @@ export async function getSetsByExerciseIdCompleted(
 }
 
 /**
- * Get the last completed workout for a given exercise
+ * Get the last workout for a given exercise (completed or not)
  * Returns the date and all sets from that workout
+ * Note: Changed from getSetsByExerciseIdCompleted to getSetsByExerciseId
+ * to show history from all workouts, not just completed ones.
+ * Users need to see their last session's data for progressive overload.
  */
 export async function getLastWorkoutForExercise(
   exerciseId: string
 ): Promise<LastWorkoutForExercise | null> {
-  const sets = await getSetsByExerciseIdCompleted(exerciseId);
+  const sets = await getSetsByExerciseId(exerciseId);
 
   if (sets.length === 0) return null;
 
