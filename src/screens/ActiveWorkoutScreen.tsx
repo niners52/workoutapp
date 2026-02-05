@@ -82,6 +82,9 @@ export function ActiveWorkoutScreen() {
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [prCelebration, setPrCelebration] = useState<{ exerciseId: string; type: string; emoji: string } | null>(null);
   const prAnimValue = useRef(new Animated.Value(0)).current;
+  // Track which exercises have already shown a PR notification this session
+  // This prevents showing multiple PR notifications for the same exercise
+  const [prShownThisSession, setPrShownThisSession] = useState<Set<string>>(new Set());
 
   // Get units from settings
   const units = userSettings?.units || 'imperial';
@@ -180,9 +183,11 @@ export function ActiveWorkoutScreen() {
 
     await logSet(reps, weight, selectedExerciseId);
 
-    // Show PR celebration if any PR was set
-    if (prResult.isPR) {
+    // Show PR celebration if any PR was set AND we haven't shown one for this exercise this session
+    if (prResult.isPR && !prShownThisSession.has(selectedExerciseId)) {
       showPRCelebration(selectedExerciseId, prResult);
+      // Mark this exercise as having shown a PR this session
+      setPrShownThisSession(prev => new Set(prev).add(selectedExerciseId));
     }
 
     // Don't collapse - keep exercise expanded so user can continue logging
