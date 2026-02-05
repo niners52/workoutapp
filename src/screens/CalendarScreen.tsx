@@ -273,24 +273,26 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   section: {
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
   },
   sectionTitle: {
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
     color: colors.text,
-    marginBottom: spacing.md,
+    marginBottom: spacing.base,
   },
   emptyText: {
     fontSize: typography.size.base,
     color: colors.textSecondary,
     textAlign: 'center',
+    paddingVertical: spacing.md,
+    lineHeight: typography.size.base * 1.5,
   },
   workoutItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.base,
+    paddingHorizontal: spacing.lg,
   },
   workoutItemFirst: {
     borderTopLeftRadius: borderRadius.lg,
@@ -311,11 +313,13 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     fontWeight: typography.weight.medium,
     color: colors.text,
+    lineHeight: typography.size.base * 1.4,
   },
   workoutTime: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: spacing.xs,
+    lineHeight: typography.size.sm * 1.4,
   },
   chevron: {
     fontSize: typography.size.xl,
@@ -324,20 +328,24 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.sm,
   },
   stat: {
     alignItems: 'center',
+    paddingHorizontal: spacing.md,
   },
   statValue: {
     fontSize: typography.size.xxl,
     fontWeight: typography.weight.bold,
     color: colors.primary,
+    lineHeight: typography.size.xxl * 1.2,
   },
   statLabel: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
+    lineHeight: typography.size.sm * 1.4,
   },
 });
 
