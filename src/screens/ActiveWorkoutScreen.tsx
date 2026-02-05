@@ -109,16 +109,28 @@ export function ActiveWorkoutScreen() {
     loadHistories();
   }, [activeWorkout?.exerciseIds.length]);
 
-  // Initialize weight/reps from history when selecting exercise
+  // Initialize weight/reps when selecting exercise or after logging a set
+  // Priority: 1) Last set logged THIS session, 2) History from previous sessions
   useEffect(() => {
-    if (selectedExerciseId && exerciseHistories[selectedExerciseId]) {
-      const history = exerciseHistories[selectedExerciseId];
-      if (history.sets.length > 0) {
-        setWeight(history.sets[0].weight);
-        setReps(history.sets[0].reps);
-      }
+    if (!selectedExerciseId) return;
+
+    // First check if there are sets logged for this exercise in the current workout
+    const currentSets = getSetsForExercise(selectedExerciseId);
+    if (currentSets.length > 0) {
+      // Use the most recently logged set from this session
+      const lastSet = currentSets[currentSets.length - 1];
+      setWeight(lastSet.weight);
+      setReps(lastSet.reps);
+      return;
     }
-  }, [selectedExerciseId, exerciseHistories]);
+
+    // Fall back to history from previous sessions
+    const history = exerciseHistories[selectedExerciseId];
+    if (history && history.sets.length > 0) {
+      setWeight(history.sets[0].weight);
+      setReps(history.sets[0].reps);
+    }
+  }, [selectedExerciseId, exerciseHistories, activeWorkout?.sets.length]);
 
   if (!isWorkoutActive || !activeWorkout) {
     return (
