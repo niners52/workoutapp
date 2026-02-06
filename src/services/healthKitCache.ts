@@ -98,8 +98,8 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
  */
 export async function batchFetchHealthData(
   dates: Date[]
-): Promise<Map<string, { sleepHours: number; proteinGrams: number }>> {
-  const result = new Map<string, { sleepHours: number; proteinGrams: number }>();
+): Promise<Map<string, { sleepHours: number; proteinGrams: number; calories: number }>> {
+  const result = new Map<string, { sleepHours: number; proteinGrams: number; calories: number }>();
 
   const chunkSize = 5;
   for (let i = 0; i < dates.length; i += chunkSize) {
@@ -115,9 +115,10 @@ export async function batchFetchHealthData(
           result.set(dateStr, {
             sleepHours: sleep?.totalHours || 0,
             proteinGrams: nutrition?.protein || 0,
+            calories: nutrition?.calories || 0,
           });
         } catch {
-          result.set(dateStr, { sleepHours: 0, proteinGrams: 0 });
+          result.set(dateStr, { sleepHours: 0, proteinGrams: 0, calories: 0 });
         }
       })
     );

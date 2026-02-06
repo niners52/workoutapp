@@ -9,6 +9,7 @@ import { DailyGoals } from '../../types';
 interface StreakCountersProps {
   streaks: StreakCounts;
   dailyGoals: DailyGoals;
+  calorieGoal?: number | null;
 }
 
 type IconType = 'ionicons' | 'material';
@@ -53,7 +54,9 @@ function StreakItem({ iconType, iconName, label, count, highlight }: StreakItemP
   );
 }
 
-export function StreakCounters({ streaks, dailyGoals }: StreakCountersProps) {
+export function StreakCounters({ streaks, dailyGoals, calorieGoal }: StreakCountersProps) {
+  const showCalorieStreak = calorieGoal && calorieGoal > 0;
+
   return (
     <Card style={styles.card}>
       <Text style={styles.title}>Streaks</Text>
@@ -74,6 +77,14 @@ export function StreakCounters({ streaks, dailyGoals }: StreakCountersProps) {
           label="Protein"
           count={streaks.protein}
         />
+        {showCalorieStreak && (
+          <StreakItem
+            iconType="material"
+            iconName="silverware-fork-knife"
+            label="Calories"
+            count={streaks.calories}
+          />
+        )}
         {dailyGoals.trackCreatine && (
           <StreakItem
             iconType="material"

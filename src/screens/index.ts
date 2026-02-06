@@ -24,3 +24,5 @@ export { WorkoutSummaryScreen } from './WorkoutSummaryScreen';
 export { MeasurementHistoryScreen } from './MeasurementHistoryScreen';
 export { AuthScreen } from './AuthScreen';
 export { MigrationScreen } from './MigrationScreen';
+export { AccountabilityPartnerScreen } from './AccountabilityPartnerScreen';
+export { ChallengeScreen } from './ChallengeScreen';

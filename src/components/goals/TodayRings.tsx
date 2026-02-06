@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { ProgressRing } from './ProgressRing';
+import { CalorieRing } from './CalorieRing';
 import { Card } from '../common';
 import { colors, typography, spacing } from '../../theme';
 import { DailyGoalStatus } from '../../services/streaks';
@@ -9,9 +10,10 @@ import { DailyGoals } from '../../types';
 interface TodayRingsProps {
   status: DailyGoalStatus;
   dailyGoals: DailyGoals;
+  calorieTolerancePercent?: number;
 }
 
-export function TodayRings({ status, dailyGoals }: TodayRingsProps) {
+export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }: TodayRingsProps) {
   // Calculate progress percentages
   const sleepProgress = dailyGoals.sleepHours > 0
     ? (status.sleep.hours / dailyGoals.sleepHours) * 100
@@ -35,6 +37,9 @@ export function TodayRings({ status, dailyGoals }: TodayRingsProps) {
   // Only show supplements ring if there are active supplements
   const showSupplementsRing = status.supplements.total > 0;
 
+  // Only show calorie ring if a goal is set
+  const showCalorieRing = status.calories.goal > 0;
+
   return (
     <Card style={styles.card}>
       <Text style={styles.title}>Today's Rings</Text>
@@ -51,6 +56,14 @@ export function TodayRings({ status, dailyGoals }: TodayRingsProps) {
           value={proteinValue}
           color={colors.chartProtein}
         />
+        {showCalorieRing && (
+          <CalorieRing
+            consumed={status.calories.consumed}
+            goal={status.calories.goal}
+            mode={status.calories.mode}
+            tolerancePercent={calorieTolerancePercent}
+          />
+        )}
         {showSupplementsRing && (
           <ProgressRing
             progress={supplementsProgress}

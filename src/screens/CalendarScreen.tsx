@@ -31,6 +31,7 @@ import {
   getUserSettings,
 } from '../services/storage';
 import { batchFetchHealthData } from '../services/healthKitCache';
+import { checkCalorieGoalMet } from '../services/streaks';
 import { Workout, DEFAULT_DAILY_GOALS } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
@@ -85,7 +86,7 @@ export function CalendarScreen() {
 
       for (const day of datesToProcess) {
         const dateStr = format(day, 'yyyy-MM-dd');
-        const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+        const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
 
         let goalsMetCount = 0;
 
@@ -107,6 +108,18 @@ export function CalendarScreen() {
           return format(new Date(w.completedAt), 'yyyy-MM-dd') === dateStr;
         });
         if (hasWorkout) goalsMetCount++;
+
+        // Calories (only if goal is set)
+        const calorieGoal = freshSettings.calorieGoal || 0;
+        if (calorieGoal > 0) {
+          const caloriesMet = checkCalorieGoalMet(
+            health.calories,
+            calorieGoal,
+            freshSettings.nutritionMode,
+            freshSettings.calorieTolerancePercent || 10
+          );
+          if (caloriesMet) goalsMetCount++;
+        }
 
         statusMap[dateStr] = goalsMetCount;
       }
@@ -233,7 +246,10 @@ export function CalendarScreen() {
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>
-                  {Object.values(goalStatusMap).filter(g => g === 4).length}
+                  {Object.values(goalStatusMap).filter(g => {
+                    const maxGoals = (userSettings.calorieGoal && userSettings.calorieGoal > 0) ? 5 : 4;
+                    return g === maxGoals;
+                  }).length}
                 </Text>
                 <Text style={styles.statLabel}>Perfect Days</Text>
               </View>

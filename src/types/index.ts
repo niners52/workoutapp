@@ -495,3 +495,60 @@ export interface BodyMeasurementHistory {
   date: string;
   value: number;
 }
+
+// ============================================
+// Accountability Partner & Challenges
+// ============================================
+
+export type PartnershipStatus = 'pending' | 'active' | 'disconnected';
+export type ChallengeType = 'most_sets' | 'most_workouts';
+export type ChallengeStatus = 'pending' | 'active' | 'completed' | 'declined';
+
+export interface Partnership {
+  id: string;
+  userId1: string;
+  userId2: string;
+  createdAt: string;
+  status: PartnershipStatus;
+  initiatedBy: string;
+}
+
+export interface InviteCode {
+  id: string;
+  userId: string;
+  code: string;
+  createdAt: string;
+  expiresAt: string;
+  usedBy: string | null;
+  usedAt: string | null;
+}
+
+export interface Challenge {
+  id: string;
+  partnershipId: string;
+  type: ChallengeType;
+  startDate: string;
+  endDate: string;
+  status: ChallengeStatus;
+  createdBy: string;
+  createdAt: string;
+  winnerUserId: string | null;
+  user1Score: number;
+  user2Score: number;
+}
+
+export interface PartnerStats {
+  userId: string;
+  displayName: string;
+  workoutStreak: number;
+  calorieStreak: number;
+  lastWorkoutDate: string | null;
+  lastWorkoutType: string | null;
+  weeklySets: number;
+  updatedAt: string;
+}
+
+export const CHALLENGE_TYPE_NAMES: Record<ChallengeType, string> = {
+  most_sets: 'Most Sets',
+  most_workouts: 'Most Workouts',
+};

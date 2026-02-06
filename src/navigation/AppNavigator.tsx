@@ -39,6 +39,8 @@ import {
   MeasurementHistoryScreen,
   AuthScreen,
   MigrationScreen,
+  AccountabilityPartnerScreen,
+  ChallengeScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -475,6 +477,20 @@ export function AppNavigator() {
           component={MeasurementHistoryScreen}
           options={{
             title: 'Measurement History',
+          }}
+        />
+        <Stack.Screen
+          name="AccountabilityPartner"
+          component={AccountabilityPartnerScreen}
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="Challenge"
+          component={ChallengeScreen}
+          options={{
+            headerShown: false,
           }}
         />
       </Stack.Navigator>

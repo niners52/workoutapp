@@ -406,11 +406,24 @@ export function ActiveWorkoutScreen() {
     }
   };
 
-  const handleSwapExercise = (newExercise: Exercise) => {
+  const handleSwapExercise = async (newExercise: Exercise) => {
     if (!exerciseToSwap) return;
     swapExercise(exerciseToSwap.id, newExercise.id);
     setSwapModalVisible(false);
     setExerciseToSwap(null);
+
+    // Load history for the new exercise (swap doesn't change exerciseIds.length,
+    // so the useEffect won't trigger)
+    const lastWorkout = await getLastWorkoutForExercise(newExercise.id);
+    setExerciseHistories(prev => ({
+      ...prev,
+      [newExercise.id]: {
+        exerciseId: newExercise.id,
+        sets: lastWorkout?.sets || [],
+        date: lastWorkout?.date || null,
+      },
+    }));
+
     // Expand the new exercise
     setSelectedExerciseId(newExercise.id);
   };

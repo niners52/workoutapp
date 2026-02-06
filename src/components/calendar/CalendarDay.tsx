@@ -7,15 +7,16 @@ interface CalendarDayProps {
   isCurrentMonth: boolean;
   isToday: boolean;
   isFuture: boolean;
-  goalsMetCount: number; // 0-4 goals met
+  goalsMetCount: number; // 0-5 goals met (5 if calorie goal is set)
   onPress: () => void;
 }
 
-// Color mapping based on goals met
+// Color mapping based on goals met (4 or 5 = perfect depending on calorie goal setting)
 const getGoalBackgroundColor = (goalsMetCount: number, isFuture: boolean): string | undefined => {
   if (isFuture) return undefined;
   switch (goalsMetCount) {
-    case 4: return colors.primary; // Gold - perfect day
+    case 5: return colors.primary; // Gold - perfect day (with calorie goal)
+    case 4: return colors.primary; // Gold - perfect day (without calorie goal) or excellent
     case 3: return 'rgba(255, 197, 47, 0.5)'; // Muted gold (50% opacity)
     case 2: return colors.backgroundTertiary; // Light navy (#1A3A5C)
     case 1: return colors.backgroundSecondary; // Darker navy (#12284B)
@@ -25,7 +26,7 @@ const getGoalBackgroundColor = (goalsMetCount: number, isFuture: boolean): strin
 
 const getGoalTextColor = (goalsMetCount: number, isFuture: boolean): string => {
   if (isFuture) return colors.textTertiary;
-  if (goalsMetCount >= 3) return colors.textOnPrimary; // Dark text on gold
+  if (goalsMetCount >= 3) return colors.textOnPrimary; // Dark text on gold (3, 4, or 5 goals)
   return colors.text; // White text on navy or no background
 };
 

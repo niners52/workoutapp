@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card, ListItem, NumberInput, Button } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
@@ -447,6 +448,20 @@ export function SettingsScreen() {
                 </View>
               </>
             )}
+          </Card>
+        </View>
+
+        {/* Accountability Partner */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Social</Text>
+          <Card padding="none">
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={() => navigation.navigate('AccountabilityPartner')}
+            >
+              <Text style={styles.settingLabel}>Accountability Partner</Text>
+              <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
           </Card>
         </View>
 

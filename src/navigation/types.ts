@@ -34,6 +34,8 @@ export type RootStackParamList = {
     muscleGroupSets: { muscleGroup: string; sets: number; isSecondary: boolean }[];
   };
   MeasurementHistory: { measurementType: string };
+  AccountabilityPartner: undefined;
+  Challenge: { partnershipId: string };
 };
 
 // Bottom Tab Navigator

@@ -41,9 +41,12 @@ import {
   getTemplates,
   getExercises,
 } from '../services/storage';
-import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS } from '../types';
+import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../contexts/AuthContext';
+import { getActivePartnership, getPartnerId, getPartnerStats } from '../services/partnershipService';
+import { getActiveChallenge, getDaysRemaining } from '../services/challengeService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -79,6 +82,12 @@ export function HomeScreen() {
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
+
+  // Challenge widget state
+  const { user } = useAuth();
+  const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null);
+  const [partnership, setPartnership] = useState<Partnership | null>(null);
+  const [partnerName, setPartnerName] = useState<string>('Partner');
 
   // Memoize active routine for render
   const activeRoutine = useMemo(() => getActiveRoutine(), [getActiveRoutine]);
@@ -142,10 +151,32 @@ export function HomeScreen() {
       if (streakCounts) setStreaks(streakCounts);
       if (gridData) setWeeklyGridData(gridData);
       if (summary) setWeeklySummary(summary);
+
+      // Load challenge data (fire-and-forget, don't block main data)
+      try {
+        const activePartnership = await getActivePartnership();
+        if (activePartnership) {
+          setPartnership(activePartnership);
+          const challenge = await getActiveChallenge(activePartnership.id);
+          if (challenge && (challenge.status === 'active' || challenge.status === 'pending')) {
+            setActiveChallenge(challenge);
+            const partnerId = getPartnerId(activePartnership, user?.id || '');
+            const stats = await getPartnerStats(partnerId);
+            setPartnerName(stats?.displayName || 'Partner');
+          } else {
+            setActiveChallenge(null);
+          }
+        } else {
+          setPartnership(null);
+          setActiveChallenge(null);
+        }
+      } catch (e) {
+        console.log('[HomeScreen] Challenge load error:', e);
+      }
     } catch (error) {
       console.error('[HomeScreen] Failed to load:', error);
     }
-  }, []);
+  }, [user?.id]);
 
   // Load data on screen focus - stable deps, no re-render loop
   useFocusEffect(
@@ -221,6 +252,7 @@ export function HomeScreen() {
           <TodayRings
             status={todayStatus}
             dailyGoals={dailyGoals}
+            calorieTolerancePercent={userSettings.calorieTolerancePercent || 10}
           />
         ) : (
           <Card style={styles.loadingCard}>
@@ -233,11 +265,52 @@ export function HomeScreen() {
           <StreakCounters
             streaks={streaks}
             dailyGoals={dailyGoals}
+            calorieGoal={userSettings.calorieGoal}
           />
         ) : (
           <Card style={styles.loadingCard}>
             <Text style={styles.loadingText}>Loading streaks...</Text>
           </Card>
+        )}
+
+        {/* Active Challenge Widget */}
+        {activeChallenge && activeChallenge.status === 'active' && partnership && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Challenge', { partnershipId: partnership.id })}
+            activeOpacity={0.7}
+          >
+            <Card style={styles.challengeWidget}>
+              <View style={styles.challengeWidgetHeader}>
+                <MaterialCommunityIcons name="trophy" size={20} color={colors.primary} />
+                <Text style={styles.challengeWidgetTitle}>
+                  {CHALLENGE_TYPE_NAMES[activeChallenge.type]}
+                </Text>
+                <View style={styles.challengeDaysLeft}>
+                  <Text style={styles.challengeDaysNumber}>{getDaysRemaining(activeChallenge)}</Text>
+                  <Text style={styles.challengeDaysLabel}>days</Text>
+                </View>
+              </View>
+              <View style={styles.challengeWidgetScores}>
+                <View style={styles.challengeWidgetScore}>
+                  <Text style={styles.challengeWidgetScoreLabel}>You</Text>
+                  <Text style={styles.challengeWidgetScoreValue}>
+                    {partnership.userId1 === user?.id
+                      ? activeChallenge.user1Score
+                      : activeChallenge.user2Score}
+                  </Text>
+                </View>
+                <Text style={styles.challengeWidgetVs}>vs</Text>
+                <View style={styles.challengeWidgetScore}>
+                  <Text style={styles.challengeWidgetScoreLabel}>{partnerName}</Text>
+                  <Text style={styles.challengeWidgetScoreValue}>
+                    {partnership.userId1 === user?.id
+                      ? activeChallenge.user2Score
+                      : activeChallenge.user1Score}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          </TouchableOpacity>
         )}
 
         {/* Weekly Grid - shows when data arrives */}
@@ -572,6 +645,67 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
+  },
+  // Challenge Widget styles
+  challengeWidget: {
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  challengeWidgetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  challengeWidgetTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  challengeDaysLeft: {
+    alignItems: 'center',
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+  },
+  challengeDaysNumber: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.bold,
+    color: colors.primary,
+  },
+  challengeDaysLabel: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+  },
+  challengeWidgetScores: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+  },
+  challengeWidgetScore: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  challengeWidgetScoreLabel: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  challengeWidgetScoreValue: {
+    fontSize: typography.size.xxl,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+  },
+  challengeWidgetVs: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+    fontWeight: typography.weight.semibold,
+    paddingHorizontal: spacing.md,
   },
 });
 

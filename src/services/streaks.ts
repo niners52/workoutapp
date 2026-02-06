@@ -11,6 +11,7 @@ import {
   SupplementIntake,
   Supplement,
   Routine,
+  NutritionMode,
   DEFAULT_DAILY_GOALS,
 } from '../types';
 
@@ -24,6 +25,12 @@ export interface DailyGoalStatus {
   protein: {
     grams: number;
     met: boolean;
+  };
+  calories: {
+    consumed: number;
+    goal: number;
+    met: boolean;
+    mode: NutritionMode;
   };
   supplements: {
     taken: number;
@@ -40,6 +47,7 @@ export interface DailyGoalStatus {
 export interface StreakCounts {
   sleep: number;
   protein: number;
+  calories: number;
   creatine: number; // actually supplements - kept for backward compat
   training: number;
   perfect: number;
@@ -58,6 +66,33 @@ export interface WeeklySummary {
 // ============================================================
 
 /**
+ * Check if calorie goal is met based on nutrition mode.
+ * - Bulk: must eat at or above goal
+ * - Cut: must stay at or below goal
+ * - Recomp: must stay within tolerance window
+ */
+export function checkCalorieGoalMet(
+  consumed: number,
+  goal: number,
+  mode: NutritionMode,
+  tolerancePercent: number
+): boolean {
+  if (!goal || goal <= 0) return true; // No goal = always met
+
+  switch (mode) {
+    case 'bulk':
+      return consumed >= goal;
+    case 'cut':
+      return consumed <= goal;
+    case 'recomp':
+      const tolerance = goal * (tolerancePercent / 100);
+      return consumed >= (goal - tolerance) && consumed <= (goal + tolerance);
+    default:
+      return false;
+  }
+}
+
+/**
  * Calculate daily goal status using pre-fetched data.
  * This is synchronous - all data must be provided.
  */
@@ -66,6 +101,7 @@ function calculateDailyStatus(
   settings: UserSettings,
   sleepHours: number,
   proteinGrams: number,
+  calories: number,
   workouts: Workout[],
   supplementIntakes: SupplementIntake[],
   activeSupplements: Supplement[]
@@ -75,6 +111,12 @@ function calculateDailyStatus(
 
   const sleepMet = sleepHours >= dailyGoals.sleepHours;
   const proteinMet = proteinGrams >= dailyGoals.proteinGrams;
+
+  // Calorie goal based on nutrition mode
+  const calorieGoal = settings.calorieGoal || 0;
+  const nutritionMode = settings.nutritionMode || 'recomp';
+  const tolerancePercent = settings.calorieTolerancePercent || 10;
+  const caloriesMet = checkCalorieGoalMet(calories, calorieGoal, nutritionMode, tolerancePercent);
 
   // Filter intakes for this specific date
   const dayIntakes = supplementIntakes.filter(i => i.date === dateStr);
@@ -92,9 +134,11 @@ function calculateDailyStatus(
     });
   }
 
+  // Perfect day requires all goals met (calories only if goal is set)
   const perfectDay =
     sleepMet &&
     proteinMet &&
+    (calorieGoal <= 0 || caloriesMet) &&
     (totalSupplements === 0 || allSupplementsTaken) &&
     (dailyGoals.trackTraining === false || trainingCompleted);
 
@@ -102,6 +146,7 @@ function calculateDailyStatus(
     date: dateStr,
     sleep: { hours: sleepHours, met: sleepMet },
     protein: { grams: proteinGrams, met: proteinMet },
+    calories: { consumed: calories, goal: calorieGoal, met: caloriesMet, mode: nutritionMode },
     supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken },
     training: { completed: trainingCompleted },
     perfectDay,
@@ -134,10 +179,10 @@ export async function getTodayGoalStatus(
   const today = new Date();
   const healthData = await batchFetchHealthData([today]);
   const dateStr = format(today, 'yyyy-MM-dd');
-  const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+  const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
 
   return calculateDailyStatus(
-    today, settings, health.sleepHours, health.proteinGrams,
+    today, settings, health.sleepHours, health.proteinGrams, health.calories,
     workouts, supplementIntakes, activeSupplements
   );
 }
@@ -169,18 +214,22 @@ export async function calculateStreaks(
   // Now calculate streaks synchronously using pre-fetched data
   let sleepStreak = 0, sleepBroken = false;
   let proteinStreak = 0, proteinBroken = false;
+  let calorieStreak = 0, calorieBroken = false;
   let supplementStreak = 0, supplementBroken = false;
   let trainingStreak = 0, trainingBroken = false;
   let perfectStreak = 0, perfectBroken = false;
+
+  // Only track calorie streak if goal is set
+  const hasCalorieGoal = (settings.calorieGoal || 0) > 0;
 
   for (let i = 0; i <= maxLookback; i++) {
     const date = subDays(today, i);
     const dateStr = format(date, 'yyyy-MM-dd');
     const isCurrentDay = i === 0;
-    const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+    const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
 
     const status = calculateDailyStatus(
-      date, settings, health.sleepHours, health.proteinGrams,
+      date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, supplementIntakes, activeSupplements
     );
 
@@ -199,6 +248,15 @@ export async function calculateStreaks(
         proteinStreak++;
       } else if (!isCurrentDay) {
         proteinBroken = true;
+      }
+    }
+
+    // Calories - today might not be complete yet, don't break on today
+    if (hasCalorieGoal && !calorieBroken) {
+      if (status.calories.met) {
+        calorieStreak++;
+      } else if (!isCurrentDay) {
+        calorieBroken = true;
       }
     }
 
@@ -235,7 +293,9 @@ export async function calculateStreaks(
     }
 
     // All broken = stop early
-    if (sleepBroken && proteinBroken && supplementBroken && trainingBroken && perfectBroken) {
+    const allBroken = sleepBroken && proteinBroken && supplementBroken && trainingBroken && perfectBroken
+      && (!hasCalorieGoal || calorieBroken);
+    if (allBroken) {
       break;
     }
   }
@@ -243,6 +303,7 @@ export async function calculateStreaks(
   return {
     sleep: sleepStreak,
     protein: proteinStreak,
+    calories: calorieStreak,
     creatine: supplementStreak,
     training: trainingStreak,
     perfect: perfectStreak,
@@ -293,14 +354,15 @@ export async function getWeeklyGridData(
         date: dateStr,
         sleep: { hours: 0, met: false },
         protein: { grams: 0, met: false },
+        calories: { consumed: 0, goal: settings.calorieGoal || 0, met: false, mode: settings.nutritionMode || 'recomp' },
         supplements: { taken: 0, total: 0, allTaken: false },
         training: { completed: false },
         perfectDay: false,
       });
     } else {
-      const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+      const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
       days.push(calculateDailyStatus(
-        date, settings, health.sleepHours, health.proteinGrams,
+        date, settings, health.sleepHours, health.proteinGrams, health.calories,
         workouts, supplementIntakes, activeSupplements
       ));
     }
@@ -342,9 +404,9 @@ export async function getWeeklySummary(
 
   for (const date of datesToFetch) {
     const dateStr = format(date, 'yyyy-MM-dd');
-    const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+    const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
     const status = calculateDailyStatus(
-      date, settings, health.sleepHours, health.proteinGrams,
+      date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, supplementIntakes, activeSupplements
     );
 
@@ -377,7 +439,7 @@ export async function getDailyGoalStatus(
 ): Promise<DailyGoalStatus> {
   const healthData = await batchFetchHealthData([date]);
   const dateStr = format(date, 'yyyy-MM-dd');
-  const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+  const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
 
   // Fetch from storage if not provided
   let ws = workouts;
@@ -396,7 +458,7 @@ export async function getDailyGoalStatus(
   }
 
   return calculateDailyStatus(
-    date, settings, health.sleepHours, health.proteinGrams,
+    date, settings, health.sleepHours, health.proteinGrams, health.calories,
     ws, intakes, supps
   );
 }
@@ -431,9 +493,9 @@ export async function getDailyGoalStatusRange(
 
   return dates.map(date => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0 };
+    const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
     return calculateDailyStatus(
-      date, settings, health.sleepHours, health.proteinGrams,
+      date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, allIntakesCombined, activeSupps
     );
   });

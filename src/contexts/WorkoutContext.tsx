@@ -53,6 +53,7 @@ import {
   syncSet,
   syncDeleteSet,
 } from '../services/syncService';
+import { syncPartnerStatsAfterWorkout } from '../services/partnershipService';
 
 interface ActiveWorkoutState {
   workout: Workout;
@@ -389,6 +390,13 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     await updateWorkout(completedWorkout);
     // Fire-and-forget sync to cloud
     syncWorkout(completedWorkout).catch(e => console.log('Sync error:', e));
+
+    // Fire-and-forget partner stats sync
+    const templateType = activeWorkout.workout.templateId
+      ? (await getTemplateById(activeWorkout.workout.templateId))?.name || 'Workout'
+      : 'Workout';
+    syncPartnerStatsAfterWorkout(templateType, activeWorkout.sets.length)
+      .catch(e => console.log('Partner stats sync error:', e));
 
     // Save to Apple Health
     try {
