@@ -20,6 +20,7 @@ import {
   ANALYTICS_CATEGORIES,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
+import { formatVolume } from '../services/units';
 
 type WorkoutSummaryRouteProp = RouteProp<RootStackParamList, 'WorkoutSummary'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -84,6 +85,13 @@ export function WorkoutSummaryScreen() {
     .filter(mg => !mg.isSecondary)
     .reduce((sum, mg) => sum + mg.sets, 0);
 
+  // Calculate total volume (weight × reps for all sets)
+  const totalVolume = workoutSets.reduce((sum, set) => {
+    const weight = set.weight || 0;
+    const reps = set.reps || 0;
+    return sum + (weight * reps);
+  }, 0);
+
   const handleDone = () => {
     navigation.reset({
       index: 0,
@@ -114,6 +122,17 @@ export function WorkoutSummaryScreen() {
             <Text style={styles.statLabel}>Total Sets</Text>
           </Card>
         </View>
+
+        {/* Volume */}
+        {totalVolume > 0 && (
+          <Card style={styles.volumeCard}>
+            <Ionicons name="barbell-outline" size={24} color={colors.primary} />
+            <View style={styles.volumeInfo}>
+              <Text style={styles.volumeValue}>{formatVolume(totalVolume, units)}</Text>
+              <Text style={styles.volumeLabel}>Total Volume</Text>
+            </View>
+          </Card>
+        )}
 
         {/* Muscle Groups Breakdown */}
         <View style={styles.section}>
@@ -212,7 +231,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
   },
   statCard: {
     flex: 1,
@@ -227,6 +246,24 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  volumeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  volumeInfo: {
+    flex: 1,
+  },
+  volumeValue: {
+    fontSize: typography.size.xl,
+    fontWeight: typography.weight.bold,
+    color: colors.primary,
+  },
+  volumeLabel: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
   },
   section: {
     marginBottom: spacing.lg,

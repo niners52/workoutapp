@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,14 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, startOfWeek, endOfWeek } from 'date-fns';
+import { format, startOfWeek, endOfWeek, subWeeks, getISOWeek, getYear } from 'date-fns';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, ProgressBar } from '../components/common';
 import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../components/goals';
 import { SupplementCheckbox } from '../components/supplements';
 import { useWorkoutBarPadding } from '../components/workout';
+import { WeeklySummaryModal } from '../components/WeeklySummaryModal';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import {
@@ -40,6 +41,10 @@ import {
   getRoutines,
   getTemplates,
   getExercises,
+  getLastAppOpened,
+  setLastAppOpened,
+  getWeeklySummaryDismissed,
+  setWeeklySummaryDismissed,
 } from '../services/storage';
 import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
@@ -89,12 +94,72 @@ export function HomeScreen() {
   const [partnership, setPartnership] = useState<Partnership | null>(null);
   const [partnerName, setPartnerName] = useState<string>('Partner');
 
+  // Weekly summary modal state
+  const [showWeeklySummary, setShowWeeklySummary] = useState(false);
+  const [weeklySummaryWeekStart, setWeeklySummaryWeekStart] = useState<Date | null>(null);
+  const hasCheckedWeeklySummary = useRef(false);
+
   // Memoize active routine for render
   const activeRoutine = useMemo(() => getActiveRoutine(), [getActiveRoutine]);
 
   // Fallbacks for settings that might not have been migrated
   const dailyGoals = userSettings.dailyGoals || DEFAULT_DAILY_GOALS;
   const weeklyGoals = userSettings.weeklyGoals || DEFAULT_WEEKLY_GOALS;
+
+  // Check if we should show weekly summary (once per app session)
+  useEffect(() => {
+    if (hasCheckedWeeklySummary.current) return;
+    hasCheckedWeeklySummary.current = true;
+
+    const checkWeeklySummary = async () => {
+      try {
+        const today = new Date();
+        const todayStr = format(today, 'yyyy-MM-dd');
+        const weekStartDay = userSettings?.weekStartDay || 'sunday';
+        const weekStartsOn = weekStartDay === 'monday' ? 1 : 0;
+
+        // Get the start of last week (the week we want to summarize)
+        const thisWeekStart = startOfWeek(today, { weekStartsOn });
+        const lastWeekStart = subWeeks(thisWeekStart, 1);
+
+        // Create a unique identifier for last week (YYYY-WW format)
+        const lastWeekId = `${getYear(lastWeekStart)}-${String(getISOWeek(lastWeekStart)).padStart(2, '0')}`;
+
+        // Check if user already dismissed this week's summary
+        const dismissedWeek = await getWeeklySummaryDismissed();
+        if (dismissedWeek === lastWeekId) {
+          return; // Already dismissed
+        }
+
+        // Check if this is the first day of the new week (or within first 2 days)
+        const daysSinceWeekStart = Math.floor(
+          (today.getTime() - thisWeekStart.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        if (daysSinceWeekStart > 1) {
+          return; // Only show on first 2 days of the week
+        }
+
+        // Show the weekly summary for last week
+        setWeeklySummaryWeekStart(lastWeekStart);
+        setShowWeeklySummary(true);
+
+        // Update last app opened
+        await setLastAppOpened(todayStr);
+      } catch (error) {
+        console.error('[HomeScreen] Error checking weekly summary:', error);
+      }
+    };
+
+    checkWeeklySummary();
+  }, [userSettings?.weekStartDay]);
+
+  const handleDismissWeeklySummary = useCallback(async () => {
+    setShowWeeklySummary(false);
+    if (weeklySummaryWeekStart) {
+      const weekId = `${getYear(weeklySummaryWeekStart)}-${String(getISOWeek(weeklySummaryWeekStart)).padStart(2, '0')}`;
+      await setWeeklySummaryDismissed(weekId);
+    }
+  }, [weeklySummaryWeekStart]);
 
   /**
    * Load all computed data.
@@ -476,6 +541,15 @@ export function HomeScreen() {
           fullWidth
         />
       </View>
+
+      {/* Weekly Summary Modal */}
+      {weeklySummaryWeekStart && (
+        <WeeklySummaryModal
+          visible={showWeeklySummary}
+          onDismiss={handleDismissWeeklySummary}
+          weekStart={weeklySummaryWeekStart}
+        />
+      )}
     </SafeAreaView>
   );
 }

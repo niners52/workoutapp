@@ -239,3 +239,43 @@ export function prEmoji(type: PersonalRecord['type']): string {
     default: return '🎉';
   }
 }
+
+/**
+ * Get all PRs that were set within a date range.
+ * Returns PRs where the PR-setting set occurred in the date range.
+ */
+export async function getExercisePRsInDateRange(
+  exercises: { id: string }[],
+  allSets: WorkoutSet[],
+  startDate: Date,
+  endDate: Date
+): Promise<PersonalRecord[]> {
+  const prsInRange: PersonalRecord[] = [];
+
+  // Build workout dates map
+  const workoutDates = new Map<string, string>();
+  for (const set of allSets) {
+    if (set.loggedAt && !workoutDates.has(set.workoutId)) {
+      workoutDates.set(set.workoutId, set.loggedAt);
+    }
+  }
+
+  // For each exercise, calculate PRs and check if they fall in the date range
+  for (const exercise of exercises) {
+    const prs = calculateExercisePRs(exercise.id, allSets, workoutDates);
+
+    const checkPR = (pr: PersonalRecord | null) => {
+      if (!pr || !pr.date) return;
+      const prDate = new Date(pr.date);
+      if (prDate >= startDate && prDate <= endDate) {
+        prsInRange.push(pr);
+      }
+    };
+
+    checkPR(prs.weightPR);
+    checkPR(prs.e1rmPR);
+    // Skip rep and volume PRs to avoid clutter - focus on weight and e1RM
+  }
+
+  return prsInRange;
+}

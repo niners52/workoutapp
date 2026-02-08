@@ -15,6 +15,7 @@ import { format, subDays } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { Card } from '../common';
+import { BodyOutline } from './BodyOutline';
 import { useData } from '../../contexts/DataContext';
 import {
   BODY_MEASUREMENT_TYPES,
@@ -260,6 +261,26 @@ export function BodyMeasurementsSection({ onNavigateToHistory }: Props) {
           <Text style={styles.measureAllText}>Measure All</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Body Outline Visualization */}
+      <Card style={styles.outlineCard}>
+        <BodyOutline
+          measurements={data.latest}
+          units={userSettings.units}
+          onMeasurementPress={(key) => {
+            const type = BODY_MEASUREMENT_TYPES.find(t => t.key === key);
+            if (type) {
+              const hasData = data.latest[key]?.value !== undefined;
+              if (hasData) {
+                onNavigateToHistory(key);
+              } else {
+                openQuickLog(type);
+              }
+            }
+          }}
+          trends={data.trends}
+        />
+      </Card>
 
       {/* Measurement Groups */}
       {groups.map((group) => (
@@ -544,6 +565,10 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.background,
     fontWeight: typography.weight.medium,
+  },
+  outlineCard: {
+    marginBottom: spacing.lg,
+    padding: spacing.sm,
   },
   group: {
     marginBottom: spacing.md,

@@ -36,6 +36,8 @@ const STORAGE_KEYS = {
   INITIALIZED: '@workout_tracker/initialized',
   MIGRATION_VERSION: '@workout_tracker/migration_version',
   SETGRAPH_MAPPINGS: '@workout_tracker/setgraph_mappings',
+  LAST_APP_OPENED: '@workout_tracker/last_app_opened',
+  WEEKLY_SUMMARY_DISMISSED: '@workout_tracker/weekly_summary_dismissed',
 } as const;
 
 // Current migration version
@@ -1227,4 +1229,52 @@ export async function getTodayManualCalories(): Promise<number | null> {
   const today = new Date().toISOString().split('T')[0];
   const entry = await getManualCalories(today);
   return entry?.calories ?? null;
+}
+
+// ==================== WEEKLY SUMMARY TRACKING ====================
+
+/**
+ * Get the last time the app was opened
+ */
+export async function getLastAppOpened(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(STORAGE_KEYS.LAST_APP_OPENED);
+  } catch (error) {
+    console.error('Error reading last app opened:', error);
+    return null;
+  }
+}
+
+/**
+ * Update the last app opened timestamp
+ */
+export async function setLastAppOpened(date: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.LAST_APP_OPENED, date);
+  } catch (error) {
+    console.error('Error writing last app opened:', error);
+  }
+}
+
+/**
+ * Get the week that was dismissed for weekly summary (YYYY-WW format)
+ */
+export async function getWeeklySummaryDismissed(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(STORAGE_KEYS.WEEKLY_SUMMARY_DISMISSED);
+  } catch (error) {
+    console.error('Error reading weekly summary dismissed:', error);
+    return null;
+  }
+}
+
+/**
+ * Set the week as dismissed for weekly summary (YYYY-WW format)
+ */
+export async function setWeeklySummaryDismissed(weekId: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.WEEKLY_SUMMARY_DISMISSED, weekId);
+  } catch (error) {
+    console.error('Error writing weekly summary dismissed:', error);
+  }
 }

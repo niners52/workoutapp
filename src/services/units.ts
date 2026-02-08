@@ -22,9 +22,9 @@ const CM_TO_INCHES = 0.393701;
  */
 export function displayWeight(lbs: number, units: UnitSystem): number {
   if (units === 'metric') {
-    return Math.round(lbs * LBS_TO_KG * 10) / 10;
+    return Math.round(lbs * LBS_TO_KG * 100) / 100;
   }
-  return lbs;
+  return Math.round(lbs * 100) / 100;
 }
 
 /**
@@ -32,7 +32,7 @@ export function displayWeight(lbs: number, units: UnitSystem): number {
  */
 export function inputToLbs(value: number, units: UnitSystem): number {
   if (units === 'metric') {
-    return Math.round(value * KG_TO_LBS * 10) / 10;
+    return Math.round(value * KG_TO_LBS * 100) / 100;
   }
   return value;
 }
@@ -43,9 +43,9 @@ export function inputToLbs(value: number, units: UnitSystem): number {
  */
 export function displayDistance(miles: number, units: UnitSystem): number {
   if (units === 'metric') {
-    return Math.round(miles * MILES_TO_KM * 10) / 10;
+    return Math.round(miles * MILES_TO_KM * 100) / 100;
   }
-  return miles;
+  return Math.round(miles * 100) / 100;
 }
 
 /**
@@ -53,7 +53,7 @@ export function displayDistance(miles: number, units: UnitSystem): number {
  */
 export function inputToMiles(value: number, units: UnitSystem): number {
   if (units === 'metric') {
-    return Math.round(value * KM_TO_MILES * 10) / 10;
+    return Math.round(value * KM_TO_MILES * 100) / 100;
   }
   return value;
 }
@@ -79,9 +79,8 @@ export function distanceUnit(units: UnitSystem): string {
 export function formatWeight(lbs: number, units: UnitSystem): string {
   const value = displayWeight(lbs, units);
   const unit = weightUnit(units);
-  // Remove unnecessary decimal for whole numbers
-  const formatted = value % 1 === 0 ? value.toString() : value.toFixed(1);
-  return `${formatted} ${unit}`;
+  // Always show 2 decimal places for consistency
+  return `${value.toFixed(2)} ${unit}`;
 }
 
 /**
@@ -90,7 +89,7 @@ export function formatWeight(lbs: number, units: UnitSystem): string {
  */
 export function formatWeightValue(lbs: number, units: UnitSystem): string {
   const value = displayWeight(lbs, units);
-  return value % 1 === 0 ? value.toString() : value.toFixed(1);
+  return value.toFixed(2);
 }
 
 /**
@@ -152,14 +151,14 @@ export function feetAndInchesToInches(feet: number, inches: number): number {
  * Convert inches to centimeters.
  */
 export function inchesToCm(inches: number): number {
-  return Math.round(inches * INCHES_TO_CM * 10) / 10;
+  return Math.round(inches * INCHES_TO_CM * 100) / 100;
 }
 
 /**
  * Convert centimeters to inches.
  */
 export function cmToInches(cm: number): number {
-  return Math.round(cm * CM_TO_INCHES * 10) / 10;
+  return Math.round(cm * CM_TO_INCHES * 100) / 100;
 }
 
 /**
@@ -215,9 +214,9 @@ export function heightUnit(units: UnitSystem): string {
  */
 export function displayMeasurement(inches: number, units: UnitSystem): number {
   if (units === 'metric') {
-    return Math.round(inches * INCHES_TO_CM * 10) / 10;
+    return Math.round(inches * INCHES_TO_CM * 100) / 100;
   }
-  return Math.round(inches * 10) / 10;
+  return Math.round(inches * 100) / 100;
 }
 
 /**
@@ -225,7 +224,7 @@ export function displayMeasurement(inches: number, units: UnitSystem): number {
  */
 export function measurementInputToInches(value: number, units: UnitSystem): number {
   if (units === 'metric') {
-    return Math.round(value * CM_TO_INCHES * 10) / 10;
+    return Math.round(value * CM_TO_INCHES * 100) / 100;
   }
   return value;
 }
@@ -243,5 +242,22 @@ export function measurementUnit(units: UnitSystem): string {
  */
 export function formatMeasurement(inches: number, units: UnitSystem): string {
   const value = displayMeasurement(inches, units);
-  return `${value} ${measurementUnit(units)}`;
+  return `${value.toFixed(2)} ${measurementUnit(units)}`;
+}
+
+// ============== VOLUME FORMATTING ==============
+
+/**
+ * Format volume (weight × reps total) for display.
+ * Volume is stored in lbs, converted for metric.
+ * e.g., "12,450 lbs" or "5,647 kg"
+ */
+export function formatVolume(volumeLbs: number, units: UnitSystem): string {
+  let value: number;
+  if (units === 'metric') {
+    value = Math.round(volumeLbs * LBS_TO_KG);
+  } else {
+    value = Math.round(volumeLbs);
+  }
+  return `${value.toLocaleString()} ${weightUnit(units)}`;
 }
