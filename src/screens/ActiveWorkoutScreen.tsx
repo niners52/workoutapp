@@ -283,11 +283,17 @@ export function ActiveWorkoutScreen() {
           return b.sets - a.sets;
         });
 
+      // Track skipped exercises (template exercises with zero logged sets)
+      const loggedExerciseIds = new Set(activeWorkout.sets.map(s => s.exerciseId));
+      const skippedExerciseIds = activeWorkout.workout.templateId
+        ? activeWorkout.exerciseIds.filter(id => !loggedExerciseIds.has(id))
+        : [];
+
       const startedAt = activeWorkout.workout.startedAt;
       const completedAt = new Date().toISOString();
       const totalSets = activeWorkout.sets.length;
 
-      await finishWorkout();
+      await finishWorkout(skippedExerciseIds);
 
       navigation.replace('WorkoutSummary', {
         workoutId: activeWorkout.workout.id,

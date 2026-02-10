@@ -182,6 +182,7 @@ export async function syncWorkout(workout: Workout): Promise<void> {
       template_id: workout.templateId || null,
       started_at: workout.startedAt,
       completed_at: workout.completedAt || null,
+      skipped_exercise_ids: workout.skippedExerciseIds || [],
     };
 
     const { error } = await supabase
@@ -718,6 +719,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       templateId: row.template_id,
       startedAt: row.started_at,
       completedAt: row.completed_at,
+      ...(row.skipped_exercise_ids?.length ? { skippedExerciseIds: row.skipped_exercise_ids } : {}),
     }));
 
     const sets: WorkoutSet[] = (setsResult.data || []).map(row => ({

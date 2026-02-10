@@ -27,6 +27,10 @@ import {
   resetStorage,
   validateBackupData,
   restoreFromBackup,
+  getIncompleteWorkouts,
+  updateWorkout,
+  deleteWorkout,
+  clearActiveWorkoutState,
 } from '../services/storage';
 import { clearHealthKitCache } from '../services/healthKitCache';
 import { resetMigration } from '../services/cloudSync';
@@ -42,6 +46,7 @@ import {
   WeekStartDay,
   UnitSystem,
   WorkoutLocation,
+  Workout,
   Supplement,
   ALL_TRACKABLE_MUSCLE_GROUPS,
   MUSCLE_GROUP_DISPLAY_NAMES,
@@ -69,6 +74,7 @@ export function SettingsScreen() {
     addSupplement,
     updateSupplement,
     deleteSupplement,
+    templates,
   } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
 
@@ -88,6 +94,15 @@ export function SettingsScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAuthenticatedForSync, setIsAuthenticatedForSync] = useState(false);
 
+  // Interrupted workouts state
+  const [incompleteWorkouts, setIncompleteWorkouts] = useState<Workout[]>([]);
+  const [showIncomplete, setShowIncomplete] = useState(false);
+
+  const loadIncompleteWorkouts = useCallback(async () => {
+    const incomplete = await getIncompleteWorkouts();
+    setIncompleteWorkouts(incomplete);
+  }, []);
+
   const loadSyncStatus = useCallback(async () => {
     const [authenticated, lastSync, pending] = await Promise.all([
       checkIsAuthenticated(),
@@ -101,7 +116,8 @@ export function SettingsScreen() {
 
   useEffect(() => {
     loadSyncStatus();
-  }, [loadSyncStatus]);
+    loadIncompleteWorkouts();
+  }, [loadSyncStatus, loadIncompleteWorkouts]);
 
   const handleSyncNow = async () => {
     setIsSyncing(true);
@@ -587,6 +603,44 @@ export function SettingsScreen() {
               isLast
             />
           </Card>
+        </View>
+
+        {/* Progress Photos */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Photos</Text>
+          <Card padding="none">
+            <ListItem
+              title="Progress Photos"
+              subtitle="Track physique changes over time"
+              onPress={() => navigation.navigate('ProgressPhotos')}
+              showChevron
+              isFirst
+            />
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <Text style={styles.settingLabel}>Lock with Face ID</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.progressPhotosLocked && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    progressPhotosLocked: !userSettings.progressPhotosLocked,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.progressPhotosLocked && styles.toggleTextActive,
+                ]}>
+                  {userSettings.progressPhotosLocked ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+          <Text style={styles.hint}>
+            Require Face ID or passcode to view progress photos
+          </Text>
         </View>
 
         {/* Daily Goals */}
@@ -1149,6 +1203,155 @@ export function SettingsScreen() {
           </Card>
         </View>
 
+        {/* Interrupted Workouts */}
+        {incompleteWorkouts.length > 0 && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => setShowIncomplete(!showIncomplete)}
+            >
+              <Text style={styles.sectionTitle}>
+                Interrupted Workouts ({incompleteWorkouts.length})
+              </Text>
+              <Text style={styles.expandIcon}>{showIncomplete ? '−' : '+'}</Text>
+            </TouchableOpacity>
+
+            {showIncomplete && (
+              <>
+                <Card padding="none">
+                  {incompleteWorkouts.map((w, index) => {
+                    const templateName = w.templateId
+                      ? templates.find(t => t.id === w.templateId)?.name || 'Custom Workout'
+                      : 'Custom Workout';
+                    return (
+                      <View
+                        key={w.id}
+                        style={[
+                          styles.locationRow,
+                          index === incompleteWorkouts.length - 1 && styles.locationRowLast,
+                        ]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.locationName}>{templateName}</Text>
+                          <Text style={styles.hint}>
+                            {format(new Date(w.startedAt), 'MMM d, yyyy h:mm a')}
+                          </Text>
+                        </View>
+                        <View style={styles.locationActions}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              Alert.alert(
+                                'Mark as Complete',
+                                'Set completion time to start time?',
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Complete',
+                                    onPress: async () => {
+                                      await updateWorkout({ ...w, completedAt: w.startedAt });
+                                      await clearActiveWorkoutState();
+                                      await refreshAll();
+                                      loadIncompleteWorkouts();
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                            style={styles.locationAction}
+                          >
+                            <Text style={styles.locationActionText}>Complete</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              Alert.alert(
+                                'Delete Workout',
+                                'Delete this workout and all its sets?',
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Delete',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      await deleteWorkout(w.id);
+                                      await clearActiveWorkoutState();
+                                      await refreshAll();
+                                      loadIncompleteWorkouts();
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                            style={styles.locationAction}
+                          >
+                            <Text style={[styles.locationActionText, styles.locationActionDelete]}>
+                              Delete
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </Card>
+                <View style={styles.incompleteActions}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        'Complete All',
+                        `Mark all ${incompleteWorkouts.length} interrupted workouts as complete?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Complete All',
+                            onPress: async () => {
+                              for (const w of incompleteWorkouts) {
+                                await updateWorkout({ ...w, completedAt: w.startedAt });
+                              }
+                              await clearActiveWorkoutState();
+                              await refreshAll();
+                              loadIncompleteWorkouts();
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                    style={styles.incompleteAction}
+                  >
+                    <Text style={styles.locationActionText}>Complete All</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        'Delete All',
+                        `Permanently delete all ${incompleteWorkouts.length} interrupted workouts and their sets?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete All',
+                            style: 'destructive',
+                            onPress: async () => {
+                              for (const w of incompleteWorkouts) {
+                                await deleteWorkout(w.id);
+                              }
+                              await clearActiveWorkoutState();
+                              await refreshAll();
+                              loadIncompleteWorkouts();
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                    style={styles.incompleteAction}
+                  >
+                    <Text style={[styles.locationActionText, styles.locationActionDelete]}>
+                      Delete All
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        )}
+
         {/* Danger Zone */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger Zone</Text>
@@ -1471,6 +1674,16 @@ const styles = StyleSheet.create({
   },
   nutritionModeSelected: {
     backgroundColor: colors.backgroundTertiary,
+  },
+  incompleteActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.md,
+  },
+  incompleteAction: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
 });
 

@@ -27,6 +27,7 @@ import {
   getRoutines,
   getBodyMeasurements,
   restoreFromBackup,
+  getActiveWorkoutState,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
 import { supabase } from '../services/supabase';
@@ -185,8 +186,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // Get all workouts
       const allWorkouts = await getWorkouts();
 
+      // Exclude the currently active workout (if any) from backfill
+      const activeState = await getActiveWorkoutState();
+      const activeWorkoutId = activeState?.workout.id;
+
       // Find workouts that need fixing: have startedAt but no completedAt
-      const workoutsToFix = allWorkouts.filter(w => w.startedAt && !w.completedAt);
+      const workoutsToFix = allWorkouts.filter(
+        w => w.startedAt && !w.completedAt && w.id !== activeWorkoutId
+      );
 
       if (workoutsToFix.length === 0) {
         console.log('No workouts need completedAt backfill');

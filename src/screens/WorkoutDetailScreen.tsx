@@ -5,16 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
 import { WorkoutShareButton } from '../components/WorkoutShareCard';
 import { useData } from '../contexts/DataContext';
-import { getSetsByWorkoutId } from '../services/storage';
+import { getSetsByWorkoutId, updateWorkout, deleteWorkout, clearActiveWorkoutState } from '../services/storage';
 import { WorkoutSet, PrimaryMuscleGroup } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeightValue } from '../services/units';
@@ -26,7 +28,7 @@ export function WorkoutDetailScreen() {
   const route = useRoute<WorkoutDetailRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const { workoutId } = route.params;
-  const { workouts, templates, exercises, userSettings } = useData();
+  const { workouts, templates, exercises, userSettings, refreshWorkouts } = useData();
   const units = userSettings?.units || 'imperial';
 
   const [sets, setSets] = useState<WorkoutSet[]>([]);
@@ -135,6 +137,67 @@ export function WorkoutDetailScreen() {
         <Text style={styles.time}>
           Started at {timeStr}
         </Text>
+
+        {/* Interrupted Workout Resolution Card */}
+        {!workout.completedAt && (
+          <Card style={styles.resolutionCard}>
+            <View style={styles.resolutionHeader}>
+              <Ionicons name="warning" size={22} color={colors.warning} />
+              <Text style={styles.resolutionTitle}>Interrupted Workout</Text>
+            </View>
+            <Text style={styles.resolutionText}>
+              This workout was not completed.
+            </Text>
+            <View style={styles.resolutionButtons}>
+              <TouchableOpacity
+                style={styles.resolutionCompleteButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Mark as Complete',
+                    'This will mark the workout as completed. The completion time will be set to the start time.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Complete',
+                        onPress: async () => {
+                          await updateWorkout({ ...workout, completedAt: workout.startedAt });
+                          await clearActiveWorkoutState();
+                          refreshWorkouts();
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.resolutionCompleteText}>Mark Complete</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.resolutionDeleteButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Delete Workout',
+                    'This will permanently delete this workout and all its sets.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: async () => {
+                          await deleteWorkout(workoutId);
+                          await clearActiveWorkoutState();
+                          refreshWorkouts();
+                          navigation.goBack();
+                        },
+                      },
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.resolutionDeleteText}>Delete Workout</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
 
         {/* Stats */}
         <View style={styles.statsRow}>
@@ -316,6 +379,56 @@ const styles = StyleSheet.create({
   },
   shareSection: {
     marginTop: spacing.lg,
+  },
+  // Resolution card styles
+  resolutionCard: {
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  resolutionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  resolutionTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.warning,
+    marginLeft: spacing.sm,
+  },
+  resolutionText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  resolutionButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  resolutionCompleteButton: {
+    flex: 1,
+    backgroundColor: colors.warning,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  resolutionCompleteText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: '#000',
+  },
+  resolutionDeleteButton: {
+    flex: 1,
+    backgroundColor: colors.backgroundSecondary,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  resolutionDeleteText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+    color: colors.error,
   },
 });
 

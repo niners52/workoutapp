@@ -32,9 +32,12 @@ import {
 import {
   calculateWeeklyShortfalls,
   MuscleGroupShortfall,
+  getUnresolvedSkippedMuscleGroups,
+  SkippedMuscleGroupAlert,
 } from '../services/analytics';
 import {
   getWorkouts,
+  getSets,
   getSupplements,
   getSupplementIntakes,
   getUserSettings,
@@ -67,7 +70,7 @@ export function HomeScreen() {
     exercises,
     getActiveRoutine,
   } = useData();
-  const { isWorkoutActive } = useWorkout();
+  const { isWorkoutActive, recoveredWorkout, dismissRecovery } = useWorkout();
   const workoutBarPadding = useWorkoutBarPadding();
 
   // Today's date for supplements
@@ -87,6 +90,7 @@ export function HomeScreen() {
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
+  const [skippedAlerts, setSkippedAlerts] = useState<SkippedMuscleGroupAlert[]>([]);
 
   // Challenge widget state
   const { user } = useAuth();
@@ -171,6 +175,7 @@ export function HomeScreen() {
       // Phase 1: Fetch fresh local data from storage (fast)
       const [
         freshWorkouts,
+        freshSets,
         freshSupplements,
         freshIntakes,
         freshSettings,
@@ -179,6 +184,7 @@ export function HomeScreen() {
         freshExercises,
       ] = await Promise.all([
         getWorkouts(),
+        getSets(),
         getSupplements(),
         getSupplementIntakes(),
         getUserSettings(),
@@ -190,7 +196,7 @@ export function HomeScreen() {
       const activeSupps = freshSupplements.filter(s => s.isActive);
       const currentRoutine = freshRoutines.find(r => r.isActive);
 
-      // Phase 2: Calculate shortfalls (no HealthKit, fast)
+      // Phase 2: Calculate shortfalls and skipped alerts (no HealthKit, fast)
       try {
         const shortfallData = await calculateWeeklyShortfalls(
           currentRoutine, freshTemplates, freshExercises, freshSettings
@@ -198,6 +204,15 @@ export function HomeScreen() {
         if (shortfallData) setShortfalls(shortfallData);
       } catch (e) {
         console.error('[HomeScreen] Shortfalls error:', e);
+      }
+
+      try {
+        const skippedData = getUnresolvedSkippedMuscleGroups(
+          freshWorkouts, freshSets, freshExercises, freshTemplates
+        );
+        setSkippedAlerts(skippedData);
+      } catch (e) {
+        console.error('[HomeScreen] Skipped alerts error:', e);
       }
 
       // Phase 3: Calculate HealthKit-dependent data (all in parallel)
@@ -312,6 +327,36 @@ export function HomeScreen() {
           </Text>
         </View>
 
+        {/* Recovery Banner for interrupted workouts */}
+        {recoveredWorkout && (
+          <Card style={styles.recoveryCard}>
+            <View style={styles.recoveryHeader}>
+              <Ionicons name="warning" size={22} color={colors.warning} />
+              <Text style={styles.recoveryTitle}>Interrupted Workout Found</Text>
+            </View>
+            <Text style={styles.recoveryText}>
+              You had an active workout when the app closed.
+            </Text>
+            <View style={styles.recoveryButtons}>
+              <TouchableOpacity
+                style={styles.recoveryResumeButton}
+                onPress={() => {
+                  dismissRecovery();
+                  navigation.navigate('ActiveWorkout', { workoutId: '' });
+                }}
+              >
+                <Text style={styles.recoveryResumeText}>Resume</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.recoveryDismissButton}
+                onPress={dismissRecovery}
+              >
+                <Text style={styles.recoveryDismissText}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        )}
+
         {/* Today's Rings - shows when data arrives */}
         {todayStatus ? (
           <TodayRings
@@ -408,7 +453,7 @@ export function HomeScreen() {
         {/* Weekly Shortfalls */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Muscle Groups Needing Attention</Text>
-          {shortfalls.length === 0 ? (
+          {shortfalls.length === 0 && skippedAlerts.length === 0 ? (
             <Card style={styles.onTrackCard}>
               <MaterialCommunityIcons name="arm-flex" size={32} color={colors.success} style={styles.onTrackIcon} />
               <Text style={styles.onTrackText}>You're on track this week!</Text>
@@ -417,6 +462,36 @@ export function HomeScreen() {
               </Text>
             </Card>
           ) : (
+            <>
+            {skippedAlerts.length > 0 && (
+              <Card style={styles.skippedCard}>
+                {skippedAlerts.map((alert, index) => (
+                  <View
+                    key={`${alert.templateName}-${alert.workoutDate}`}
+                    style={[
+                      styles.skippedRow,
+                      index < skippedAlerts.length - 1 && styles.skippedRowBorder,
+                    ]}
+                  >
+                    <Ionicons
+                      name="alert-circle-outline"
+                      size={18}
+                      color={colors.warning}
+                      style={styles.skippedIcon}
+                    />
+                    <View style={styles.skippedInfo}>
+                      <Text style={styles.skippedLabel}>
+                        Skipped from {alert.templateName}
+                      </Text>
+                      <Text style={styles.skippedMuscles}>
+                        {alert.displayNames.join(', ')}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </Card>
+            )}
+            {shortfalls.length > 0 && (
             <Card padding="none">
               {shortfalls.slice(0, 5).map((item, index) => {
                 const progress = item.targetSets > 0
@@ -457,6 +532,8 @@ export function HomeScreen() {
                 );
               })}
             </Card>
+            )}
+            </>
           )}
         </View>
 
@@ -711,6 +788,37 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.warning,
   },
+  skippedCard: {
+    marginBottom: spacing.sm,
+  },
+  skippedRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+  },
+  skippedRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  skippedIcon: {
+    marginRight: spacing.sm,
+    marginTop: 2,
+  },
+  skippedInfo: {
+    flex: 1,
+  },
+  skippedLabel: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium as any,
+    color: colors.warning,
+  },
+  skippedMuscles: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium as any,
+    color: colors.text,
+    marginTop: 2,
+  },
   loadingCard: {
     marginTop: spacing.md,
     alignItems: 'center',
@@ -780,6 +888,56 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: typography.weight.semibold,
     paddingHorizontal: spacing.md,
+  },
+  // Recovery banner styles
+  recoveryCard: {
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  recoveryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  recoveryTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.warning,
+    marginLeft: spacing.sm,
+  },
+  recoveryText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  recoveryButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  recoveryResumeButton: {
+    flex: 1,
+    backgroundColor: colors.warning,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  recoveryResumeText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: '#000',
+  },
+  recoveryDismissButton: {
+    flex: 1,
+    backgroundColor: colors.backgroundSecondary,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  recoveryDismissText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+    color: colors.textSecondary,
   },
 });
 

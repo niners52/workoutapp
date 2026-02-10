@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import Svg, { Path, Circle, G } from 'react-native-svg';
-import { colors, typography, spacing, borderRadius } from '../../theme';
+import Svg, { Path, Circle, Ellipse, G } from 'react-native-svg';
+import { colors, typography, spacing } from '../../theme';
 import { formatMeasurement } from '../../services/units';
 import { BodyMeasurementTypeKey, BodyMeasurement } from '../../types';
 import { UnitSystem } from '../../services/units';
@@ -9,27 +9,30 @@ import { UnitSystem } from '../../services/units';
 interface MeasurementPoint {
   key: BodyMeasurementTypeKey;
   label: string;
-  x: number;
-  y: number;
+  x: number; // viewBox coordinates (0-200)
+  y: number; // viewBox coordinates (0-500)
   side?: 'left' | 'right';
 }
 
-// Measurement points on the body outline (normalized 0-100 coordinates)
+// Anatomically placed measurement points in viewBox coords (200x500)
 const MEASUREMENT_POINTS: MeasurementPoint[] = [
-  { key: 'neck', label: 'Neck', x: 50, y: 12 },
-  { key: 'shoulders', label: 'Shoulders', x: 50, y: 18 },
-  { key: 'chest', label: 'Chest', x: 50, y: 26 },
-  { key: 'left_arm', label: 'L Arm', x: 22, y: 30, side: 'left' },
-  { key: 'right_arm', label: 'R Arm', x: 78, y: 30, side: 'right' },
-  { key: 'left_forearm', label: 'L Forearm', x: 15, y: 42, side: 'left' },
-  { key: 'right_forearm', label: 'R Forearm', x: 85, y: 42, side: 'right' },
-  { key: 'waist', label: 'Waist', x: 50, y: 40 },
-  { key: 'hips', label: 'Hips', x: 50, y: 50 },
-  { key: 'left_thigh', label: 'L Thigh', x: 38, y: 60, side: 'left' },
-  { key: 'right_thigh', label: 'R Thigh', x: 62, y: 60, side: 'right' },
-  { key: 'left_calf', label: 'L Calf', x: 38, y: 78, side: 'left' },
-  { key: 'right_calf', label: 'R Calf', x: 62, y: 78, side: 'right' },
+  { key: 'neck', label: 'Neck', x: 100, y: 68 },
+  { key: 'shoulders', label: 'Shoulders', x: 100, y: 95 },
+  { key: 'chest', label: 'Chest', x: 100, y: 130 },
+  { key: 'left_arm', label: 'L Arm', x: 32, y: 155, side: 'left' },
+  { key: 'right_arm', label: 'R Arm', x: 168, y: 155, side: 'right' },
+  { key: 'left_forearm', label: 'L Forearm', x: 22, y: 215, side: 'left' },
+  { key: 'right_forearm', label: 'R Forearm', x: 178, y: 215, side: 'right' },
+  { key: 'waist', label: 'Waist', x: 100, y: 195 },
+  { key: 'hips', label: 'Hips', x: 100, y: 235 },
+  { key: 'left_thigh', label: 'L Thigh', x: 72, y: 300, side: 'left' },
+  { key: 'right_thigh', label: 'R Thigh', x: 128, y: 300, side: 'right' },
+  { key: 'left_calf', label: 'L Calf', x: 70, y: 395, side: 'left' },
+  { key: 'right_calf', label: 'R Calf', x: 130, y: 395, side: 'right' },
 ];
+
+const VB_W = 200;
+const VB_H = 500;
 
 interface Props {
   measurements: Record<BodyMeasurementTypeKey, BodyMeasurement | undefined>;
@@ -39,18 +42,90 @@ interface Props {
 }
 
 const CONTAINER_WIDTH = Dimensions.get('window').width - spacing.base * 4;
-const CONTAINER_HEIGHT = 400;
+const CONTAINER_HEIGHT = 420;
+
+// Athletic male silhouette — right side (mirrored for left)
+// Drawn as one continuous outline for a clean look
+const BODY_RIGHT_HALF = `
+  M 100 55
+  C 100 55, 108 56, 112 62
+  C 114 65, 114 72, 112 76
+  L 112 78
+  C 130 80, 148 86, 155 95
+  C 160 100, 162 105, 162 108
+  L 162 110
+  C 164 112, 170 118, 174 128
+  C 178 138, 180 148, 180 155
+  C 180 162, 178 170, 175 180
+  C 172 190, 168 200, 164 210
+  L 158 228
+  C 156 232, 154 236, 152 240
+  L 148 240
+  C 148 238, 147 236, 146 234
+  L 136 234
+  C 138 240, 139 246, 139 250
+  C 140 260, 142 270, 142 278
+  C 142 290, 140 300, 138 310
+  C 136 320, 134 330, 133 340
+  C 131 355, 130 365, 130 375
+  C 130 382, 131 390, 132 398
+  C 133 405, 132 412, 130 420
+  C 128 430, 124 440, 122 448
+  L 120 460
+  C 119 464, 118 468, 118 470
+  L 140 472
+  L 140 478
+  L 115 478
+  C 113 476, 112 474, 112 470
+  C 112 466, 113 462, 114 458
+  L 116 448
+`;
+
+const BODY_LEFT_HALF = `
+  L 84 448
+  C 86 454, 87 460, 88 466
+  C 88 470, 88 474, 87 478
+  L 60 478
+  L 60 472
+  L 82 470
+  C 82 468, 81 464, 80 460
+  L 78 448
+  C 76 440, 72 430, 70 420
+  C 68 412, 67 405, 68 398
+  C 69 390, 70 382, 70 375
+  C 70 365, 69 355, 67 340
+  C 66 330, 64 320, 62 310
+  C 60 300, 58 290, 58 278
+  C 58 270, 60 260, 61 250
+  C 61 246, 62 240, 64 234
+  L 54 234
+  C 53 236, 52 238, 52 240
+  L 48 240
+  C 46 236, 44 232, 42 228
+  L 36 210
+  C 32 200, 28 190, 25 180
+  C 22 170, 20 162, 20 155
+  C 20 148, 22 138, 26 128
+  C 30 118, 36 112, 38 110
+  L 38 108
+  C 38 105, 40 100, 45 95
+  C 52 86, 70 80, 88 78
+  L 88 76
+  C 86 72, 86 65, 88 62
+  C 92 56, 100 55, 100 55
+  Z
+`;
 
 export function BodyOutline({ measurements, units, onMeasurementPress, trends }: Props) {
-  const scaleX = (x: number) => (x / 100) * CONTAINER_WIDTH;
-  const scaleY = (y: number) => (y / 100) * CONTAINER_HEIGHT;
+  const toScreenX = (vx: number) => (vx / VB_W) * CONTAINER_WIDTH;
+  const toScreenY = (vy: number) => (vy / VB_H) * CONTAINER_HEIGHT;
 
   const getTrendColor = (key: string): string => {
     const trend = trends?.[key];
     if (!trend) return colors.backgroundSecondary;
     switch (trend) {
       case 'up':
-        return colors.success + '30'; // 30% opacity
+        return colors.success + '30';
       case 'down':
         return colors.error + '30';
       default:
@@ -60,152 +135,85 @@ export function BodyOutline({ measurements, units, onMeasurementPress, trends }:
 
   return (
     <View style={styles.container}>
-      <Svg width={CONTAINER_WIDTH} height={CONTAINER_HEIGHT} viewBox={`0 0 ${CONTAINER_WIDTH} ${CONTAINER_HEIGHT}`}>
-        {/* Body outline - front facing silhouette */}
-        <G>
-          {/* Head */}
-          <Circle
-            cx={scaleX(50)}
-            cy={scaleY(5)}
-            r={scaleY(4)}
-            fill={colors.backgroundTertiary}
-            stroke={colors.textTertiary}
-            strokeWidth="1"
-          />
+      <Svg
+        width={CONTAINER_WIDTH}
+        height={CONTAINER_HEIGHT}
+        viewBox={`0 0 ${VB_W} ${VB_H}`}
+      >
+        {/* Head */}
+        <Ellipse
+          cx="100"
+          cy="32"
+          rx="22"
+          ry="28"
+          fill={colors.backgroundTertiary}
+          stroke={colors.textTertiary}
+          strokeWidth="1"
+        />
 
-          {/* Neck */}
-          <Path
-            d={`
-              M ${scaleX(47)} ${scaleY(9)}
-              L ${scaleX(47)} ${scaleY(14)}
-              L ${scaleX(53)} ${scaleY(14)}
-              L ${scaleX(53)} ${scaleY(9)}
-              Z
-            `}
-            fill={colors.backgroundTertiary}
-            stroke={colors.textTertiary}
-            strokeWidth="1"
-          />
+        {/* Body silhouette */}
+        <Path
+          d={BODY_RIGHT_HALF + BODY_LEFT_HALF}
+          fill={colors.backgroundTertiary}
+          stroke={colors.textTertiary}
+          strokeWidth="1"
+          strokeLinejoin="round"
+        />
 
-          {/* Torso */}
+        {/* Subtle muscle definition lines */}
+        <G opacity={0.3}>
+          {/* Chest split */}
           <Path
-            d={`
-              M ${scaleX(35)} ${scaleY(14)}
-              C ${scaleX(25)} ${scaleY(16)}, ${scaleX(22)} ${scaleY(20)}, ${scaleX(22)} ${scaleY(28)}
-              L ${scaleX(22)} ${scaleY(30)}
-              L ${scaleX(28)} ${scaleY(30)}
-              C ${scaleX(30)} ${scaleY(35)}, ${scaleX(30)} ${scaleY(40)}, ${scaleX(32)} ${scaleY(48)}
-              L ${scaleX(32)} ${scaleY(52)}
-              L ${scaleX(38)} ${scaleY(52)}
-              L ${scaleX(38)} ${scaleY(14)}
-              Z
-              M ${scaleX(62)} ${scaleY(14)}
-              L ${scaleX(62)} ${scaleY(52)}
-              L ${scaleX(68)} ${scaleY(52)}
-              L ${scaleX(68)} ${scaleY(48)}
-              C ${scaleX(70)} ${scaleY(40)}, ${scaleX(70)} ${scaleY(35)}, ${scaleX(72)} ${scaleY(30)}
-              L ${scaleX(78)} ${scaleY(30)}
-              L ${scaleX(78)} ${scaleY(28)}
-              C ${scaleX(78)} ${scaleY(20)}, ${scaleX(75)} ${scaleY(16)}, ${scaleX(65)} ${scaleY(14)}
-              Z
-              M ${scaleX(38)} ${scaleY(14)}
-              L ${scaleX(38)} ${scaleY(52)}
-              L ${scaleX(62)} ${scaleY(52)}
-              L ${scaleX(62)} ${scaleY(14)}
-              L ${scaleX(53)} ${scaleY(14)}
-              L ${scaleX(53)} ${scaleY(14)}
-              L ${scaleX(47)} ${scaleY(14)}
-              L ${scaleX(47)} ${scaleY(14)}
-              Z
-            `}
-            fill={colors.backgroundTertiary}
+            d="M 100 98 L 100 155"
             stroke={colors.textTertiary}
-            strokeWidth="1"
+            strokeWidth="0.5"
           />
-
-          {/* Left Arm */}
+          {/* Pec lines */}
           <Path
-            d={`
-              M ${scaleX(22)} ${scaleY(28)}
-              C ${scaleX(18)} ${scaleY(30)}, ${scaleX(16)} ${scaleY(34)}, ${scaleX(14)} ${scaleY(40)}
-              C ${scaleX(12)} ${scaleY(46)}, ${scaleX(10)} ${scaleY(50)}, ${scaleX(10)} ${scaleY(52)}
-              L ${scaleX(18)} ${scaleY(52)}
-              C ${scaleX(18)} ${scaleY(48)}, ${scaleX(20)} ${scaleY(44)}, ${scaleX(22)} ${scaleY(38)}
-              C ${scaleX(24)} ${scaleY(34)}, ${scaleX(26)} ${scaleY(32)}, ${scaleX(28)} ${scaleY(30)}
-              L ${scaleX(22)} ${scaleY(28)}
-              Z
-            `}
-            fill={colors.backgroundTertiary}
+            d="M 78 115 C 85 125, 95 130, 100 128"
             stroke={colors.textTertiary}
-            strokeWidth="1"
+            strokeWidth="0.5"
+            fill="none"
           />
-
-          {/* Right Arm */}
           <Path
-            d={`
-              M ${scaleX(78)} ${scaleY(28)}
-              C ${scaleX(82)} ${scaleY(30)}, ${scaleX(84)} ${scaleY(34)}, ${scaleX(86)} ${scaleY(40)}
-              C ${scaleX(88)} ${scaleY(46)}, ${scaleX(90)} ${scaleY(50)}, ${scaleX(90)} ${scaleY(52)}
-              L ${scaleX(82)} ${scaleY(52)}
-              C ${scaleX(82)} ${scaleY(48)}, ${scaleX(80)} ${scaleY(44)}, ${scaleX(78)} ${scaleY(38)}
-              C ${scaleX(76)} ${scaleY(34)}, ${scaleX(74)} ${scaleY(32)}, ${scaleX(72)} ${scaleY(30)}
-              L ${scaleX(78)} ${scaleY(28)}
-              Z
-            `}
-            fill={colors.backgroundTertiary}
+            d="M 122 115 C 115 125, 105 130, 100 128"
             stroke={colors.textTertiary}
-            strokeWidth="1"
+            strokeWidth="0.5"
+            fill="none"
           />
-
-          {/* Left Leg */}
+          {/* Ab lines */}
           <Path
-            d={`
-              M ${scaleX(32)} ${scaleY(52)}
-              L ${scaleX(32)} ${scaleY(70)}
-              C ${scaleX(32)} ${scaleY(78)}, ${scaleX(33)} ${scaleY(85)}, ${scaleX(34)} ${scaleY(92)}
-              L ${scaleX(42)} ${scaleY(92)}
-              C ${scaleX(42)} ${scaleY(85)}, ${scaleX(42)} ${scaleY(78)}, ${scaleX(44)} ${scaleY(70)}
-              L ${scaleX(44)} ${scaleY(52)}
-              Z
-            `}
-            fill={colors.backgroundTertiary}
+            d="M 88 165 L 112 165"
             stroke={colors.textTertiary}
-            strokeWidth="1"
+            strokeWidth="0.5"
           />
-
-          {/* Right Leg */}
           <Path
-            d={`
-              M ${scaleX(56)} ${scaleY(52)}
-              L ${scaleX(56)} ${scaleY(70)}
-              C ${scaleX(58)} ${scaleY(78)}, ${scaleX(58)} ${scaleY(85)}, ${scaleX(58)} ${scaleY(92)}
-              L ${scaleX(66)} ${scaleY(92)}
-              C ${scaleX(67)} ${scaleY(85)}, ${scaleX(68)} ${scaleY(78)}, ${scaleX(68)} ${scaleY(70)}
-              L ${scaleX(68)} ${scaleY(52)}
-              Z
-            `}
-            fill={colors.backgroundTertiary}
+            d="M 87 180 L 113 180"
             stroke={colors.textTertiary}
-            strokeWidth="1"
+            strokeWidth="0.5"
+          />
+          <Path
+            d="M 86 195 L 114 195"
+            stroke={colors.textTertiary}
+            strokeWidth="0.5"
           />
         </G>
 
-        {/* Measurement points */}
+        {/* Measurement point dots */}
         {MEASUREMENT_POINTS.map((point) => {
           const measurement = measurements[point.key];
           const hasValue = measurement?.value !== undefined;
 
           return (
-            <G key={point.key}>
-              <Circle
-                cx={scaleX(point.x)}
-                cy={scaleY(point.y)}
-                r={8}
-                fill={hasValue ? getTrendColor(point.key) : colors.backgroundSecondary}
-                stroke={hasValue ? colors.primary : colors.textTertiary}
-                strokeWidth={hasValue ? 2 : 1}
-              />
-            </G>
+            <Circle
+              key={point.key}
+              cx={point.x}
+              cy={point.y}
+              r={6}
+              fill={hasValue ? getTrendColor(point.key) : colors.backgroundSecondary}
+              stroke={hasValue ? colors.primary : colors.textTertiary}
+              strokeWidth={hasValue ? 1.5 : 0.8}
+            />
           );
         })}
       </Svg>
@@ -215,21 +223,22 @@ export function BodyOutline({ measurements, units, onMeasurementPress, trends }:
         const measurement = measurements[point.key];
         const hasValue = measurement?.value !== undefined;
 
-        // Position labels to the side for arms/legs, centered for torso
+        const screenX = toScreenX(point.x);
+        const screenY = toScreenY(point.y);
+
         let labelStyle: any = {
           position: 'absolute' as const,
-          top: scaleY(point.y) - 12,
+          top: screenY - 12,
         };
 
         if (point.side === 'left') {
-          labelStyle.right = CONTAINER_WIDTH - scaleX(point.x) + 12;
+          labelStyle.right = CONTAINER_WIDTH - screenX + 10;
         } else if (point.side === 'right') {
-          labelStyle.left = scaleX(point.x) + 12;
+          labelStyle.left = screenX + 10;
         } else {
-          // Center measurements - show below the point
-          labelStyle.left = scaleX(point.x) - 40;
-          labelStyle.top = scaleY(point.y) + 12;
-          labelStyle.width = 80;
+          labelStyle.left = screenX - 44;
+          labelStyle.top = screenY + 10;
+          labelStyle.width = 88;
           labelStyle.alignItems = 'center';
         }
 

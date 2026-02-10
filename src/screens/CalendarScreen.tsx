@@ -45,6 +45,7 @@ export function CalendarScreen() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [goalStatusMap, setGoalStatusMap] = useState<GoalStatusMap>({});
+  const [incompleteDates, setIncompleteDates] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   /**
@@ -125,6 +126,14 @@ export function CalendarScreen() {
       }
 
       setGoalStatusMap(statusMap);
+
+      // Compute incomplete workout dates
+      const incompleteDateSet = new Set(
+        freshWorkouts
+          .filter(w => !w.completedAt)
+          .map(w => format(new Date(w.startedAt), 'yyyy-MM-dd'))
+      );
+      setIncompleteDates(incompleteDateSet);
     } catch (error) {
       console.error('[CalendarScreen] Error loading goal status:', error);
     }
@@ -161,9 +170,13 @@ export function CalendarScreen() {
   // Get workouts for selected date (from DataContext for UI)
   const selectedDateWorkouts = useMemo(() => {
     if (!selectedDate) return [];
+    const dateStr = format(selectedDate, 'yyyy-MM-dd');
     return workouts.filter(w => {
-      if (!w.completedAt) return false;
-      return isSameDay(new Date(w.completedAt), selectedDate);
+      if (w.completedAt) {
+        return isSameDay(new Date(w.completedAt), selectedDate);
+      }
+      // Include incomplete workouts by startedAt date
+      return format(new Date(w.startedAt), 'yyyy-MM-dd') === dateStr;
     });
   }, [workouts, selectedDate]);
 
@@ -195,6 +208,7 @@ export function CalendarScreen() {
           goalStatusMap={goalStatusMap}
           onDayPress={handleDayPress}
           weekStartDay={userSettings.weekStartDay}
+          incompleteDates={incompleteDates}
         />
 
         {/* Selected Date Workouts */}
@@ -222,9 +236,16 @@ export function CalendarScreen() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.workoutInfo}>
-                      <Text style={styles.workoutTitle}>
-                        {getTemplateName(workout)}
-                      </Text>
+                      <View style={styles.workoutTitleRow}>
+                        <Text style={styles.workoutTitle}>
+                          {getTemplateName(workout)}
+                        </Text>
+                        {!workout.completedAt && (
+                          <View style={styles.interruptedBadge}>
+                            <Text style={styles.interruptedBadgeText}>Interrupted</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.workoutTime}>
                         {format(new Date(workout.startedAt), 'h:mm a')}
                       </Text>
@@ -325,11 +346,27 @@ const styles = StyleSheet.create({
   workoutInfo: {
     flex: 1,
   },
+  workoutTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   workoutTitle: {
     fontSize: typography.size.base,
     fontWeight: typography.weight.medium,
     color: colors.text,
     lineHeight: typography.size.base * 1.4,
+  },
+  interruptedBadge: {
+    backgroundColor: colors.warning,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  interruptedBadgeText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    color: '#000',
   },
   workoutTime: {
     fontSize: typography.size.sm,

@@ -46,6 +46,10 @@ import {
   getExerciseById,
   getTemplateById,
   getUserSettings,
+  getWorkoutById,
+  saveActiveWorkoutState,
+  getActiveWorkoutState,
+  clearActiveWorkoutState,
 } from '../services/storage';
 import { saveWorkoutToHealthKit } from '../services/healthKit';
 import {
@@ -89,7 +93,7 @@ interface WorkoutContextType {
 
   // Workout actions
   startWorkout: (templateId?: string) => Promise<string>;
-  finishWorkout: () => Promise<void>;
+  finishWorkout: (skippedExerciseIds?: string[]) => Promise<void>;
   cancelWorkout: () => Promise<void>;
 
   // Exercise actions
@@ -110,6 +114,10 @@ interface WorkoutContextType {
   stopRestTimer: () => void;
   resetRestTimer: () => void;
 
+  // Recovery
+  recoveredWorkout: boolean;
+  dismissRecovery: () => void;
+
   // Utility
   refreshLastSessionData: () => Promise<void>;
   getSetsForExercise: (exerciseId: string) => WorkoutSet[];
@@ -128,6 +136,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   });
   const liveActivitySupportedRef = useRef<boolean | null>(null);
   const [lastSessionData, setLastSessionData] = useState<LastSessionData | null>(null);
+  const [recoveredWorkout, setRecoveredWorkout] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -137,6 +146,58 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const lastWatchStateSentRef = useRef<number>(0);
   const exerciseNamesRef = useRef<Map<string, string>>(new Map());
+
+  const dismissRecovery = useCallback(() => {
+    setRecoveredWorkout(false);
+  }, []);
+
+  // Restore active workout state on mount (after app termination)
+  useEffect(() => {
+    const restore = async () => {
+      try {
+        const saved = await getActiveWorkoutState();
+        if (!saved) return;
+
+        const workout = await getWorkoutById(saved.workout.id);
+        if (!workout || workout.completedAt !== null) {
+          await clearActiveWorkoutState();
+          return;
+        }
+
+        const sets = await getSetsByWorkoutId(saved.workout.id);
+        setActiveWorkout({
+          workout,
+          sets,
+          exerciseIds: saved.exerciseIds,
+          currentExerciseId: saved.currentExerciseId,
+          currentExerciseIndex: saved.currentExerciseIndex,
+        });
+        setRecoveredWorkout(true);
+      } catch (error) {
+        console.log('Failed to restore active workout:', error);
+        await clearActiveWorkoutState();
+      }
+    };
+
+    restore();
+  }, []);
+
+  // Persist active workout state to AsyncStorage on structural changes
+  useEffect(() => {
+    if (activeWorkout) {
+      saveActiveWorkoutState({
+        workout: activeWorkout.workout,
+        exerciseIds: activeWorkout.exerciseIds,
+        currentExerciseId: activeWorkout.currentExerciseId,
+        currentExerciseIndex: activeWorkout.currentExerciseIndex,
+      }).catch(e => console.log('Failed to persist active workout:', e));
+    }
+  }, [
+    activeWorkout?.workout.id,
+    activeWorkout?.exerciseIds,
+    activeWorkout?.currentExerciseId,
+    activeWorkout?.currentExerciseIndex,
+  ]);
 
   // Helper to format seconds as MM:SS
   const formatTime = (seconds: number): string => {
@@ -379,12 +440,13 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     setRestTimer(prev => ({ ...prev, isRunning: false, endTime: null, liveActivityId: null }));
   }, []);
 
-  const finishWorkout = useCallback(async () => {
+  const finishWorkout = useCallback(async (skippedExerciseIds?: string[]) => {
     if (!activeWorkout) return;
 
     const completedWorkout: Workout = {
       ...activeWorkout.workout,
       completedAt: new Date().toISOString(),
+      ...(skippedExerciseIds?.length ? { skippedExerciseIds } : {}),
     };
 
     await updateWorkout(completedWorkout);
@@ -411,6 +473,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
     setActiveWorkout(null);
     setLastSessionData(null);
+    await clearActiveWorkoutState();
     await stopRestTimer();
     await dismissWorkoutNotification();
   }, [activeWorkout, stopRestTimer, dismissWorkoutNotification]);
@@ -420,6 +483,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     // The user might want to continue later or review partial data
     setActiveWorkout(null);
     setLastSessionData(null);
+    await clearActiveWorkoutState();
     await stopRestTimer();
     await dismissWorkoutNotification();
   }, [stopRestTimer, dismissWorkoutNotification]);
@@ -817,6 +881,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     startRestTimer,
     stopRestTimer,
     resetRestTimer,
+    recoveredWorkout,
+    dismissRecovery,
     refreshLastSessionData,
     getSetsForExercise,
   };

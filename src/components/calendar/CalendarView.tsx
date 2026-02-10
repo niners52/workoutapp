@@ -29,6 +29,7 @@ interface CalendarViewProps {
   goalStatusMap: GoalStatusMap; // Map of 'YYYY-MM-DD' to goals met count
   onDayPress: (date: Date) => void;
   weekStartDay: WeekStartDay;
+  incompleteDates?: Set<string>;
 }
 
 export function CalendarView({
@@ -37,6 +38,7 @@ export function CalendarView({
   goalStatusMap,
   onDayPress,
   weekStartDay,
+  incompleteDates,
 }: CalendarViewProps) {
   const today = startOfDay(new Date());
   const weekStartsOn = weekStartDay === 'sunday' ? 0 : 1;
@@ -121,6 +123,7 @@ export function CalendarView({
                   isToday={isToday}
                   isFuture={isFuture}
                   goalsMetCount={goalsMetCount}
+                  hasIncompleteWorkout={incompleteDates?.has(dateStr)}
                   onPress={() => onDayPress(date)}
                 />
               );

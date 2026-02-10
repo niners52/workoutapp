@@ -8,6 +8,7 @@ interface CalendarDayProps {
   isToday: boolean;
   isFuture: boolean;
   goalsMetCount: number; // 0-5 goals met (5 if calorie goal is set)
+  hasIncompleteWorkout?: boolean;
   onPress: () => void;
 }
 
@@ -36,6 +37,7 @@ export function CalendarDay({
   isToday,
   isFuture,
   goalsMetCount,
+  hasIncompleteWorkout,
   onPress,
 }: CalendarDayProps) {
   const dayNumber = date.getDate();
@@ -61,6 +63,9 @@ export function CalendarDay({
       >
         {dayNumber}
       </Text>
+      {hasIncompleteWorkout && isCurrentMonth && (
+        <View style={styles.incompleteIndicator} />
+      )}
     </TouchableOpacity>
   );
 }
@@ -84,6 +89,15 @@ const styles = StyleSheet.create({
   },
   dayTextToday: {
     fontWeight: '700',
+  },
+  incompleteIndicator: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.warning,
   },
 });
 

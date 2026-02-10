@@ -11,6 +11,7 @@ import {
   Routine,
   BodyMeasurement,
   BodyMeasurementTypeKey,
+  ProgressPhoto,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
@@ -38,6 +39,8 @@ const STORAGE_KEYS = {
   SETGRAPH_MAPPINGS: '@workout_tracker/setgraph_mappings',
   LAST_APP_OPENED: '@workout_tracker/last_app_opened',
   WEEKLY_SUMMARY_DISMISSED: '@workout_tracker/weekly_summary_dismissed',
+  PROGRESS_PHOTOS: '@workout_tracker/progress_photos',
+  ACTIVE_WORKOUT: '@workout_tracker/active_workout',
 } as const;
 
 // Current migration version
@@ -526,6 +529,32 @@ export async function getWorkoutsInDateRange(start: Date, end: Date): Promise<Wo
     const workoutDate = new Date(w.startedAt);
     return workoutDate >= start && workoutDate <= end;
   });
+}
+
+// ==================== ACTIVE WORKOUT STATE ====================
+
+export interface PersistedWorkoutState {
+  workout: Workout;
+  exerciseIds: string[];
+  currentExerciseId: string | null;
+  currentExerciseIndex: number;
+}
+
+export async function saveActiveWorkoutState(state: PersistedWorkoutState): Promise<void> {
+  await setItem(STORAGE_KEYS.ACTIVE_WORKOUT, state);
+}
+
+export async function getActiveWorkoutState(): Promise<PersistedWorkoutState | null> {
+  return getItem<PersistedWorkoutState | null>(STORAGE_KEYS.ACTIVE_WORKOUT, null);
+}
+
+export async function clearActiveWorkoutState(): Promise<void> {
+  await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_WORKOUT);
+}
+
+export async function getIncompleteWorkouts(): Promise<Workout[]> {
+  const workouts = await getWorkouts();
+  return workouts.filter(w => w.completedAt === null);
 }
 
 // ==================== SETS ====================
@@ -1277,4 +1306,35 @@ export async function setWeeklySummaryDismissed(weekId: string): Promise<void> {
   } catch (error) {
     console.error('Error writing weekly summary dismissed:', error);
   }
+}
+
+// ==================== PROGRESS PHOTOS ====================
+
+export async function getProgressPhotos(): Promise<ProgressPhoto[]> {
+  return getItem(STORAGE_KEYS.PROGRESS_PHOTOS, []);
+}
+
+export async function saveProgressPhoto(photo: ProgressPhoto): Promise<void> {
+  const photos = await getProgressPhotos();
+  photos.push(photo);
+  await setItem(STORAGE_KEYS.PROGRESS_PHOTOS, photos);
+}
+
+export async function updateProgressPhoto(updated: ProgressPhoto): Promise<void> {
+  const photos = await getProgressPhotos();
+  const idx = photos.findIndex(p => p.id === updated.id);
+  if (idx !== -1) {
+    photos[idx] = updated;
+    await setItem(STORAGE_KEYS.PROGRESS_PHOTOS, photos);
+  }
+}
+
+export async function deleteProgressPhotoMetadata(id: string): Promise<void> {
+  const photos = await getProgressPhotos();
+  await setItem(STORAGE_KEYS.PROGRESS_PHOTOS, photos.filter(p => p.id !== id));
+}
+
+export async function getProgressPhotosByDate(date: string): Promise<ProgressPhoto[]> {
+  const photos = await getProgressPhotos();
+  return photos.filter(p => p.date === date);
 }

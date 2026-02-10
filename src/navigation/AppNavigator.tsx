@@ -41,6 +41,9 @@ import {
   MigrationScreen,
   AccountabilityPartnerScreen,
   ChallengeScreen,
+  ProgressPhotosScreen,
+  ProgressPhotoViewScreen,
+  ProgressPhotoCompareScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -489,6 +492,27 @@ export function AppNavigator() {
         <Stack.Screen
           name="Challenge"
           component={ChallengeScreen}
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="ProgressPhotos"
+          component={ProgressPhotosScreen}
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="ProgressPhotoView"
+          component={ProgressPhotoViewScreen}
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="ProgressPhotoCompare"
+          component={ProgressPhotoCompareScreen}
           options={{
             headerShown: false,
           }}

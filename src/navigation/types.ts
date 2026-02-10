@@ -36,6 +36,9 @@ export type RootStackParamList = {
   MeasurementHistory: { measurementType: string };
   AccountabilityPartner: undefined;
   Challenge: { partnershipId: string };
+  ProgressPhotos: undefined;
+  ProgressPhotoView: { photoId: string };
+  ProgressPhotoCompare: { photoId1?: string; photoId2?: string };
 };
 
 // Bottom Tab Navigator

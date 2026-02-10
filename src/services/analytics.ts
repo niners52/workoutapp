@@ -3,6 +3,7 @@ import {
   WeeklyVolume,
   PrimaryMuscleGroup,
   WorkoutSet,
+  Workout,
   Exercise,
   Template,
   Routine,
@@ -579,4 +580,96 @@ export async function getExerciseHistoryForMuscleGroup(
   // Convert to array and sort by last performed (most recent first)
   return Array.from(historyMap.values())
     .sort((a, b) => new Date(b.lastPerformed).getTime() - new Date(a.lastPerformed).getTime());
+}
+
+// Skipped exercise alerts
+export interface SkippedMuscleGroupAlert {
+  muscleGroups: PrimaryMuscleGroup[];
+  displayNames: string[];
+  templateName: string;
+  workoutDate: string; // ISO string
+}
+
+// Find muscle groups that were skipped in recent workouts and not yet worked in a later workout
+export function getUnresolvedSkippedMuscleGroups(
+  workouts: Workout[],
+  sets: WorkoutSet[],
+  exercises: Exercise[],
+  templates: Template[]
+): SkippedMuscleGroupAlert[] {
+  const exerciseMap = new Map(exercises.map(e => [e.id, e]));
+  const templateMap = new Map(templates.map(t => [t.id, t]));
+
+  // Only look at recent workouts (last 14 days)
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+
+  const completedWorkouts = workouts
+    .filter(w => w.completedAt && new Date(w.completedAt) >= cutoff)
+    .sort((a, b) => new Date(a.completedAt!).getTime() - new Date(b.completedAt!).getTime());
+
+  // Build map: workoutId -> set of primary muscle groups worked
+  const setsByWorkout = new Map<string, Set<PrimaryMuscleGroup>>();
+  sets.forEach(s => {
+    const ex = exerciseMap.get(s.exerciseId);
+    if (!ex) return;
+    const primaries = ex.primaryMuscleGroups?.length
+      ? ex.primaryMuscleGroups
+      : ex.primaryMuscleGroup ? [ex.primaryMuscleGroup] : [];
+    if (primaries.length === 0) return;
+
+    const workout = completedWorkouts.find(w => w.id === s.workoutId);
+    if (!workout) return;
+
+    let groups = setsByWorkout.get(s.workoutId);
+    if (!groups) {
+      groups = new Set();
+      setsByWorkout.set(s.workoutId, groups);
+    }
+    primaries.forEach(mg => groups!.add(mg as PrimaryMuscleGroup));
+  });
+
+  const alerts: SkippedMuscleGroupAlert[] = [];
+
+  completedWorkouts.forEach((workout, idx) => {
+    if (!workout.skippedExerciseIds?.length || !workout.templateId) return;
+
+    const template = templateMap.get(workout.templateId);
+    const templateName = template?.name || 'Workout';
+
+    // Collect primary muscle groups of skipped exercises
+    const skippedMGs = new Set<PrimaryMuscleGroup>();
+    workout.skippedExerciseIds.forEach(exId => {
+      const ex = exerciseMap.get(exId);
+      if (!ex) return;
+      const primaries = ex.primaryMuscleGroups?.length
+        ? ex.primaryMuscleGroups
+        : ex.primaryMuscleGroup ? [ex.primaryMuscleGroup] : [];
+      primaries.forEach(mg => skippedMGs.add(mg as PrimaryMuscleGroup));
+    });
+
+    if (skippedMGs.size === 0) return;
+
+    // Check if resolved by any later workout
+    const unresolvedMGs = new Set(skippedMGs);
+    for (let i = idx + 1; i < completedWorkouts.length; i++) {
+      const laterMGs = setsByWorkout.get(completedWorkouts[i].id);
+      if (laterMGs) {
+        laterMGs.forEach(mg => unresolvedMGs.delete(mg));
+      }
+      if (unresolvedMGs.size === 0) break;
+    }
+
+    if (unresolvedMGs.size > 0) {
+      const mgArray = Array.from(unresolvedMGs);
+      alerts.push({
+        muscleGroups: mgArray,
+        displayNames: mgArray.map(mg => MUSCLE_GROUP_DISPLAY_NAMES[mg]),
+        templateName,
+        workoutDate: workout.completedAt!,
+      });
+    }
+  });
+
+  return alerts;
 }

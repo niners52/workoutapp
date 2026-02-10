@@ -73,14 +73,21 @@ export function distanceUnit(units: UnitSystem): string {
 }
 
 /**
+ * Format a number to up to 2 decimal places, stripping trailing zeros.
+ * 200 → "200", 200.5 → "200.5", 200.25 → "200.25"
+ */
+function smartDecimal(value: number): string {
+  return parseFloat(value.toFixed(2)).toString();
+}
+
+/**
  * Format weight with unit for display.
  * e.g., "185 lbs" or "83.9 kg"
  */
 export function formatWeight(lbs: number, units: UnitSystem): string {
   const value = displayWeight(lbs, units);
   const unit = weightUnit(units);
-  // Always show 2 decimal places for consistency
-  return `${value.toFixed(2)} ${unit}`;
+  return `${smartDecimal(value)} ${unit}`;
 }
 
 /**
@@ -89,7 +96,7 @@ export function formatWeight(lbs: number, units: UnitSystem): string {
  */
 export function formatWeightValue(lbs: number, units: UnitSystem): string {
   const value = displayWeight(lbs, units);
-  return value.toFixed(2);
+  return smartDecimal(value);
 }
 
 /**
@@ -242,7 +249,7 @@ export function measurementUnit(units: UnitSystem): string {
  */
 export function formatMeasurement(inches: number, units: UnitSystem): string {
   const value = displayMeasurement(inches, units);
-  return `${value.toFixed(2)} ${measurementUnit(units)}`;
+  return `${smartDecimal(value)} ${measurementUnit(units)}`;
 }
 
 // ============== VOLUME FORMATTING ==============

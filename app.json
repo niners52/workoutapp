@@ -48,7 +48,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.tylerr82.workouttracker8052"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -62,7 +63,8 @@
               "appExtensions": [
                 {
                   "targetName": "WorkoutTrackerWatch",
-                  "bundleIdentifier": "com.tylerr82.workouttracker8052.watchkitapp"
+                  "bundleIdentifier": "com.tylerr82.workouttracker8052.watchkitapp",
+                  "entitlements": {}
                 }
               ]
             }

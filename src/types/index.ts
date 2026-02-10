@@ -267,6 +267,7 @@ export interface Workout {
   startedAt: string; // ISO date string
   completedAt: string | null;
   templateId: string | null;
+  skippedExerciseIds?: string[]; // Template exercises with zero sets logged
 }
 
 // Set
@@ -340,6 +341,8 @@ export interface UserSettings {
   nutritionMode: NutritionMode;
   calorieGoal: number | null;
   calorieTolerancePercent: number;
+  // Progress photos privacy
+  progressPhotosLocked?: boolean;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -494,6 +497,22 @@ export interface BodyMeasurement {
 export interface BodyMeasurementHistory {
   date: string;
   value: number;
+}
+
+// ============================================
+// Progress Photos
+// ============================================
+
+export type PhotoPose = 'front' | 'side' | 'back' | 'other';
+
+export interface ProgressPhoto {
+  id: string;
+  date: string;           // YYYY-MM-DD
+  createdAt: string;      // ISO timestamp
+  pose: PhotoPose;
+  fileName: string;       // relative path in app's document directory
+  weight?: number;        // lbs (auto-tagged from most recent entry)
+  notes?: string;
 }
 
 // ============================================
