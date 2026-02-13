@@ -24,7 +24,7 @@ interface TemplateSection {
   data: Template[];
 }
 
-export function TemplatesScreen() {
+export function TemplatesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { templates, exercises, deleteTemplate, locations } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -101,35 +101,41 @@ export function TemplatesScreen() {
     </View>
   );
 
+  const content = (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Templates</Text>
+        <TouchableOpacity onPress={handleCreateTemplate}>
+          <Text style={styles.addText}>+ New</Text>
+        </TouchableOpacity>
+      </View>
+
+      {templatesByLocation.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No templates yet</Text>
+          <Text style={styles.emptySubtext}>
+            Create a template to quickly start workouts
+          </Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={templatesByLocation}
+          keyExtractor={item => item.id}
+          renderItem={renderTemplate}
+          renderSectionHeader={renderSectionHeader}
+          contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
+          stickySectionHeadersEnabled
+        />
+      )}
+    </View>
+  );
+
+  if (embedded) return content;
+
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Templates</Text>
-          <TouchableOpacity onPress={handleCreateTemplate}>
-            <Text style={styles.addText}>+ New</Text>
-          </TouchableOpacity>
-        </View>
-
-        {templatesByLocation.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No templates yet</Text>
-            <Text style={styles.emptySubtext}>
-              Create a template to quickly start workouts
-            </Text>
-          </View>
-        ) : (
-          <SectionList
-            sections={templatesByLocation}
-            keyExtractor={item => item.id}
-            renderItem={renderTemplate}
-            renderSectionHeader={renderSectionHeader}
-            contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
-            stickySectionHeadersEnabled
-          />
-        )}
-      </View>
+      {content}
     </SafeAreaView>
   );
 }

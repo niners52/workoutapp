@@ -24,6 +24,7 @@ import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUI
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
 import { checkForPR, PRCheckResult, prEmoji, formatPRLabel } from '../services/personalRecords';
+import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/fatigueDetection';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -85,6 +86,7 @@ export function ActiveWorkoutScreen() {
   // Track which exercises have already shown a PR notification this session
   // This prevents showing multiple PR notifications for the same exercise
   const [prShownThisSession, setPrShownThisSession] = useState<Set<string>>(new Set());
+  const [fatigueWarnings, setFatigueWarnings] = useState<Map<string, ExerciseFatigueSignal>>(new Map());
 
   // Get units from settings
   const units = userSettings?.units || 'imperial';
@@ -104,6 +106,15 @@ export function ActiveWorkoutScreen() {
         };
       }
       setExerciseHistories(histories);
+
+      // Compute fatigue warnings for exercises in this workout
+      if (userSettings.fatigueDetectionEnabled !== false && !userSettings.isOnDeload) {
+        const warnings = getExerciseFatigueWarnings(
+          activeWorkout.exerciseIds,
+          workouts, sets, exercises, userSettings
+        );
+        setFatigueWarnings(warnings);
+      }
     };
 
     loadHistories();
@@ -509,7 +520,7 @@ export function ActiveWorkoutScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity
               style={styles.headerButton}
-              onPress={() => navigation.navigate('MainTabs', { screen: 'Analytics' })}
+              onPress={() => navigation.navigate('MainTabs', { screen: 'Progress' })}
             >
               <Ionicons name="stats-chart" size={22} color={colors.primary} />
             </TouchableOpacity>
@@ -573,6 +584,7 @@ export function ActiveWorkoutScreen() {
                 units={units}
                 prCelebration={prCelebration}
                 prAnimValue={prAnimValue}
+                fatigueWarning={fatigueWarnings.get(exerciseId)}
               />
             );
           })}
@@ -931,6 +943,7 @@ interface ExerciseCardProps {
   units: UnitSystem;
   prCelebration: { exerciseId: string; type: string; emoji: string } | null;
   prAnimValue: Animated.Value;
+  fatigueWarning?: ExerciseFatigueSignal;
 }
 
 function ExerciseCard({
@@ -954,6 +967,7 @@ function ExerciseCard({
   units,
   prCelebration,
   prAnimValue,
+  fatigueWarning,
 }: ExerciseCardProps) {
   const showPR = prCelebration?.exerciseId === exercise.id;
   return (
@@ -996,6 +1010,14 @@ function ExerciseCard({
           <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
         </View>
       </TouchableOpacity>
+
+      {/* Fatigue Warning Banner */}
+      {fatigueWarning && !showPR && (
+        <View style={styles.fatigueBanner}>
+          <Ionicons name="trending-down-outline" size={14} color={colors.warning} />
+          <Text style={styles.fatigueBannerText}>{fatigueWarning.message}</Text>
+        </View>
+      )}
 
       {/* PR Celebration Banner */}
       {showPR && (
@@ -1238,6 +1260,19 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     fontWeight: typography.weight.bold,
     color: colors.text,
+  },
+  fatigueBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    backgroundColor: 'rgba(217, 119, 6, 0.1)',
+  },
+  fatigueBannerText: {
+    fontSize: typography.size.xs,
+    color: colors.warning,
+    flex: 1,
   },
   swapButton: {
     backgroundColor: colors.backgroundTertiary,

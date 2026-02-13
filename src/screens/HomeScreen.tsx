@@ -55,6 +55,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import { getActivePartnership, getPartnerId, getPartnerStats } from '../services/partnershipService';
 import { getActiveChallenge, getDaysRemaining } from '../services/challengeService';
+import { getTopSuggestions, CoachSuggestion, dismissSuggestion } from '../services/coachSuggestions';
+import { CoachSuggestionsCard } from '../components/coach';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -91,6 +93,7 @@ export function HomeScreen() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
   const [skippedAlerts, setSkippedAlerts] = useState<SkippedMuscleGroupAlert[]>([]);
+  const [coachSuggestions, setCoachSuggestions] = useState<CoachSuggestion[]>([]);
 
   // Challenge widget state
   const { user } = useAuth();
@@ -197,22 +200,49 @@ export function HomeScreen() {
       const currentRoutine = freshRoutines.find(r => r.isActive);
 
       // Phase 2: Calculate shortfalls and skipped alerts (no HealthKit, fast)
+      let shortfallData: MuscleGroupShortfall[] = [];
+      let skippedData: SkippedMuscleGroupAlert[] = [];
+
       try {
-        const shortfallData = await calculateWeeklyShortfalls(
+        const result = await calculateWeeklyShortfalls(
           currentRoutine, freshTemplates, freshExercises, freshSettings
         );
-        if (shortfallData) setShortfalls(shortfallData);
+        if (result) {
+          shortfallData = result;
+          setShortfalls(result);
+        }
       } catch (e) {
         console.error('[HomeScreen] Shortfalls error:', e);
       }
 
       try {
-        const skippedData = getUnresolvedSkippedMuscleGroups(
+        skippedData = getUnresolvedSkippedMuscleGroups(
           freshWorkouts, freshSets, freshExercises, freshTemplates
         );
         setSkippedAlerts(skippedData);
       } catch (e) {
         console.error('[HomeScreen] Skipped alerts error:', e);
+      }
+
+      // Phase 2.5: Generate coach suggestions
+      if (freshSettings.coachSuggestionsEnabled !== false) {
+        try {
+          const suggestions = await getTopSuggestions({
+            workouts: freshWorkouts,
+            sets: freshSets,
+            exercises: freshExercises,
+            templates: freshTemplates,
+            routine: currentRoutine,
+            settings: freshSettings,
+            shortfalls: shortfallData,
+            skippedAlerts: skippedData,
+          }, 2);
+          setCoachSuggestions(suggestions);
+        } catch (e) {
+          console.error('[HomeScreen] Coach suggestions error:', e);
+        }
+      } else {
+        setCoachSuggestions([]);
       }
 
       // Phase 3: Calculate HealthKit-dependent data (all in parallel)
@@ -536,6 +566,18 @@ export function HomeScreen() {
             </>
           )}
         </View>
+
+        {/* Coach Suggestions */}
+        {coachSuggestions.length > 0 && (
+          <CoachSuggestionsCard
+            suggestions={coachSuggestions}
+            onDismiss={async (id) => {
+              await dismissSuggestion(id, 24);
+              setCoachSuggestions(prev => prev.filter(s => s.id !== id));
+            }}
+            onMuscleGroupPress={handleMuscleGroupPress}
+          />
+        )}
 
         {/* Today's Planned Workouts */}
         {activeRoutine && (

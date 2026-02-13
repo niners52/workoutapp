@@ -83,7 +83,7 @@ const RECOVERY_COLORS = {
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-export function AnalyticsScreen() {
+export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { userSettings, bodyMeasurements, addBodyMeasurement, getLatestBodyMeasurement, workouts, sets } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -429,8 +429,8 @@ export function AnalyticsScreen() {
     ? aggregateIntoCategories(displayVolume.muscleGroups)
     : [];
 
-  return (
-    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+  const content = (
+    <>
       <ScrollView
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}
@@ -1144,6 +1144,14 @@ export function AnalyticsScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+      {content}
     </SafeAreaView>
   );
 }

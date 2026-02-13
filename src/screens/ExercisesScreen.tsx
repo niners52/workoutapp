@@ -36,7 +36,7 @@ interface ExerciseSection {
   data: Exercise[];
 }
 
-export function ExercisesScreen() {
+export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { exercises, workouts, deleteExercise, sets } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -249,68 +249,74 @@ export function ExercisesScreen() {
     </View>
   ), []);
 
-  return (
-    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Exercises</Text>
-          <TouchableOpacity onPress={handleAddExercise}>
-            <Text style={styles.addText}>+ Add</Text>
-          </TouchableOpacity>
-        </View>
+  const content = (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Exercises</Text>
+        <TouchableOpacity onPress={handleAddExercise}>
+          <Text style={styles.addText}>+ Add</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* Search */}
-        <View style={styles.searchContainer}>
-          <SearchBar
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search exercises..."
-          />
-        </View>
-
-        {/* Muscle Group Filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterContainer}
-          contentContainerStyle={styles.filterContent}
-        >
-          <TouchableOpacity
-            style={[styles.filterChip, !selectedMuscle && styles.filterChipSelected]}
-            onPress={() => setSelectedMuscle(null)}
-          >
-            <Text style={[styles.filterChipText, !selectedMuscle && styles.filterChipTextSelected]}>
-              All
-            </Text>
-          </TouchableOpacity>
-          {ALL_TRACKABLE_MUSCLE_GROUPS.map(muscle => (
-            <TouchableOpacity
-              key={muscle}
-              style={[styles.filterChip, selectedMuscle === muscle && styles.filterChipSelected]}
-              onPress={() => setSelectedMuscle(selectedMuscle === muscle ? null : muscle)}
-            >
-              <Text style={[styles.filterChipText, selectedMuscle === muscle && styles.filterChipTextSelected]}>
-                {MUSCLE_GROUP_DISPLAY_NAMES[muscle]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Exercise List */}
-        <SectionList
-          sections={sections}
-          keyExtractor={item => item.id}
-          renderItem={renderExercise}
-          renderSectionHeader={renderSectionHeader}
-          stickySectionHeadersEnabled={false}
-          contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
-          initialNumToRender={20}
-          maxToRenderPerBatch={20}
-          windowSize={10}
-          removeClippedSubviews={true}
+      {/* Search */}
+      <View style={styles.searchContainer}>
+        <SearchBar
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search exercises..."
         />
       </View>
+
+      {/* Muscle Group Filter */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterContainer}
+        contentContainerStyle={styles.filterContent}
+      >
+        <TouchableOpacity
+          style={[styles.filterChip, !selectedMuscle && styles.filterChipSelected]}
+          onPress={() => setSelectedMuscle(null)}
+        >
+          <Text style={[styles.filterChipText, !selectedMuscle && styles.filterChipTextSelected]}>
+            All
+          </Text>
+        </TouchableOpacity>
+        {ALL_TRACKABLE_MUSCLE_GROUPS.map(muscle => (
+          <TouchableOpacity
+            key={muscle}
+            style={[styles.filterChip, selectedMuscle === muscle && styles.filterChipSelected]}
+            onPress={() => setSelectedMuscle(selectedMuscle === muscle ? null : muscle)}
+          >
+            <Text style={[styles.filterChipText, selectedMuscle === muscle && styles.filterChipTextSelected]}>
+              {MUSCLE_GROUP_DISPLAY_NAMES[muscle]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Exercise List */}
+      <SectionList
+        sections={sections}
+        keyExtractor={item => item.id}
+        renderItem={renderExercise}
+        renderSectionHeader={renderSectionHeader}
+        stickySectionHeadersEnabled={false}
+        contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
+        initialNumToRender={20}
+        maxToRenderPerBatch={20}
+        windowSize={10}
+        removeClippedSubviews={true}
+      />
+    </View>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+      {content}
     </SafeAreaView>
   );
 }

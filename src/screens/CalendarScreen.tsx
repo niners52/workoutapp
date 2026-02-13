@@ -37,7 +37,7 @@ import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-export function CalendarScreen() {
+export function CalendarScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { workouts, templates, userSettings, refreshWorkouts } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -186,20 +186,19 @@ export function CalendarScreen() {
     return template?.name || 'Custom Workout';
   };
 
-  return (
-    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.text}
-          />
-        }
-      >
-        <Text style={styles.title}>Calendar</Text>
+  const content = (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.text}
+        />
+      }
+    >
+      <Text style={styles.title}>Calendar</Text>
 
         {/* Calendar */}
         <CalendarView
@@ -289,7 +288,14 @@ export function CalendarScreen() {
             </View>
           </Card>
         </View>
-      </ScrollView>
+    </ScrollView>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+      {content}
     </SafeAreaView>
   );
 }

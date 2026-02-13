@@ -17,7 +17,7 @@ import { DAY_NAMES_SHORT } from '../types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-export function RoutinesScreen() {
+export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { routines, templates, getActiveRoutine } = useData();
 
@@ -51,16 +51,17 @@ export function RoutinesScreen() {
       .join(', ');
   };
 
-  return (
-    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {/* Header */}
+  const content = (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Header */}
+      {!embedded && (
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Text style={styles.backButton}>{'‹ Back'}</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Routines</Text>
         </View>
+      )}
 
         {/* Create Button */}
         <Button
@@ -146,7 +147,14 @@ export function RoutinesScreen() {
             </Text>
           </View>
         )}
-      </ScrollView>
+    </ScrollView>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+      {content}
     </SafeAreaView>
   );
 }

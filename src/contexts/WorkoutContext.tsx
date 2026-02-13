@@ -156,11 +156,17 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     const restore = async () => {
       try {
         const saved = await getActiveWorkoutState();
-        if (!saved) return;
+        if (!saved) {
+          // No active workout — clean up any orphaned Live Activities from previous session
+          await liveActivityService.endAllActivities();
+          return;
+        }
 
         const workout = await getWorkoutById(saved.workout.id);
         if (!workout || workout.completedAt !== null) {
           await clearActiveWorkoutState();
+          // Workout is done — clean up any stale Live Activities
+          await liveActivityService.endAllActivities();
           return;
         }
 
@@ -172,10 +178,14 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
           currentExerciseId: saved.currentExerciseId,
           currentExerciseIndex: saved.currentExerciseIndex,
         });
-        setRecoveredWorkout(true);
+        // Don't set recoveredWorkout — the active workout bar already
+        // shows the user there's an active workout to resume.
+        // Clean up any stale Live Activities (rest timer doesn't survive app restart)
+        await liveActivityService.endAllActivities();
       } catch (error) {
         console.log('Failed to restore active workout:', error);
         await clearActiveWorkoutState();
+        await liveActivityService.endAllActivities();
       }
     };
 

@@ -44,11 +44,10 @@ export type RootStackParamList = {
 // Bottom Tab Navigator
 export type MainTabParamList = {
   Home: undefined;
-  Calendar: undefined;
-  Exercises: undefined;
-  Templates: undefined;
-  Analytics: undefined;
-  Settings: undefined;
+  Train: undefined;
+  Progress: undefined;
+  Social: undefined;
+  Profile: undefined;
 };
 
 // Screen props types

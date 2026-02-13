@@ -14,6 +14,9 @@ import { useWorkout } from '../contexts/WorkoutContext';
 
 import {
   HomeScreen,
+  TrainScreen,
+  ProgressScreen,
+  SocialScreen,
   CalendarScreen,
   StartWorkoutScreen,
   ActiveWorkoutScreen,
@@ -56,11 +59,10 @@ const TAB_ICONS: Record<string, {
   inactive: string;
 }> = {
   Home: { type: 'ionicons', active: 'home', inactive: 'home-outline' },
-  Calendar: { type: 'ionicons', active: 'calendar', inactive: 'calendar-outline' },
-  Exercises: { type: 'material', active: 'dumbbell', inactive: 'dumbbell' },
-  Templates: { type: 'ionicons', active: 'document-text', inactive: 'document-text-outline' },
-  Analytics: { type: 'ionicons', active: 'stats-chart', inactive: 'stats-chart-outline' },
-  Settings: { type: 'ionicons', active: 'settings', inactive: 'settings-outline' },
+  Train: { type: 'material', active: 'dumbbell', inactive: 'dumbbell' },
+  Progress: { type: 'ionicons', active: 'trending-up', inactive: 'trending-up-outline' },
+  Social: { type: 'ionicons', active: 'people', inactive: 'people-outline' },
+  Profile: { type: 'ionicons', active: 'person-circle', inactive: 'person-circle-outline' },
 };
 
 const ACTIVE_TAB_COLOR = '#FFC52F';
@@ -202,29 +204,24 @@ function MainTabs() {
         options={{ tabBarLabel: 'Home' }}
       />
       <Tab.Screen
-        name="Calendar"
-        component={CalendarScreen}
-        options={{ tabBarLabel: 'Calendar' }}
+        name="Train"
+        component={TrainScreen}
+        options={{ tabBarLabel: 'Train' }}
       />
       <Tab.Screen
-        name="Exercises"
-        component={ExercisesScreen}
-        options={{ tabBarLabel: 'Exercises' }}
+        name="Progress"
+        component={ProgressScreen}
+        options={{ tabBarLabel: 'Progress' }}
       />
       <Tab.Screen
-        name="Templates"
-        component={TemplatesScreen}
-        options={{ tabBarLabel: 'Templates' }}
+        name="Social"
+        component={SocialScreen}
+        options={{ tabBarLabel: 'Social' }}
       />
       <Tab.Screen
-        name="Analytics"
-        component={AnalyticsScreen}
-        options={{ tabBarLabel: 'Analytics' }}
-      />
-      <Tab.Screen
-        name="Settings"
+        name="Profile"
         component={SettingsScreen}
-        options={{ tabBarLabel: 'Settings' }}
+        options={{ tabBarLabel: 'Profile' }}
       />
     </Tab.Navigator>
   );

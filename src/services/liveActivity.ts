@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import * as LiveActivity from 'expo-live-activity';
 
 // App colors for Live Activity styling
@@ -11,6 +11,22 @@ const COLORS = {
 
 // Current activity ID for tracking
 let currentActivityId: string | null = null;
+
+/**
+ * Call the native LiveActivityModule to end ALL activities (tracked + orphaned).
+ * This is the nuclear option — cleans up everything on the native side.
+ */
+async function nativeEndAllActivities(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    const module = NativeModules.LiveActivityModule;
+    if (module?.stopRestTimer) {
+      await module.stopRestTimer();
+    }
+  } catch (error) {
+    console.log('Native endAllActivities failed (non-fatal):', error);
+  }
+}
 
 // Live Activity service for iOS rest timer
 // Falls back gracefully on unsupported platforms
@@ -47,9 +63,7 @@ export const liveActivityService = {
 
     try {
       // End any existing activity first
-      if (currentActivityId) {
-        await this.stopTimer();
-      }
+      await this.endAllActivities();
 
       // Calculate end time in milliseconds for countdown
       const endTimeMs = Date.now() + seconds * 1000;
@@ -113,28 +127,33 @@ export const liveActivityService = {
   },
 
   /**
-   * Stop/cancel the timer Live Activity immediately
+   * Stop/cancel the timer Live Activity immediately.
+   * Tries the tracked ID first, then falls back to native cleanup.
    */
   async stopTimer(): Promise<boolean> {
-    if (Platform.OS !== 'ios' || !currentActivityId) {
+    if (Platform.OS !== 'ios') {
       return false;
     }
 
     try {
-      const state: LiveActivity.LiveActivityState = {
-        title: 'Rest Timer',
-        subtitle: 'Cancelled',
-        progressBar: {
-          progress: 0,
-        },
-      };
-
-      LiveActivity.stopActivity(currentActivityId, state);
-      currentActivityId = null;
+      if (currentActivityId) {
+        const state: LiveActivity.LiveActivityState = {
+          title: 'Rest Timer',
+          subtitle: 'Cancelled',
+          progressBar: {
+            progress: 0,
+          },
+        };
+        LiveActivity.stopActivity(currentActivityId, state);
+        currentActivityId = null;
+      }
+      // Always call native cleanup to catch orphaned activities
+      await nativeEndAllActivities();
       return true;
     } catch (error) {
       console.log('Failed to stop Live Activity:', error);
       currentActivityId = null;
+      await nativeEndAllActivities();
       return false;
     }
   },
@@ -164,6 +183,32 @@ export const liveActivityService = {
       currentActivityId = null;
       return false;
     }
+  },
+
+  /**
+   * Force-end ALL Live Activities (tracked + orphaned).
+   * Use on app startup, workout completion, or as manual cleanup.
+   */
+  async endAllActivities(): Promise<void> {
+    if (Platform.OS !== 'ios') return;
+
+    // Stop tracked activity via expo-live-activity if we have an ID
+    if (currentActivityId) {
+      try {
+        const state: LiveActivity.LiveActivityState = {
+          title: 'Rest Timer',
+          subtitle: '',
+          progressBar: { progress: 0 },
+        };
+        LiveActivity.stopActivity(currentActivityId, state);
+      } catch (error) {
+        // Ignore — native cleanup below will handle it
+      }
+      currentActivityId = null;
+    }
+
+    // Call native module to end ALL activities including orphans
+    await nativeEndAllActivities();
   },
 
   /**

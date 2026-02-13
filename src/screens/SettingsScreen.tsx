@@ -55,6 +55,7 @@ import {
   NutritionMode,
 } from '../types';
 import { FORMULA_DESCRIPTIONS, ALL_FORMULAS } from '../services/bodyFatCalculator';
+import { liveActivityService } from '../services/liveActivity';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -83,6 +84,7 @@ export function SettingsScreen() {
   const [showSupplements, setShowSupplements] = useState(false);
   const [showBodyFatSettings, setShowBodyFatSettings] = useState(false);
   const [showNutritionGoal, setShowNutritionGoal] = useState(false);
+  const [showFatigueSettings, setShowFatigueSettings] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
   const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
@@ -238,6 +240,11 @@ export function SettingsScreen() {
   const handleResetMigration = async () => {
     await resetMigration();
     Alert.alert('Migration Reset', 'Restart the app to re-sync.');
+  };
+
+  const handleClearStuckTimers = async () => {
+    await liveActivityService.endAllActivities();
+    Alert.alert('Timers Cleared', 'All Live Activities and stuck timers have been cleared.');
   };
 
   const handleRestoreBackup = async () => {
@@ -574,7 +581,7 @@ export function SettingsScreen() {
                 step={15}
               />
             </View>
-            <View style={[styles.settingRow, styles.settingRowLast]}>
+            <View style={styles.settingRow}>
               <Text style={styles.settingLabel}>Min Sets / Exercise</Text>
               <NumberInput
                 value={userSettings.minimumSetsPerExercise ?? 3}
@@ -584,9 +591,30 @@ export function SettingsScreen() {
                 step={1}
               />
             </View>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <Text style={styles.settingLabel}>Coach Suggestions</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.coachSuggestionsEnabled !== false && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    coachSuggestionsEnabled: userSettings.coachSuggestionsEnabled === false,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.coachSuggestionsEnabled !== false && styles.toggleTextActive,
+                ]}>
+                  {userSettings.coachSuggestionsEnabled !== false ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Card>
           <Text style={styles.hint}>
-            Warn when finishing a workout with fewer sets per exercise
+            Show personalized training suggestions on the Home screen
           </Text>
         </View>
 
@@ -640,6 +668,75 @@ export function SettingsScreen() {
           </Card>
           <Text style={styles.hint}>
             Require Face ID or passcode to view progress photos
+          </Text>
+        </View>
+
+        {/* Fatigue Detection */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => setShowFatigueSettings(!showFatigueSettings)}
+          >
+            <Text style={styles.sectionTitle}>Fatigue Detection</Text>
+            <Text style={styles.expandIcon}>{showFatigueSettings ? '−' : '+'}</Text>
+          </TouchableOpacity>
+
+          {showFatigueSettings && (
+            <Card padding="none">
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Fatigue Detection</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.toggle,
+                    userSettings.fatigueDetectionEnabled !== false && styles.toggleActive,
+                  ]}
+                  onPress={() =>
+                    updateUserSettings({
+                      fatigueDetectionEnabled: userSettings.fatigueDetectionEnabled === false,
+                    })
+                  }
+                >
+                  <Text style={[
+                    styles.toggleText,
+                    userSettings.fatigueDetectionEnabled !== false && styles.toggleTextActive,
+                  ]}>
+                    {userSettings.fatigueDetectionEnabled !== false ? 'On' : 'Off'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Sensitivity (%)</Text>
+                <NumberInput
+                  value={userSettings.fatigueSensitivity ?? 10}
+                  onChangeValue={(value) => updateUserSettings({ fatigueSensitivity: value })}
+                  min={5}
+                  max={25}
+                  step={5}
+                />
+              </View>
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <Text style={styles.settingLabel}>Currently on Deload</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.toggle,
+                    userSettings.isOnDeload && styles.toggleActive,
+                  ]}
+                  onPress={() =>
+                    updateUserSettings({ isOnDeload: !userSettings.isOnDeload })
+                  }
+                >
+                  <Text style={[
+                    styles.toggleText,
+                    userSettings.isOnDeload && styles.toggleTextActive,
+                  ]}>
+                    {userSettings.isOnDeload ? 'Yes' : 'No'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          )}
+          <Text style={styles.hint}>
+            Detect declining performance and suggest deloads. Lower % = more sensitive.
           </Text>
         </View>
 
@@ -1191,6 +1288,12 @@ export function SettingsScreen() {
               title="Clear Health Cache"
               subtitle="Re-fetch fresh data from Apple Health"
               onPress={handleClearHealthCache}
+              showChevron
+            />
+            <ListItem
+              title="Clear Stuck Timers"
+              subtitle="Force-clear Live Activities and rest timers"
+              onPress={handleClearStuckTimers}
               showChevron
             />
             <ListItem

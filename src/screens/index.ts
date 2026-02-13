@@ -29,3 +29,6 @@ export { ChallengeScreen } from './ChallengeScreen';
 export { ProgressPhotosScreen } from './ProgressPhotosScreen';
 export { ProgressPhotoViewScreen } from './ProgressPhotoViewScreen';
 export { ProgressPhotoCompareScreen } from './ProgressPhotoCompareScreen';
+export { TrainScreen } from './TrainScreen';
+export { ProgressScreen } from './ProgressScreen';
+export { SocialScreen } from './SocialScreen';

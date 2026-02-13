@@ -76,7 +76,7 @@ function groupPhotosByMonth(photos: ProgressPhoto[]): PhotoSection[] {
   });
 }
 
-export function ProgressPhotosScreen() {
+export function ProgressPhotosScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation();
   const { userSettings } = useData();
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
@@ -187,8 +187,8 @@ export function ProgressPhotosScreen() {
   const sections = groupPhotosByMonth(photos);
 
   if (isLocked) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
+    const lockedContent = (
+      <View style={styles.safeArea}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Progress Photos</Text>
         </View>
@@ -202,12 +202,19 @@ export function ProgressPhotosScreen() {
             <Text style={styles.unlockButtonText}>Unlock</Text>
           </TouchableOpacity>
         </View>
+      </View>
+    );
+
+    if (embedded) return lockedContent;
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        {lockedContent}
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
+  const content = (
+    <View style={styles.safeArea}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Progress Photos</Text>
         <View style={styles.headerActions}>
@@ -310,6 +317,14 @@ export function ProgressPhotosScreen() {
           stickySectionHeadersEnabled={false}
         />
       )}
+    </View>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      {content}
     </SafeAreaView>
   );
 }

@@ -343,6 +343,12 @@ export interface UserSettings {
   calorieTolerancePercent: number;
   // Progress photos privacy
   progressPhotosLocked?: boolean;
+  // Coach suggestions
+  coachSuggestionsEnabled?: boolean;
+  // Fatigue detection
+  fatigueDetectionEnabled?: boolean;
+  fatigueSensitivity?: number;
+  isOnDeload?: boolean;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
