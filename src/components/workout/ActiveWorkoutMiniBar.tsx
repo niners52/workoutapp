@@ -70,7 +70,7 @@ export function ActiveWorkoutMiniBar() {
     : `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 
   const handlePress = () => {
-    navigation.navigate('ActiveWorkout', { workoutId: activeWorkout.workout.id });
+    navigation.navigate('MainTabs', { screen: 'Train' });
   };
 
   return (

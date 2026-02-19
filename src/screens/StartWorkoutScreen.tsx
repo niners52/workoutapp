@@ -24,8 +24,9 @@ import {
   ALL_TEMPLATE_TYPES,
   TEMPLATE_TYPE_DISPLAY_NAMES,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  DAY_NAMES,
 } from '../types';
-import { getWeeklyVolume } from '../services/analytics';
+import { getWeeklyVolume, getTemplatesForDay } from '../services/analytics';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -48,7 +49,7 @@ interface SuggestedExercise {
 
 export function StartWorkoutScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { templates, locations, exercises } = useData();
+  const { templates, locations, exercises, getActiveRoutine } = useData();
   const { startWorkout, addExerciseToWorkout } = useWorkout();
 
   const [step, setStep] = useState<Step>('type');
@@ -59,6 +60,24 @@ export function StartWorkoutScreen() {
   const [shortfalls, setShortfalls] = useState<MuscleShortfall[]>([]);
   const [suggestedExercises, setSuggestedExercises] = useState<SuggestedExercise[]>([]);
   const [loadingShortfalls, setLoadingShortfalls] = useState(false);
+
+  // Get today's scheduled workout from active routine
+  const todaySchedule = useMemo(() => {
+    const routine = getActiveRoutine();
+    if (!routine) return null;
+
+    const today = new Date().getDay(); // 0=Sunday, 1=Monday, etc.
+    const templateIds = getTemplatesForDay(routine, today);
+    if (templateIds.length === 0) return { isRestDay: true, templates: [] as Template[], dayName: DAY_NAMES[today] };
+
+    const scheduledTemplates = templateIds
+      .map(id => templates.find(t => t.id === id))
+      .filter((t): t is Template => t !== undefined);
+
+    if (scheduledTemplates.length === 0) return null;
+
+    return { isRestDay: false, templates: scheduledTemplates, dayName: DAY_NAMES[today] };
+  }, [getActiveRoutine, templates]);
 
   // Filter templates based on selections
   const filteredTemplates = useMemo(() => {
@@ -92,7 +111,7 @@ export function StartWorkoutScreen() {
   const handleSelectTemplate = (template: Template) => {
     startWorkout(template.id)
       .then((workoutId) => {
-        navigation.navigate('ActiveWorkout', { workoutId });
+        navigation.navigate('MainTabs', { screen: 'Train' });
       })
       .catch((error) => {
         console.error('Failed to start workout:', error);
@@ -102,7 +121,7 @@ export function StartWorkoutScreen() {
   const handleStartBlank = () => {
     startWorkout()
       .then((workoutId) => {
-        navigation.navigate('ActiveWorkout', { workoutId });
+        navigation.navigate('MainTabs', { screen: 'Train' });
       })
       .catch((error) => {
         console.error('Failed to start workout:', error);
@@ -237,7 +256,7 @@ export function StartWorkoutScreen() {
         await addExerciseToWorkout(exerciseId);
       }
 
-      navigation.navigate('ActiveWorkout', { workoutId });
+      navigation.navigate('MainTabs', { screen: 'Train' });
     } catch (error) {
       console.error('Failed to start workout:', error);
     }
@@ -612,6 +631,50 @@ export function StartWorkoutScreen() {
 
         {renderStepIndicator()}
 
+        {/* Today's Scheduled Workout */}
+        {todaySchedule && !todaySchedule.isRestDay && (
+          <View style={styles.scheduledSection}>
+            <Text style={styles.scheduledTitle}>Scheduled for {todaySchedule.dayName}</Text>
+            {todaySchedule.templates.map(template => {
+              const location = locations.find(l => l.id === template.locationId);
+              const exercisePreview = template.exerciseIds
+                .slice(0, 3)
+                .map(id => exercises.find(e => e.id === id)?.name || 'Unknown')
+                .join(', ');
+              const moreCount = template.exerciseIds.length - 3;
+
+              return (
+                <TouchableOpacity
+                  key={template.id}
+                  style={styles.scheduledCard}
+                  onPress={() => handleSelectTemplate(template)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.scheduledCardContent}>
+                    <Text style={styles.scheduledTemplateName}>
+                      {template.name}{location ? ` \u2014 ${location.name}` : ''}
+                    </Text>
+                    <Text style={styles.scheduledExercises} numberOfLines={1}>
+                      {exercisePreview}{moreCount > 0 ? `, +${moreCount} more` : ''}
+                    </Text>
+                  </View>
+                  <Ionicons name="play-circle" size={32} color={colors.primary} />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Rest Day Notice */}
+        {todaySchedule?.isRestDay && (
+          <Card style={styles.restDayCard}>
+            <Text style={styles.restDayTitle}>{todaySchedule.dayName} — Rest Day</Text>
+            <Text style={styles.restDayText}>
+              Your routine has rest scheduled today.
+            </Text>
+          </Card>
+        )}
+
         {/* Start Options */}
         <View style={styles.section}>
           <Button
@@ -732,6 +795,55 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: spacing.md,
+  },
+  scheduledSection: {
+    marginBottom: spacing.lg,
+  },
+  scheduledTitle: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+  },
+  scheduledCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: colors.primaryDim,
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  scheduledCardContent: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  scheduledTemplateName: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  scheduledExercises: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  restDayCard: {
+    marginBottom: spacing.lg,
+    alignItems: 'center' as const,
+  },
+  restDayTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
+  },
+  restDayText: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
   },
   divider: {
     flexDirection: 'row',

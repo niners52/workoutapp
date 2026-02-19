@@ -97,10 +97,12 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
 // Custom tab bar that includes the mini-bar above it
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const { isWorkoutActive } = useWorkout();
+  const currentTabName = state.routes[state.index]?.name;
+  const hideMiniBar = currentTabName === 'Train' && isWorkoutActive;
 
   return (
     <View style={customTabBarStyles.container}>
-      <ActiveWorkoutMiniBar />
+      {!hideMiniBar && <ActiveWorkoutMiniBar />}
       <View style={[
         customTabBarStyles.tabBar,
         isWorkoutActive && customTabBarStyles.tabBarWithMiniBar,

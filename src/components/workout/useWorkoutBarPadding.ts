@@ -14,8 +14,8 @@ export function useWorkoutBarPadding(): number {
   const { isWorkoutActive } = useWorkout();
   const route = useRoute();
 
-  // Don't add padding on ActiveWorkout screen (mini-bar doesn't show there)
-  const isOnActiveWorkout = route.name === 'ActiveWorkout';
+  // Don't add padding on ActiveWorkout or Train screen (mini-bar doesn't show there)
+  const isOnActiveWorkout = route.name === 'ActiveWorkout' || route.name === 'Train';
 
   if (!isWorkoutActive || isOnActiveWorkout) {
     return 0;

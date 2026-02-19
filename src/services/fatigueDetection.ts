@@ -1,4 +1,4 @@
-import { subWeeks, format, differenceInDays, subDays } from 'date-fns';
+import { subWeeks, format, differenceInDays, subDays, startOfWeek } from 'date-fns';
 import {
   Workout,
   WorkoutSet,
@@ -175,6 +175,11 @@ function analyzeExerciseRepTrend(
 
   if (workingWeight === 0 || maxCount < 3) return null; // Need at least 3 sets at this weight
 
+  // Weight increased → fewer reps is expected progressive overload, not fatigue
+  const recentTopWeight = Math.max(...sessions.slice(0, 2).map(s => s.topWeight));
+  const baselineTopWeight = Math.max(...sessions.slice(2, 4).map(s => s.topWeight));
+  if (recentTopWeight > baselineTopWeight) return null;
+
   // Get reps at working weight for recent (sessions 0-1) vs baseline (sessions 2-3)
   const getAvgRepsAtWeight = (sessionSlice: ExerciseSession[]): number => {
     const reps: number[] = [];
@@ -204,8 +209,8 @@ function analyzeExerciseRepTrend(
     signalType: 'rep_drop',
     severity: Math.min(90, 55 + rounded),
     declinePercent: rounded,
-    message: `Fewer reps at ${workingWeight} lbs than 2 weeks ago`,
-    detail: `${exerciseName}: avg ${baselineReps.toFixed(1)} → ${recentReps.toFixed(1)} reps at ${workingWeight} lbs. Focus on form and recovery.`,
+    message: `${exerciseName}: fewer reps at ${workingWeight} lbs vs 2 weeks ago`,
+    detail: `Avg ${baselineReps.toFixed(1)} → ${recentReps.toFixed(1)} reps at ${workingWeight} lbs. Focus on form and recovery.`,
   };
 }
 
@@ -214,25 +219,44 @@ function analyzeExerciseRepTrend(
 function analyzeWeeklyVolumeTrend(
   workouts: Workout[],
   sets: WorkoutSet[],
-  workoutDateMap: Map<string, Date>
+  workoutDateMap: Map<string, Date>,
+  settings: UserSettings
 ): OverallFatigueSignal | null {
   const now = new Date();
-  const twoWeeksAgo = subWeeks(now, 2);
-  const fourWeeksAgo = subWeeks(now, 4);
+  const weekStartsOn = settings.weekStartDay === 'monday' ? 1 : 0;
+  const thisWeekStart = startOfWeek(now, { weekStartsOn });
+  const dayOfWeek = differenceInDays(now, thisWeekStart); // 0=Mon, 1=Tue, etc.
 
-  // Compute total load for recent 2 weeks
+  // Compare same portion of the week: day 0 through today
+  // "This week" = thisWeekStart .. now
+  // "Baseline week" = 2 weeks before thisWeekStart .. 2 weeks before now
+  const baselineWeekStart = subWeeks(thisWeekStart, 2);
+  const baselineWeekEnd = subWeeks(now, 2);
+
   let recentLoad = 0;
   let baselineLoad = 0;
+  let recentWorkouts = 0;
+  let baselineWorkouts = 0;
+
+  const countedWorkouts = new Set<string>();
 
   for (const set of sets) {
     const date = workoutDateMap.get(set.workoutId);
     if (!date) continue;
 
     const load = set.weight * set.reps;
-    if (date >= twoWeeksAgo) {
+    if (date >= thisWeekStart && date <= now) {
       recentLoad += load;
-    } else if (date >= fourWeeksAgo) {
+      if (!countedWorkouts.has(`r:${set.workoutId}`)) {
+        countedWorkouts.add(`r:${set.workoutId}`);
+        recentWorkouts++;
+      }
+    } else if (date >= baselineWeekStart && date <= baselineWeekEnd) {
       baselineLoad += load;
+      if (!countedWorkouts.has(`b:${set.workoutId}`)) {
+        countedWorkouts.add(`b:${set.workoutId}`);
+        baselineWorkouts++;
+      }
     }
   }
 
@@ -243,11 +267,16 @@ function analyzeWeeklyVolumeTrend(
   if (declinePercent <= 15) return null;
 
   const rounded = Math.round(declinePercent);
+  const dayLabel = format(now, 'EEEE'); // e.g. "Wednesday"
+  const periodDesc = dayOfWeek === 0
+    ? format(thisWeekStart, 'EEE')
+    : `${format(thisWeekStart, 'EEE')}–${dayLabel}`;
+
   return {
     signalType: 'volume_drop',
     severity: Math.min(90, 65 + Math.round((rounded - 15) * 2)),
-    message: `Total weekly volume down ${rounded}% from 2 weeks ago`,
-    detail: 'Consider whether this is intentional. Take an extra rest day if needed.',
+    message: `Volume down ${rounded}% this ${periodDesc} vs 2 weeks ago`,
+    detail: `${Math.round(recentLoad).toLocaleString()} lbs (${recentWorkouts} workouts) vs ${Math.round(baselineLoad).toLocaleString()} lbs (${baselineWorkouts} workouts) same period.`,
   };
 }
 
@@ -330,8 +359,8 @@ export function analyzeFatigue(
   const sensitivity = settings.fatigueSensitivity ?? 10;
   const workoutDateMap = buildWorkoutDateMap(workouts);
 
-  // Get unique exercise IDs from recent sets
-  const recentCutoff = subWeeks(new Date(), 8);
+  // Only analyze exercises done in the last 2 weeks (avoids flagging swapped/abandoned exercises)
+  const recentCutoff = subWeeks(new Date(), 2);
   const recentExerciseIds = new Set<string>();
   for (const set of sets) {
     const date = workoutDateMap.get(set.workoutId);
@@ -368,7 +397,7 @@ export function analyzeFatigue(
   // Overall analysis
   const overallSignals: OverallFatigueSignal[] = [];
 
-  const volumeSignal = analyzeWeeklyVolumeTrend(workouts, sets, workoutDateMap);
+  const volumeSignal = analyzeWeeklyVolumeTrend(workouts, sets, workoutDateMap, settings);
   if (volumeSignal) overallSignals.push(volumeSignal);
 
   const completionSignal = analyzeWorkoutCompletionRate(workouts);

@@ -20,7 +20,8 @@ import {
   ANALYTICS_CATEGORIES,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
-import { formatVolume } from '../services/units';
+import { formatVolume, formatWeight } from '../services/units';
+import { formatPRLabel } from '../services/personalRecords';
 
 type WorkoutSummaryRouteProp = RouteProp<RootStackParamList, 'WorkoutSummary'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -56,7 +57,7 @@ function groupByCategory(muscleGroupSets: MuscleGroupSetData[]): {
 export function WorkoutSummaryScreen() {
   const route = useRoute<WorkoutSummaryRouteProp>();
   const navigation = useNavigation<NavigationProp>();
-  const { workoutId, startedAt, completedAt, totalSets, muscleGroupSets } = route.params;
+  const { workoutId, startedAt, completedAt, totalSets, muscleGroupSets, sessionPRs } = route.params;
   const { workouts, templates, sets: allSets, exercises, userSettings } = useData();
 
   // Get workout details
@@ -132,6 +133,50 @@ export function WorkoutSummaryScreen() {
               <Text style={styles.volumeLabel}>Total Volume</Text>
             </View>
           </Card>
+        )}
+
+        {/* PRs Section */}
+        {sessionPRs && sessionPRs.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Personal Records</Text>
+            <Card style={styles.prSummaryCard}>
+              <Text style={styles.prSummaryHeadline}>
+                You set {sessionPRs.length} PR{sessionPRs.length !== 1 ? 's' : ''} this session!
+              </Text>
+              {sessionPRs.map((pr, index) => {
+                const exercise = exercises.find(e => e.id === pr.exerciseId);
+                const set = workoutSets.find(s => s.id === pr.setId);
+                return (
+                  <View
+                    key={pr.setId}
+                    style={[
+                      styles.prRow,
+                      index === sessionPRs.length - 1 && styles.prRowLast,
+                    ]}
+                  >
+                    <View style={styles.prRowLeft}>
+                      <Text style={styles.prExerciseName}>
+                        {exercise?.name || 'Unknown'}
+                      </Text>
+                      <Text style={styles.prDetail}>
+                        {pr.prTypes.map(t => formatPRLabel(t)).join(', ')}
+                        {set ? ` — ${formatWeight(set.weight, units)} × ${set.reps}` : ''}
+                      </Text>
+                    </View>
+                    {pr.isMilestone && pr.milestoneLabel ? (
+                      <View style={styles.milestoneBadge}>
+                        <Text style={styles.milestoneBadgeText}>🏆 {pr.milestoneLabel}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.regularPrBadge}>
+                        <Text style={styles.regularPrBadgeText}>🏅 PR</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </Card>
+          </View>
         )}
 
         {/* Muscle Groups Breakdown */}
@@ -328,6 +373,63 @@ const styles = StyleSheet.create({
   },
   muscleSetsSecondary: {
     color: colors.textSecondary,
+  },
+  prSummaryCard: {
+    marginBottom: spacing.md,
+  },
+  prSummaryHeadline: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.bold,
+    color: colors.primary,
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+  prRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  prRowLast: {
+    borderBottomWidth: 0,
+  },
+  prRowLeft: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  prExerciseName: {
+    fontSize: typography.size.base,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  prDetail: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  milestoneBadge: {
+    backgroundColor: colors.primary + '30',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  milestoneBadgeText: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  regularPrBadge: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  regularPrBadgeText: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.weight.medium,
   },
   buttonContainer: {
     position: 'absolute',

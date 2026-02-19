@@ -250,6 +250,8 @@ export interface Exercise {
   location?: ExerciseLocation; // Deprecated: kept for backward compatibility
   locationIds?: string[]; // References WorkoutLocation.id - exercises available at these locations
   isCustom?: boolean;
+  isUnilateral?: boolean; // Single-limb exercise — doubles target sets, halves volume credit
+  notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
 }
 
 // Template
@@ -329,6 +331,8 @@ export interface UserSettings {
   sleepGoal: number; // hours - legacy, use dailyGoals.sleepHours
   restTimerSeconds: number;
   minimumSetsPerExercise: number; // Warn if finishing workout with fewer sets
+  defaultTargetSets: number; // Target sets per exercise during workout (drives "Set X of Y")
+  moveCompletedToBottom: boolean; // Auto-move completed exercises to bottom of list
   muscleGroupTargets: MuscleGroupTargets;
   dailyGoals: DailyGoals;
   weeklyGoals: WeeklyGoals;
@@ -349,6 +353,8 @@ export interface UserSettings {
   fatigueDetectionEnabled?: boolean;
   fatigueSensitivity?: number;
   isOnDeload?: boolean;
+  // PR notifications
+  milestoneCelebrationsEnabled?: boolean;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -358,6 +364,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   sleepGoal: 8,
   restTimerSeconds: 90,
   minimumSetsPerExercise: 3,
+  defaultTargetSets: 3,
+  moveCompletedToBottom: true,
   muscleGroupTargets: {
     chest: 10,
     lats: 10,
@@ -387,6 +395,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   nutritionMode: 'recomp',
   calorieGoal: null,
   calorieTolerancePercent: 10,
+  milestoneCelebrationsEnabled: true,
 };
 
 // Apple Health Data Types

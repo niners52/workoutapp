@@ -11,7 +11,7 @@
  * This keeps them always accurate and avoids sync issues.
  */
 
-import { WorkoutSet, Exercise } from '../types';
+import { WorkoutSet, Exercise, UnitSystem } from '../types';
 import { estimated1RM } from './units';
 
 export interface PersonalRecord {
@@ -40,6 +40,25 @@ export interface PRCheckResult {
   isPR: boolean; // true if any PR was set
   records: PersonalRecord[];
 }
+
+// ─── Milestone Detection ────────────────────────────────────────────────────
+
+export type MilestoneReason =
+  | { kind: 'plate'; plateWeight: number }
+  | { kind: 'rep_jump'; previousBestReps: number; newReps: number; atWeight: number }
+  | { kind: 'e1rm_jump'; previousBest: number; newValue: number; delta: number };
+
+export interface MilestoneCheckResult {
+  isMilestone: boolean;
+  reason: MilestoneReason | null;
+  prResult: PRCheckResult;
+}
+
+// Plate milestones in lbs (internal storage unit)
+const PLATE_MILESTONES_LBS = [135, 185, 225, 275, 315, 365, 405];
+// Round kg milestones
+const PLATE_MILESTONES_KG = [60, 80, 100, 120, 140];
+const KG_TO_LBS = 2.20462;
 
 /**
  * Calculate all PRs for a given exercise from set history.
@@ -237,6 +256,127 @@ export function prEmoji(type: PersonalRecord['type']): string {
     case 'volume': return '💪';
     case 'e1rm': return '⭐';
     default: return '🎉';
+  }
+}
+
+// ─── Milestone Detection Logic ──────────────────────────────────────────────
+
+/**
+ * Check if a new set is a PR and whether it qualifies as a milestone.
+ * Wraps checkForPR() and adds milestone classification.
+ */
+export function checkForMilestone(
+  newSet: { exerciseId: string; weight: number; reps: number; workoutId: string },
+  previousSets: WorkoutSet[],
+  workoutDates: Map<string, string>,
+  units: UnitSystem
+): MilestoneCheckResult {
+  const prResult = checkForPR(newSet, previousSets, workoutDates);
+
+  if (!prResult.isPR) {
+    return { isMilestone: false, reason: null, prResult };
+  }
+
+  const exercisePreviousSets = previousSets.filter(
+    s => s.exerciseId === newSet.exerciseId && s.weight > 0
+  );
+
+  // 1. Plate milestone: first time weight >= a plate threshold for this exercise
+  if (prResult.isWeightPR) {
+    const previousMaxWeight = exercisePreviousSets.length > 0
+      ? Math.max(...exercisePreviousSets.map(s => s.weight))
+      : 0;
+
+    // Choose milestones based on user's unit system
+    const milestones = units === 'metric'
+      ? PLATE_MILESTONES_KG.map(kg => kg * KG_TO_LBS)
+      : PLATE_MILESTONES_LBS;
+
+    for (const milestone of milestones) {
+      if (newSet.weight >= milestone && previousMaxWeight < milestone) {
+        // Store the display-friendly weight (the round number)
+        const displayWeight = units === 'metric'
+          ? PLATE_MILESTONES_KG[milestones.indexOf(milestone)]
+          : milestone;
+        return {
+          isMilestone: true,
+          reason: { kind: 'plate', plateWeight: displayWeight },
+          prResult,
+        };
+      }
+    }
+  }
+
+  // 2. Big rep jump: +3 or more reps at same weight as previous best at that weight
+  if (prResult.isRepPR) {
+    const setsAtSameWeight = exercisePreviousSets.filter(
+      s => s.weight === newSet.weight && s.reps > 0
+    );
+    if (setsAtSameWeight.length > 0) {
+      const previousBestReps = Math.max(...setsAtSameWeight.map(s => s.reps));
+      const repDelta = newSet.reps - previousBestReps;
+      if (repDelta >= 3) {
+        return {
+          isMilestone: true,
+          reason: {
+            kind: 'rep_jump',
+            previousBestReps,
+            newReps: newSet.reps,
+            atWeight: newSet.weight,
+          },
+          prResult,
+        };
+      }
+    }
+  }
+
+  // 3. All-time e1RM jump by 5+ lbs
+  if (prResult.isE1rmPR) {
+    const currentPRs = calculateExercisePRs(newSet.exerciseId, previousSets, workoutDates);
+    const previousBestE1rm = currentPRs.e1rmPR?.value || 0;
+    const newE1rm = estimated1RM(newSet.weight, newSet.reps);
+    const e1rmDelta = newE1rm - previousBestE1rm;
+    if (e1rmDelta >= 5) {
+      return {
+        isMilestone: true,
+        reason: {
+          kind: 'e1rm_jump',
+          previousBest: previousBestE1rm,
+          newValue: newE1rm,
+          delta: e1rmDelta,
+        },
+        prResult,
+      };
+    }
+  }
+
+  return { isMilestone: false, reason: null, prResult };
+}
+
+/**
+ * Format a milestone for display.
+ */
+export function formatMilestoneLabel(reason: MilestoneReason, units: UnitSystem): string {
+  switch (reason.kind) {
+    case 'plate':
+      return units === 'metric'
+        ? `${reason.plateWeight} kg Club!`
+        : `${reason.plateWeight} lb Club!`;
+    case 'rep_jump':
+      return `+${reason.newReps - reason.previousBestReps} Rep PR!`;
+    case 'e1rm_jump':
+      return `e1RM +${Math.round(reason.delta)} lbs!`;
+  }
+}
+
+/**
+ * Get emoji for a milestone celebration.
+ */
+export function milestoneEmoji(reason: MilestoneReason): string {
+  switch (reason.kind) {
+    case 'plate': return '🏆';
+    case 'rep_jump': return '🔥';
+    case 'e1rm_jump': return '⭐';
   }
 }
 

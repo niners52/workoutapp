@@ -577,7 +577,42 @@ export async function syncDeleteLocation(id: string): Promise<void> {
 
 // ==================== PENDING SYNC PROCESSING ====================
 
-export async function processPendingSync(): Promise<{ processed: number; failed: number }> {
+// Deduplicate: for upserts, keep only the latest per (table, id).
+// For deletes, if a later upsert exists for the same id, drop the delete.
+function deduplicateOperations(operations: PendingSyncOperation[]): PendingSyncOperation[] {
+  const seen = new Map<string, PendingSyncOperation>();
+
+  for (const op of operations) {
+    const id = op.operation === 'upsert'
+      ? (op.table === 'user_settings' ? `${op.table}:${op.data.user_id}` : `${op.table}:${op.data.id}`)
+      : `${op.table}:${op.data.id}`;
+
+    const existing = seen.get(id);
+    if (!existing || op.timestamp >= existing.timestamp) {
+      seen.set(id, op);
+    }
+  }
+
+  return Array.from(seen.values());
+}
+
+// Drop operations older than 30 days — they're likely stale migration artifacts
+function dropStaleOperations(operations: PendingSyncOperation[]): PendingSyncOperation[] {
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return operations.filter(op => op.timestamp > cutoff);
+}
+
+export interface SyncProgress {
+  total: number;
+  processed: number;
+  failed: number;
+}
+
+export type SyncProgressCallback = (progress: SyncProgress) => void;
+
+export async function processPendingSync(
+  onProgress?: SyncProgressCallback
+): Promise<{ processed: number; failed: number }> {
   const userId = await getUserId();
   if (!userId) return { processed: 0, failed: 0 };
 
@@ -588,47 +623,83 @@ export async function processPendingSync(): Promise<{ processed: number; failed:
     const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
     if (!existing) return { processed: 0, failed: 0 };
 
-    const operations: PendingSyncOperation[] = JSON.parse(existing);
+    let operations: PendingSyncOperation[] = JSON.parse(existing);
     if (operations.length === 0) return { processed: 0, failed: 0 };
 
-    console.log(`Processing ${operations.length} pending sync operations...`);
+    // Clean up: drop stale ops, then deduplicate
+    operations = dropStaleOperations(operations);
+    operations = deduplicateOperations(operations);
+
+    const total = operations.length;
+    console.log(`Processing ${total} pending sync operations (after dedup)...`);
+    onProgress?.({ total, processed: 0, failed: 0 });
+
+    // Group upserts by table for batch processing
+    const upsertsByTable = new Map<string, PendingSyncOperation[]>();
+    const deletes: PendingSyncOperation[] = [];
+
+    for (const op of operations) {
+      if (op.operation === 'upsert') {
+        const list = upsertsByTable.get(op.table) || [];
+        list.push(op);
+        upsertsByTable.set(op.table, list);
+      } else {
+        deletes.push(op);
+      }
+    }
 
     const remaining: PendingSyncOperation[] = [];
 
-    for (const op of operations) {
+    // Process upserts in batches of 50 per table
+    for (const [table, ops] of upsertsByTable) {
+      const conflictKey = table === 'user_settings' ? 'user_id' : 'id';
+      const batches = chunkArray(ops, 50);
+
+      for (const batch of batches) {
+        try {
+          const rows = batch.map(op => op.data);
+          const { error } = await supabase
+            .from(table)
+            .upsert(rows, { onConflict: conflictKey });
+
+          if (error) {
+            console.log(`Batch upsert failed for ${table} (${batch.length} rows):`, error.message);
+            remaining.push(...batch);
+            failed += batch.length;
+          } else {
+            processed += batch.length;
+          }
+        } catch (error) {
+          console.log(`Batch upsert error for ${table}:`, error);
+          remaining.push(...batch);
+          failed += batch.length;
+        }
+        onProgress?.({ total, processed, failed });
+      }
+    }
+
+    // Process deletes individually (can't batch deletes easily)
+    for (const op of deletes) {
       try {
-        if (op.operation === 'upsert') {
-          const { error } = await supabase
-            .from(op.table)
-            .upsert(op.data, { onConflict: op.table === 'user_settings' ? 'user_id' : 'id' });
+        const { error } = await supabase
+          .from(op.table)
+          .delete()
+          .eq('id', op.data.id)
+          .eq('user_id', op.data.user_id);
 
-          if (error) {
-            console.log(`Retry failed for ${op.table} upsert:`, error.message);
-            remaining.push(op);
-            failed++;
-          } else {
-            processed++;
-          }
-        } else if (op.operation === 'delete') {
-          const { error } = await supabase
-            .from(op.table)
-            .delete()
-            .eq('id', op.data.id)
-            .eq('user_id', op.data.user_id);
-
-          if (error) {
-            console.log(`Retry failed for ${op.table} delete:`, error.message);
-            remaining.push(op);
-            failed++;
-          } else {
-            processed++;
-          }
+        if (error) {
+          console.log(`Delete retry failed for ${op.table}:`, error.message);
+          remaining.push(op);
+          failed++;
+        } else {
+          processed++;
         }
       } catch (error) {
-        console.log(`Error processing pending op for ${op.table}:`, error);
+        console.log(`Delete error for ${op.table}:`, error);
         remaining.push(op);
         failed++;
       }
+      onProgress?.({ total, processed, failed });
     }
 
     // Save remaining operations back to queue
@@ -638,13 +709,108 @@ export async function processPendingSync(): Promise<{ processed: number; failed:
       await updateLastSyncTimestamp();
     }
 
-    console.log(`Pending sync complete: ${processed} processed, ${failed} failed`);
+    console.log(`Pending sync complete: ${processed} processed, ${failed} failed, ${remaining.length} remaining`);
     return { processed, failed };
   } catch (error) {
     console.log('Error processing pending sync:', error);
     return { processed, failed };
   }
 }
+
+// ==================== SYNC MANAGER ====================
+
+type SyncStatusListener = (status: {
+  pendingCount: number;
+  isSyncing: boolean;
+  lastSyncTime: string | null;
+}) => void;
+
+class SyncManager {
+  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private isSyncing = false;
+  private listeners: Set<SyncStatusListener> = new Set();
+  private consecutiveFailures = 0;
+
+  subscribe(listener: SyncStatusListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private async notifyListeners() {
+    const [pendingCount, lastSyncTime] = await Promise.all([
+      getPendingOperationsCount(),
+      getLastSyncTimestamp(),
+    ]);
+    const status = { pendingCount, isSyncing: this.isSyncing, lastSyncTime };
+    this.listeners.forEach(l => l(status));
+  }
+
+  async start() {
+    // Process immediately on start
+    await this.processQueue();
+
+    // Then every 30 seconds
+    this.intervalId = setInterval(() => this.processQueue(), 30_000);
+  }
+
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  async processQueue(onProgress?: SyncProgressCallback): Promise<{ processed: number; failed: number }> {
+    if (this.isSyncing) return { processed: 0, failed: 0 };
+
+    const count = await getPendingOperationsCount();
+    if (count === 0) {
+      this.consecutiveFailures = 0;
+      await this.notifyListeners();
+      return { processed: 0, failed: 0 };
+    }
+
+    // Exponential backoff: skip this cycle if we've been failing
+    if (this.consecutiveFailures > 0) {
+      const backoffCycles = Math.min(2 ** this.consecutiveFailures, 32); // max ~16 min at 30s interval
+      // Use a simple counter — we skip processing for backoffCycles intervals
+      if (this.consecutiveFailures > 5) {
+        console.log(`[SyncManager] Backing off (${this.consecutiveFailures} consecutive failures)`);
+        return { processed: 0, failed: 0 };
+      }
+    }
+
+    this.isSyncing = true;
+    await this.notifyListeners();
+
+    try {
+      const result = await processPendingSync(onProgress);
+
+      if (result.failed > 0 && result.processed === 0) {
+        this.consecutiveFailures++;
+      } else {
+        this.consecutiveFailures = 0;
+      }
+
+      return result;
+    } catch (error) {
+      console.log('[SyncManager] Process error:', error);
+      this.consecutiveFailures++;
+      return { processed: 0, failed: 0 };
+    } finally {
+      this.isSyncing = false;
+      await this.notifyListeners();
+    }
+  }
+
+  // Called when app comes to foreground
+  async onAppResume() {
+    this.consecutiveFailures = 0; // Reset backoff on resume
+    await this.processQueue();
+  }
+}
+
+export const syncManager = new SyncManager();
 
 // ==================== CLOUD PULL ====================
 

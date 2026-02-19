@@ -32,8 +32,6 @@ import {
 import {
   calculateWeeklyShortfalls,
   MuscleGroupShortfall,
-  getUnresolvedSkippedMuscleGroups,
-  SkippedMuscleGroupAlert,
 } from '../services/analytics';
 import {
   getWorkouts,
@@ -57,6 +55,7 @@ import { getActivePartnership, getPartnerId, getPartnerStats } from '../services
 import { getActiveChallenge, getDaysRemaining } from '../services/challengeService';
 import { getTopSuggestions, CoachSuggestion, dismissSuggestion } from '../services/coachSuggestions';
 import { CoachSuggestionsCard } from '../components/coach';
+import { syncManager } from '../services/syncService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -92,7 +91,6 @@ export function HomeScreen() {
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
-  const [skippedAlerts, setSkippedAlerts] = useState<SkippedMuscleGroupAlert[]>([]);
   const [coachSuggestions, setCoachSuggestions] = useState<CoachSuggestion[]>([]);
 
   // Challenge widget state
@@ -100,6 +98,17 @@ export function HomeScreen() {
   const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null);
   const [partnership, setPartnership] = useState<Partnership | null>(null);
   const [partnerName, setPartnerName] = useState<string>('Partner');
+
+  // Sync status
+  const [syncPending, setSyncPending] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    return syncManager.subscribe(status => {
+      setSyncPending(status.pendingCount);
+      setIsSyncing(status.isSyncing);
+    });
+  }, []);
 
   // Weekly summary modal state
   const [showWeeklySummary, setShowWeeklySummary] = useState(false);
@@ -199,9 +208,8 @@ export function HomeScreen() {
       const activeSupps = freshSupplements.filter(s => s.isActive);
       const currentRoutine = freshRoutines.find(r => r.isActive);
 
-      // Phase 2: Calculate shortfalls and skipped alerts (no HealthKit, fast)
+      // Phase 2: Calculate shortfalls (no HealthKit, fast)
       let shortfallData: MuscleGroupShortfall[] = [];
-      let skippedData: SkippedMuscleGroupAlert[] = [];
 
       try {
         const result = await calculateWeeklyShortfalls(
@@ -215,15 +223,6 @@ export function HomeScreen() {
         console.error('[HomeScreen] Shortfalls error:', e);
       }
 
-      try {
-        skippedData = getUnresolvedSkippedMuscleGroups(
-          freshWorkouts, freshSets, freshExercises, freshTemplates
-        );
-        setSkippedAlerts(skippedData);
-      } catch (e) {
-        console.error('[HomeScreen] Skipped alerts error:', e);
-      }
-
       // Phase 2.5: Generate coach suggestions
       if (freshSettings.coachSuggestionsEnabled !== false) {
         try {
@@ -235,7 +234,6 @@ export function HomeScreen() {
             routine: currentRoutine,
             settings: freshSettings,
             shortfalls: shortfallData,
-            skippedAlerts: skippedData,
           }, 2);
           setCoachSuggestions(suggestions);
         } catch (e) {
@@ -319,7 +317,7 @@ export function HomeScreen() {
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) {
-      navigation.navigate('ActiveWorkout', { workoutId: '' });
+      navigation.navigate('MainTabs', { screen: 'Train' });
     } else {
       navigation.navigate('StartWorkout');
     }
@@ -351,10 +349,28 @@ export function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Workout Tracker</Text>
-          <Text style={styles.dateText}>
-            Week of {format(weekStart, 'MMM d')} - {format(weekEnd, 'MMM d')}
-          </Text>
+          <View>
+            <Text style={styles.title}>Workout Tracker</Text>
+            <Text style={styles.dateText}>
+              Week of {format(weekStart, 'MMM d')} - {format(weekEnd, 'MMM d')}
+            </Text>
+          </View>
+          {syncPending > 0 && (
+            <TouchableOpacity
+              style={styles.syncIndicator}
+              onPress={() => navigation.navigate('MainTabs', { screen: 'Profile' })}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isSyncing ? 'cloud-upload' : 'cloud-offline'}
+                size={18}
+                color={isSyncing ? colors.primary : colors.warning}
+              />
+              <Text style={[styles.syncIndicatorText, isSyncing && styles.syncIndicatorTextActive]}>
+                {syncPending}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Recovery Banner for interrupted workouts */}
@@ -372,7 +388,7 @@ export function HomeScreen() {
                 style={styles.recoveryResumeButton}
                 onPress={() => {
                   dismissRecovery();
-                  navigation.navigate('ActiveWorkout', { workoutId: '' });
+                  navigation.navigate('MainTabs', { screen: 'Train' });
                 }}
               >
                 <Text style={styles.recoveryResumeText}>Resume</Text>
@@ -483,7 +499,7 @@ export function HomeScreen() {
         {/* Weekly Shortfalls */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Muscle Groups Needing Attention</Text>
-          {shortfalls.length === 0 && skippedAlerts.length === 0 ? (
+          {shortfalls.length === 0 ? (
             <Card style={styles.onTrackCard}>
               <MaterialCommunityIcons name="arm-flex" size={32} color={colors.success} style={styles.onTrackIcon} />
               <Text style={styles.onTrackText}>You're on track this week!</Text>
@@ -492,36 +508,6 @@ export function HomeScreen() {
               </Text>
             </Card>
           ) : (
-            <>
-            {skippedAlerts.length > 0 && (
-              <Card style={styles.skippedCard}>
-                {skippedAlerts.map((alert, index) => (
-                  <View
-                    key={`${alert.templateName}-${alert.workoutDate}`}
-                    style={[
-                      styles.skippedRow,
-                      index < skippedAlerts.length - 1 && styles.skippedRowBorder,
-                    ]}
-                  >
-                    <Ionicons
-                      name="alert-circle-outline"
-                      size={18}
-                      color={colors.warning}
-                      style={styles.skippedIcon}
-                    />
-                    <View style={styles.skippedInfo}>
-                      <Text style={styles.skippedLabel}>
-                        Skipped from {alert.templateName}
-                      </Text>
-                      <Text style={styles.skippedMuscles}>
-                        {alert.displayNames.join(', ')}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </Card>
-            )}
-            {shortfalls.length > 0 && (
             <Card padding="none">
               {shortfalls.slice(0, 5).map((item, index) => {
                 const progress = item.targetSets > 0
@@ -562,8 +548,6 @@ export function HomeScreen() {
                 );
               })}
             </Card>
-            )}
-            </>
           )}
         </View>
 
@@ -682,7 +666,28 @@ const styles = StyleSheet.create({
     padding: spacing.base,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: spacing.md,
+  },
+  syncIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    marginTop: spacing.xs,
+  },
+  syncIndicatorText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold as any,
+    color: colors.warning,
+  },
+  syncIndicatorTextActive: {
+    color: colors.primary,
   },
   title: {
     fontSize: typography.size.xxxl,
@@ -829,37 +834,6 @@ const styles = StyleSheet.create({
   shortfallNote: {
     fontSize: typography.size.xs,
     color: colors.warning,
-  },
-  skippedCard: {
-    marginBottom: spacing.sm,
-  },
-  skippedRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'flex-start' as const,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.base,
-  },
-  skippedRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
-  },
-  skippedIcon: {
-    marginRight: spacing.sm,
-    marginTop: 2,
-  },
-  skippedInfo: {
-    flex: 1,
-  },
-  skippedLabel: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.medium as any,
-    color: colors.warning,
-  },
-  skippedMuscles: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.medium as any,
-    color: colors.text,
-    marginTop: 2,
   },
   loadingCard: {
     marginTop: spacing.md,

@@ -35,11 +35,12 @@ import {
 import { clearHealthKitCache } from '../services/healthKitCache';
 import { resetMigration } from '../services/cloudSync';
 import {
-  processPendingSync,
+  syncManager,
   pullFromCloud,
   getLastSyncTimestamp,
   getPendingOperationsCount,
   isAuthenticated as checkIsAuthenticated,
+  SyncProgress,
 } from '../services/syncService';
 import { format } from 'date-fns';
 import {
@@ -95,6 +96,7 @@ export function SettingsScreen() {
   const [pendingCount, setPendingCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isAuthenticatedForSync, setIsAuthenticatedForSync] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
 
   // Interrupted workouts state
   const [incompleteWorkouts, setIncompleteWorkouts] = useState<Workout[]>([]);
@@ -121,15 +123,25 @@ export function SettingsScreen() {
     loadIncompleteWorkouts();
   }, [loadSyncStatus, loadIncompleteWorkouts]);
 
+  // Subscribe to live sync status updates
+  useEffect(() => {
+    return syncManager.subscribe(status => {
+      setPendingCount(status.pendingCount);
+      setIsSyncing(status.isSyncing);
+      setLastSyncTime(status.lastSyncTime);
+    });
+  }, []);
+
   const handleSyncNow = async () => {
-    setIsSyncing(true);
+    setSyncProgress(null);
     try {
-      // Process any pending operations
-      const result = await processPendingSync();
-      console.log(`Sync complete: ${result.processed} processed, ${result.failed} failed`);
+      const result = await syncManager.processQueue((progress) => {
+        setSyncProgress(progress);
+      });
 
       // Refresh sync status
       await loadSyncStatus();
+      setSyncProgress(null);
 
       if (result.failed > 0) {
         Alert.alert('Sync Partial', `${result.processed} synced, ${result.failed} still pending`);
@@ -140,9 +152,8 @@ export function SettingsScreen() {
       }
     } catch (error) {
       console.error('Sync error:', error);
+      setSyncProgress(null);
       Alert.alert('Sync Failed', 'Unable to sync with cloud');
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -456,6 +467,14 @@ export function SettingsScreen() {
                     <Text style={styles.pendingCount}>{pendingCount}</Text>
                   </View>
                 )}
+                {syncProgress && syncProgress.total > 0 && (
+                  <View style={styles.settingRow}>
+                    <Text style={styles.settingLabel}>Syncing...</Text>
+                    <Text style={styles.syncValue}>
+                      {syncProgress.processed + syncProgress.failed}/{syncProgress.total}
+                    </Text>
+                  </View>
+                )}
                 <View style={[styles.settingRow, styles.settingRowLast]}>
                   <TouchableOpacity
                     onPress={handleSyncNow}
@@ -463,7 +482,10 @@ export function SettingsScreen() {
                     style={styles.syncButton}
                   >
                     {isSyncing ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
+                      <View style={styles.syncingRow}>
+                        <ActivityIndicator size="small" color={colors.primary} />
+                        <Text style={styles.syncingText}>Syncing...</Text>
+                      </View>
                     ) : (
                       <Text style={styles.syncButtonText}>Sync Now</Text>
                     )}
@@ -591,7 +613,38 @@ export function SettingsScreen() {
                 step={1}
               />
             </View>
-            <View style={[styles.settingRow, styles.settingRowLast]}>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Target Sets / Exercise</Text>
+              <NumberInput
+                value={userSettings.defaultTargetSets ?? 3}
+                onChangeValue={(value) => updateUserSettings({ defaultTargetSets: value })}
+                min={1}
+                max={10}
+                step={1}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Auto-reorder on Completion</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.moveCompletedToBottom !== false && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    moveCompletedToBottom: !userSettings.moveCompletedToBottom,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.moveCompletedToBottom !== false && styles.toggleTextActive,
+                ]}>
+                  {userSettings.moveCompletedToBottom !== false ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.settingRow}>
               <Text style={styles.settingLabel}>Coach Suggestions</Text>
               <TouchableOpacity
                 style={[
@@ -612,9 +665,30 @@ export function SettingsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <Text style={styles.settingLabel}>Milestone Celebrations</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.milestoneCelebrationsEnabled !== false && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    milestoneCelebrationsEnabled: userSettings.milestoneCelebrationsEnabled === false,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.milestoneCelebrationsEnabled !== false && styles.toggleTextActive,
+                ]}>
+                  {userSettings.milestoneCelebrationsEnabled !== false ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Card>
           <Text style={styles.hint}>
-            Show personalized training suggestions on the Home screen
+            Show animated celebrations for plate clubs, big rep jumps, and e1RM records
           </Text>
         </View>
 
@@ -1719,6 +1793,15 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     color: colors.primary,
     fontWeight: typography.weight.medium,
+  },
+  syncingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  syncingText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
   },
   formulaOption: {
     width: '100%',

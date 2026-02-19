@@ -15,7 +15,7 @@ import {
   PrimaryMuscleGroup,
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
-import { MuscleGroupShortfall, SkippedMuscleGroupAlert } from './analytics';
+import { MuscleGroupShortfall } from './analytics';
 import { analyzeFatigue } from './fatigueDetection';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -24,7 +24,6 @@ export type CoachSuggestionType =
   | 'volume_gap'
   | 'muscle_imbalance'
   | 'missed_muscle_group'
-  | 'skipped_exercise'
   | 'recovery'
   | 'fatigue';
 
@@ -269,21 +268,7 @@ function generateMissedMuscleGroupSuggestions(
   return suggestions;
 }
 
-// ─── 4. Skipped Exercise Suggestions ────────────────────────────────────────
-
-function generateSkippedExerciseSuggestions(
-  skippedAlerts: SkippedMuscleGroupAlert[]
-): CoachSuggestion[] {
-  return skippedAlerts.slice(0, 3).map((alert, i) => ({
-    id: `skipped:${alert.templateName}:${alert.muscleGroups.join(',')}`,
-    type: 'skipped_exercise' as CoachSuggestionType,
-    priority: 40 + (skippedAlerts.length > 1 ? 10 : 0),
-    icon: 'play-skip-forward-outline',
-    message: `Skipped ${alert.displayNames.join(', ')} from ${alert.templateName}`,
-  }));
-}
-
-// ─── 5. Recovery Suggestions ────────────────────────────────────────────────
+// ─── 4. Recovery Suggestions ────────────────────────────────────────────────
 
 function generateRecoverySuggestions(
   workouts: Workout[],
@@ -430,14 +415,13 @@ export interface CoachSuggestionsInput {
   routine: Routine | undefined;
   settings: UserSettings;
   shortfalls: MuscleGroupShortfall[];
-  skippedAlerts: SkippedMuscleGroupAlert[];
 }
 
 export async function getTopSuggestions(
   input: CoachSuggestionsInput,
   maxCount: number = 2
 ): Promise<CoachSuggestion[]> {
-  const { workouts, sets, exercises, settings, shortfalls, skippedAlerts } = input;
+  const { workouts, sets, exercises, settings, shortfalls } = input;
 
   // Generate all suggestions
   const all: CoachSuggestion[] = [
@@ -446,7 +430,6 @@ export async function getTopSuggestions(
     ...generateVolumeGapSuggestions(shortfalls),
     ...generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings),
     ...generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings),
-    ...generateSkippedExerciseSuggestions(skippedAlerts),
   ];
 
   // Sort by priority descending

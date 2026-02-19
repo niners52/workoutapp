@@ -23,7 +23,7 @@ import { getLastWorkoutForExercise } from '../services/workoutService';
 import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, UnitSystem } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
-import { checkForPR, PRCheckResult, prEmoji, formatPRLabel } from '../services/personalRecords';
+import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
 import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/fatigueDetection';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -51,7 +51,7 @@ interface ExerciseHistory {
   date: string | null;
 }
 
-export function ActiveWorkoutScreen() {
+export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const navigation = useNavigation<NavigationProp>();
   const { exercises, templates, userSettings, locations, workouts, sets } = useData();
   const {
@@ -68,6 +68,7 @@ export function ActiveWorkoutScreen() {
     addExerciseToWorkout,
     removeExerciseFromWorkout,
     swapExercise,
+    reorderExercises,
   } = useWorkout();
 
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
@@ -81,11 +82,9 @@ export function ActiveWorkoutScreen() {
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestStep, setSuggestStep] = useState<'location' | 'exercises'>('location');
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
-  const [prCelebration, setPrCelebration] = useState<{ exerciseId: string; type: string; emoji: string } | null>(null);
+  const [prCelebration, setPrCelebration] = useState<{ exerciseId: string; emoji: string; label: string } | null>(null);
   const prAnimValue = useRef(new Animated.Value(0)).current;
-  // Track which exercises have already shown a PR notification this session
-  // This prevents showing multiple PR notifications for the same exercise
-  const [prShownThisSession, setPrShownThisSession] = useState<Set<string>>(new Set());
+  const [sessionPRs, setSessionPRs] = useState<Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>>(new Map());
   const [fatigueWarnings, setFatigueWarnings] = useState<Map<string, ExerciseFatigueSignal>>(new Map());
 
   // Get units from settings
@@ -144,6 +143,7 @@ export function ActiveWorkoutScreen() {
   }, [selectedExerciseId, exerciseHistories, activeWorkout?.sets.length]);
 
   if (!isWorkoutActive || !activeWorkout) {
+    if (embedded) return null;
     return (
       <SafeAreaView style={commonStyles.safeArea}>
         <View style={styles.emptyContainer}>
@@ -167,22 +167,15 @@ export function ActiveWorkoutScreen() {
     workoutDates.set(w.id, w.completedAt || w.startedAt);
   });
 
-  const showPRCelebration = (exerciseId: string, prResult: PRCheckResult) => {
-    // Priority: weight > e1rm > volume > reps
-    let prType: string;
-    if (prResult.isWeightPR) {
-      prType = 'weight';
-    } else if (prResult.isE1rmPR) {
-      prType = 'e1rm';
-    } else if (prResult.isVolumePR) {
-      prType = 'volume';
-    } else if (prResult.isRepPR) {
-      prType = 'reps';
-    } else {
-      return;
-    }
+  const showMilestoneCelebration = (exerciseId: string, milestoneResult: { reason: any; prResult: PRCheckResult }) => {
+    const label = milestoneResult.reason
+      ? formatMilestoneLabel(milestoneResult.reason, units)
+      : 'New PR!';
+    const emoji = milestoneResult.reason
+      ? milestoneEmoji(milestoneResult.reason)
+      : '🎉';
 
-    setPrCelebration({ exerciseId, type: prType, emoji: prEmoji(prType as any) });
+    setPrCelebration({ exerciseId, emoji, label });
 
     // Animate in
     Animated.sequence([
@@ -197,23 +190,64 @@ export function ActiveWorkoutScreen() {
   const handleLogSet = async () => {
     if (!selectedExerciseId) return;
 
-    // Check for PR before logging (compare against all previous sets)
-    const prResult = checkForPR(
+    // Check for milestone/PR before logging (compare against all previous sets)
+    const milestoneResult = checkForMilestone(
       { exerciseId: selectedExerciseId, weight, reps, workoutId: activeWorkout.workout.id },
       sets.filter(s => s.exerciseId === selectedExerciseId),
-      workoutDates
+      workoutDates,
+      units
     );
+
+    // Compute expected set count before async logSet (state may not update immediately)
+    const currentExercise = exercises.find(e => e.id === selectedExerciseId);
+    const baseTarget = userSettings?.defaultTargetSets ?? 3;
+    const targetSets = currentExercise?.isUnilateral ? baseTarget * 2 : baseTarget;
+    const currentSetCount = getSetsForExercise(selectedExerciseId).length;
+    const willComplete = currentSetCount + 1 >= targetSets;
+    const exerciseToMove = selectedExerciseId;
 
     await logSet(reps, weight, selectedExerciseId);
 
-    // Show PR celebration if any PR was set AND we haven't shown one for this exercise this session
-    if (prResult.isPR && !prShownThisSession.has(selectedExerciseId)) {
-      showPRCelebration(selectedExerciseId, prResult);
-      // Mark this exercise as having shown a PR this session
-      setPrShownThisSession(prev => new Set(prev).add(selectedExerciseId));
+    // Track PR in session map (keyed by set ID for badge display)
+    if (milestoneResult.prResult.isPR) {
+      const updatedSets = getSetsForExercise(selectedExerciseId);
+      const newSetId = updatedSets[updatedSets.length - 1]?.id;
+      if (newSetId) {
+        setSessionPRs(prev => new Map(prev).set(newSetId, {
+          prResult: milestoneResult.prResult,
+          isMilestone: milestoneResult.isMilestone,
+          milestoneLabel: milestoneResult.reason
+            ? formatMilestoneLabel(milestoneResult.reason, units)
+            : undefined,
+        }));
+      }
+
+      // Only show animated celebration for milestones
+      if (milestoneResult.isMilestone && userSettings?.milestoneCelebrationsEnabled !== false) {
+        showMilestoneCelebration(selectedExerciseId, milestoneResult);
+      }
     }
 
-    // Don't collapse - keep exercise expanded so user can continue logging
+    // Auto-reorder: move completed exercise to bottom if setting enabled
+    if (willComplete && userSettings?.moveCompletedToBottom !== false) {
+      const newOrder = activeWorkout.exerciseIds.filter(id => id !== exerciseToMove);
+      newOrder.push(exerciseToMove);
+      reorderExercises(newOrder);
+
+      // Auto-advance to next incomplete exercise
+      const nextIncomplete = newOrder.find(id => {
+        const setCount = getSetsForExercise(id).length;
+        // The exercise we just logged won't have the new set yet, so adjust
+        const adjusted = id === exerciseToMove ? setCount + 1 : setCount;
+        const ex = exercises.find(e => e.id === id);
+        const exTarget = ex?.isUnilateral ? baseTarget * 2 : baseTarget;
+        return adjusted < exTarget;
+      });
+      if (nextIncomplete) {
+        toggleExercise(nextIncomplete);
+      }
+    }
+
     // The rest timer will start automatically from logSet
   };
 
@@ -304,15 +338,36 @@ export function ActiveWorkoutScreen() {
       const completedAt = new Date().toISOString();
       const totalSets = activeWorkout.sets.length;
 
+      // Serialize session PRs for navigation
+      const sessionPRsForSummary = Array.from(sessionPRs.entries()).map(([setId, data]) => ({
+        setId,
+        exerciseId: activeWorkout.sets.find(s => s.id === setId)?.exerciseId || '',
+        prTypes: data.prResult.records.map(r => r.type),
+        isMilestone: data.isMilestone,
+        milestoneLabel: data.milestoneLabel,
+      })).filter(pr => pr.exerciseId);
+
       await finishWorkout(skippedExerciseIds);
 
-      navigation.replace('WorkoutSummary', {
-        workoutId: activeWorkout.workout.id,
-        startedAt,
-        completedAt,
-        totalSets,
-        muscleGroupSets,
-      });
+      if (embedded) {
+        navigation.navigate('WorkoutSummary', {
+          workoutId: activeWorkout.workout.id,
+          startedAt,
+          completedAt,
+          totalSets,
+          muscleGroupSets,
+          sessionPRs: sessionPRsForSummary.length > 0 ? sessionPRsForSummary : undefined,
+        });
+      } else {
+        navigation.replace('WorkoutSummary', {
+          workoutId: activeWorkout.workout.id,
+          startedAt,
+          completedAt,
+          totalSets,
+          muscleGroupSets,
+          sessionPRs: sessionPRsForSummary.length > 0 ? sessionPRsForSummary : undefined,
+        });
+      }
     };
 
     // Show warning if any exercises are below minimum
@@ -352,7 +407,9 @@ export function ActiveWorkoutScreen() {
           style: 'destructive',
           onPress: async () => {
             await cancelWorkout();
-            navigation.goBack();
+            if (!embedded) {
+              navigation.goBack();
+            }
           },
         },
       ]
@@ -504,8 +561,11 @@ export function ActiveWorkoutScreen() {
   // Calculate total sets logged
   const totalSetsLogged = activeWorkout.sets.length;
 
+  const Wrapper = embedded ? View : SafeAreaView;
+  const wrapperProps = embedded ? { style: styles.container } : { style: commonStyles.safeArea, edges: ['top'] as const };
+
   return (
-    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+    <Wrapper {...wrapperProps}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -556,36 +616,57 @@ export function ActiveWorkoutScreen() {
             const currentSets = getSetsForExercise(exerciseId);
             const history = exerciseHistories[exerciseId];
             const isExpanded = selectedExerciseId === exerciseId;
+            const baseTargetSets = userSettings?.defaultTargetSets ?? 3;
+            const targetSets = exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
+            const exerciseComplete = currentSets.length >= targetSets;
 
             if (!exercise) return null;
 
             const swapOptions = getSwapOptions(exercise);
 
+            // Show "Completed" separator when transitioning from incomplete to complete
+            const prevId = index > 0 ? activeWorkout.exerciseIds[index - 1] : null;
+            const prevExercise = prevId ? exercises.find(e => e.id === prevId) : null;
+            const prevTargetSets = prevExercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
+            const prevComplete = prevId ? getSetsForExercise(prevId).length >= prevTargetSets : false;
+            const showSeparator = exerciseComplete && !prevComplete && index > 0;
+
             return (
-              <ExerciseCard
-                key={exerciseId}
-                exercise={exercise}
-                currentSets={currentSets}
-                history={history}
-                isExpanded={isExpanded}
-                onToggle={() => toggleExercise(exerciseId)}
-                onLogSet={handleLogSet}
-                onDeleteSet={handleDeleteSet}
-                onRemove={() => handleRemoveExercise(exercise)}
-                onOpenRestTimer={() => setRestTimerModalVisible(true)}
-                onSwap={() => handleOpenSwapModal(exercise)}
-                onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
-                hasSwapOptions={swapOptions.length > 0}
-                weight={weight}
-                setWeight={setWeight}
-                reps={reps}
-                setReps={setReps}
-                restTimerSeconds={customRestTime}
-                units={units}
-                prCelebration={prCelebration}
-                prAnimValue={prAnimValue}
-                fatigueWarning={fatigueWarnings.get(exerciseId)}
-              />
+              <React.Fragment key={exerciseId}>
+                {showSeparator && (
+                  <View style={styles.completedSeparator}>
+                    <View style={styles.completedSeparatorLine} />
+                    <Text style={styles.completedSeparatorText}>Completed</Text>
+                    <View style={styles.completedSeparatorLine} />
+                  </View>
+                )}
+                <ExerciseCard
+                  exercise={exercise}
+                  currentSets={currentSets}
+                  history={history}
+                  isExpanded={isExpanded}
+                  onToggle={() => toggleExercise(exerciseId)}
+                  onLogSet={handleLogSet}
+                  onDeleteSet={handleDeleteSet}
+                  onRemove={() => handleRemoveExercise(exercise)}
+                  onOpenRestTimer={() => setRestTimerModalVisible(true)}
+                  onSwap={() => handleOpenSwapModal(exercise)}
+                  onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
+                  hasSwapOptions={swapOptions.length > 0}
+                  weight={weight}
+                  setWeight={setWeight}
+                  reps={reps}
+                  setReps={setReps}
+                  restTimerSeconds={customRestTime}
+                  units={units}
+                  prCelebration={prCelebration}
+                  prAnimValue={prAnimValue}
+                  sessionPRs={sessionPRs}
+                  fatigueWarning={fatigueWarnings.get(exerciseId)}
+                  targetSets={targetSets}
+                  isComplete={exerciseComplete}
+                />
+              </React.Fragment>
             );
           })}
 
@@ -873,7 +954,7 @@ export function ActiveWorkoutScreen() {
           </TouchableOpacity>
         </Modal>
       </View>
-    </SafeAreaView>
+    </Wrapper>
   );
 }
 
@@ -941,9 +1022,12 @@ interface ExerciseCardProps {
   setReps: (r: number) => void;
   restTimerSeconds: number;
   units: UnitSystem;
-  prCelebration: { exerciseId: string; type: string; emoji: string } | null;
+  prCelebration: { exerciseId: string; emoji: string; label: string } | null;
   prAnimValue: Animated.Value;
+  sessionPRs: Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>;
   fatigueWarning?: ExerciseFatigueSignal;
+  targetSets: number;
+  isComplete: boolean;
 }
 
 function ExerciseCard({
@@ -967,11 +1051,20 @@ function ExerciseCard({
   units,
   prCelebration,
   prAnimValue,
+  sessionPRs,
   fatigueWarning,
+  targetSets,
+  isComplete,
 }: ExerciseCardProps) {
   const showPR = prCelebration?.exerciseId === exercise.id;
+  const setCount = currentSets.length;
+  const setLabel = setCount === 0
+    ? `0 of ${targetSets} sets`
+    : setCount >= targetSets
+    ? `${setCount} sets \u2713`
+    : `Set ${setCount} of ${targetSets}`;
   return (
-    <Card style={styles.exerciseCard} padding="none">
+    <Card style={{...styles.exerciseCard, ...(isComplete ? styles.exerciseCardComplete : undefined)}} padding="none">
       {/* Exercise Header - Always visible */}
       <TouchableOpacity
         style={styles.exerciseHeader}
@@ -979,9 +1072,12 @@ function ExerciseCard({
         activeOpacity={0.7}
       >
         <View style={styles.exerciseHeaderLeft}>
-          <Text style={styles.exerciseName}>{exercise.name}</Text>
-          <Text style={styles.exerciseSets}>
-            {currentSets.length} {currentSets.length === 1 ? 'set' : 'sets'} logged
+          <Text style={[styles.exerciseName, isComplete && styles.exerciseNameComplete]}>{exercise.name}</Text>
+          {exercise.notes && (
+            <Text style={styles.exerciseNotes} numberOfLines={1}>{exercise.notes}</Text>
+          )}
+          <Text style={[styles.exerciseSets, isComplete && styles.exerciseSetsComplete]}>
+            {setLabel}
           </Text>
         </View>
         <View style={styles.exerciseHeaderRight}>
@@ -1028,7 +1124,7 @@ function ExerciseCard({
           ]}
         >
           <Text style={styles.prBannerText}>
-            {prCelebration.emoji} {formatPRLabel(prCelebration.type as any)}!
+            {prCelebration.emoji} {prCelebration.label}
           </Text>
         </Animated.View>
       )}
@@ -1066,17 +1162,27 @@ function ExerciseCard({
           {currentSets.length > 0 && (
             <View style={styles.currentSetsSection}>
               <Text style={styles.currentSetsTitle}>This session</Text>
-              {currentSets.map((set, index) => (
-                <View key={set.id} style={styles.currentSetRow}>
-                  <Text style={styles.currentSetNumber}>Set {index + 1}</Text>
-                  <Text style={styles.currentSetDetail}>
-                    {formatWeight(set.weight, units)} × {set.reps} reps
-                  </Text>
-                  <TouchableOpacity onPress={() => onDeleteSet(set.id)}>
-                    <Text style={styles.deleteText}>×</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {currentSets.map((set, index) => {
+                const prData = sessionPRs.get(set.id);
+                return (
+                  <View key={set.id} style={styles.currentSetRow}>
+                    <Text style={styles.currentSetNumber}>Set {index + 1}</Text>
+                    <Text style={styles.currentSetDetail}>
+                      {formatWeight(set.weight, units)} × {set.reps} reps
+                    </Text>
+                    {prData && (
+                      <View style={[styles.prBadge, prData.isMilestone && styles.prBadgeMilestone]}>
+                        <Text style={[styles.prBadgeText, prData.isMilestone && styles.prBadgeTextMilestone]}>
+                          {prData.isMilestone ? '🏆 PR' : '🏅 PR'}
+                        </Text>
+                      </View>
+                    )}
+                    <TouchableOpacity onPress={() => onDeleteSet(set.id)}>
+                      <Text style={styles.deleteText}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
           )}
 
@@ -1226,6 +1332,9 @@ const styles = StyleSheet.create({
   exerciseCard: {
     marginBottom: spacing.md,
   },
+  exerciseCardComplete: {
+    opacity: 0.7,
+  },
   exerciseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1245,10 +1354,39 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.semibold,
     color: colors.text,
   },
+  exerciseNameComplete: {
+    color: colors.textSecondary,
+  },
+  exerciseNotes: {
+    fontSize: typography.size.sm,
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+    marginTop: 1,
+  },
   exerciseSets: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  exerciseSetsComplete: {
+    color: colors.success,
+  },
+  completedSeparator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  completedSeparatorLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.separator,
+  },
+  completedSeparatorText: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   prBanner: {
     backgroundColor: colors.success,
@@ -1356,6 +1494,25 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: typography.size.base,
     color: colors.text,
+  },
+  prBadge: {
+    backgroundColor: colors.backgroundTertiary,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    marginRight: spacing.xs,
+  },
+  prBadgeMilestone: {
+    backgroundColor: colors.primary + '30',
+  },
+  prBadgeText: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.weight.medium,
+  },
+  prBadgeTextMilestone: {
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
   },
   deleteText: {
     fontSize: typography.size.lg,

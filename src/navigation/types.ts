@@ -32,6 +32,13 @@ export type RootStackParamList = {
     completedAt: string;
     totalSets: number;
     muscleGroupSets: { muscleGroup: string; sets: number; isSecondary: boolean }[];
+    sessionPRs?: {
+      setId: string;
+      exerciseId: string;
+      prTypes: ('weight' | 'reps' | 'volume' | 'e1rm')[];
+      isMilestone: boolean;
+      milestoneLabel?: string;
+    }[];
   };
   MeasurementHistory: { measurementType: string };
   AccountabilityPartner: undefined;

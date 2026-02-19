@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Exercise,
@@ -47,7 +48,7 @@ import {
   syncBodyMeasurement,
   syncDeleteBodyMeasurement,
   syncUserSettings,
-  processPendingSync,
+  syncManager,
   pullFromCloud,
   getLastCloudPull,
   setLastCloudPull,
@@ -253,8 +254,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // Handle cloud sync on launch
         const authenticated = await isAuthenticated();
         if (authenticated) {
-          // Process any pending sync operations
-          processPendingSync().catch(err => console.log('Pending sync error:', err));
+          // Start sync manager (processes queue immediately + every 30s)
+          syncManager.start();
 
           // Check if we need to pull from cloud (new device or empty local data)
           const lastPull = await getLastCloudPull();
@@ -303,6 +304,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     init();
+
+    return () => {
+      syncManager.stop();
+    };
+  }, []);
+
+  // Resume sync when app comes back to foreground
+  useEffect(() => {
+    const handleAppState = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        syncManager.onAppResume();
+      }
+    };
+    const subscription = AppState.addEventListener('change', handleAppState);
+    return () => subscription.remove();
   }, []);
 
   const refreshExercises = useCallback(async () => {

@@ -248,9 +248,26 @@ export function ExerciseDetailScreen() {
             rightElement={
               <Text style={styles.detailValue}>{getLocationDisplay()}</Text>
             }
-            isLast
+            isLast={!exercise.isUnilateral}
           />
+          {exercise.isUnilateral && (
+            <ListItem
+              title="Type"
+              rightElement={
+                <Text style={styles.detailValue}>Unilateral</Text>
+              }
+              isLast
+            />
+          )}
         </Card>
+
+        {/* Notes */}
+        {exercise.notes && (
+          <Card style={styles.section}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            <Text style={styles.notesText}>{exercise.notes}</Text>
+          </Card>
+        )}
 
         {/* Personal Records */}
         {exercisePRs && (exercisePRs.weightPR || exercisePRs.e1rmPR) && (
@@ -418,6 +435,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: spacing.md,
+  },
+  notesText: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    lineHeight: 22,
   },
   muscleValue: {
     fontSize: typography.size.md,

@@ -6,6 +6,7 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
+  Switch,
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -62,6 +63,8 @@ export function AddExerciseScreen() {
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [primaryMuscles, setPrimaryMuscles] = useState<PrimaryMuscleGroup[]>(['chest']);
   const [secondaryMuscles, setSecondaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
+  const [isUnilateral, setIsUnilateral] = useState(false);
+  const [notes, setNotes] = useState('');
 
   // Load existing exercise data in edit mode
   useEffect(() => {
@@ -77,6 +80,8 @@ export function AddExerciseScreen() {
         setPrimaryMuscles([existingExercise.primaryMuscleGroup]);
       }
       setSecondaryMuscles(existingExercise.secondaryMuscleGroups || []);
+      setIsUnilateral(existingExercise.isUnilateral ?? false);
+      setNotes(existingExercise.notes ?? '');
 
       // Handle locationIds
       if (existingExercise.locationIds && existingExercise.locationIds.length > 0) {
@@ -128,6 +133,8 @@ export function AddExerciseScreen() {
         locationIds: selectedLocationIds,
         primaryMuscleGroups: primaryMuscles,
         secondaryMuscleGroups: secondaryMuscles,
+        isUnilateral: isUnilateral || undefined,
+        notes: notes.trim() || undefined,
       };
 
       updateExercise(updatedExercise).then(() => {
@@ -145,6 +152,8 @@ export function AddExerciseScreen() {
         primaryMuscleGroups: primaryMuscles,
         secondaryMuscleGroups: secondaryMuscles,
         isCustom: true,
+        isUnilateral: isUnilateral || undefined,
+        notes: notes.trim() || undefined,
       };
 
       addExercise(exercise).then(() => {
@@ -291,6 +300,36 @@ export function AddExerciseScreen() {
           </Card>
         )}
 
+        {/* Unilateral Toggle */}
+        <Card style={styles.section}>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.label}>Unilateral (Single Limb)</Text>
+              <Text style={styles.toggleHint}>Doubles target sets (e.g., 3 per side = 6 total)</Text>
+            </View>
+            <Switch
+              value={isUnilateral}
+              onValueChange={setIsUnilateral}
+              trackColor={{ false: colors.backgroundTertiary, true: colors.primary }}
+            />
+          </View>
+        </Card>
+
+        {/* Notes */}
+        <Card style={styles.section}>
+          <Text style={styles.label}>Notes (Optional)</Text>
+          <TextInput
+            style={[styles.input, styles.notesInput]}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Bench angle, cable height, grip width, etc."
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </Card>
+
         {/* Location - Multi-select */}
         <Card style={styles.section}>
           <Text style={styles.label}>Available At (select all that apply)</Text>
@@ -422,6 +461,23 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: typography.size.md,
     color: colors.text,
+  },
+  notesInput: {
+    minHeight: 80,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  toggleHint: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
   },
   optionsRow: {
     flexDirection: 'row',

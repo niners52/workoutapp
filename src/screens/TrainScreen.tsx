@@ -14,6 +14,7 @@ import { useWorkout } from '../contexts/WorkoutContext';
 import { TemplatesScreen } from './TemplatesScreen';
 import { ExercisesScreen } from './ExercisesScreen';
 import { RoutinesScreen } from './RoutinesScreen';
+import { ActiveWorkoutScreen } from './ActiveWorkoutScreen';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -32,19 +33,20 @@ export function TrainScreen() {
   const [activeTab, setActiveTab] = useState<TrainTab>('templates');
 
   const handleStartWorkout = () => {
-    if (isWorkoutActive) {
-      navigation.navigate('ActiveWorkout', { workoutId: '' });
-    } else {
-      navigation.navigate('StartWorkout');
-    }
+    navigation.navigate('StartWorkout');
   };
+
+  // When a workout is active, show it inline in this tab
+  if (isWorkoutActive) {
+    return <ActiveWorkoutScreen embedded />;
+  }
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       {/* Start Workout Button */}
       <View style={styles.buttonContainer}>
         <Button
-          title={isWorkoutActive ? 'Continue Workout' : 'Start Workout'}
+          title="Start Workout"
           onPress={handleStartWorkout}
           size="large"
           fullWidth
