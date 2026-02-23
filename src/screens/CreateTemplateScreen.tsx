@@ -36,6 +36,7 @@ const TEMPLATE_TYPE_MUSCLES: Record<TemplateType, PrimaryMuscleGroup[]> = {
   push: ['chest', 'front_delts', 'side_delts', 'triceps'],
   pull: ['lats', 'upper_back', 'traps', 'rear_delts', 'biceps', 'forearms'],
   lower: ['quads', 'hamstrings', 'glutes', 'calves'],
+  full_body: ['chest', 'front_delts', 'side_delts', 'rear_delts', 'triceps', 'biceps', 'forearms', 'lats', 'upper_back', 'traps', 'quads', 'hamstrings', 'glutes', 'calves', 'abs', 'lower_back'],
 };
 import { RootStackParamList } from '../navigation/types';
 
@@ -231,7 +232,7 @@ export function CreateTemplateScreen() {
                 onPress={() => setTemplateType(type)}
               >
                 <Text style={styles.typeIcon}>
-                  {type === 'push' ? '💪' : type === 'pull' ? '🏋️' : '🦵'}
+                  {type === 'push' ? '💪' : type === 'pull' ? '🏋️' : type === 'lower' ? '🦵' : '🔄'}
                 </Text>
                 <Text
                   style={[

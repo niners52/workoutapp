@@ -320,7 +320,7 @@ export function StartWorkoutScreen() {
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons
-              name={type === 'push' ? 'arm-flex' : type === 'pull' ? 'weight-lifter' : 'human-handsdown'}
+              name={type === 'push' ? 'arm-flex' : type === 'pull' ? 'weight-lifter' : type === 'lower' ? 'human-handsdown' : 'human'}
               size={32}
               color={colors.primary}
               style={styles.typeIcon}

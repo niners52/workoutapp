@@ -16,7 +16,7 @@ export const EQUIPMENT_DISPLAY_NAMES: Record<Equipment, string> = {
 
 export type ExerciseLocation = 'gym' | 'home' | 'both';
 export type WeekStartDay = 'sunday' | 'monday';
-export type TemplateType = 'push' | 'pull' | 'lower';
+export type TemplateType = 'push' | 'pull' | 'lower' | 'full_body';
 export type UnitSystem = 'imperial' | 'metric';
 
 // Workout Location entity (user-defined locations)
@@ -50,9 +50,10 @@ export const TEMPLATE_TYPE_DISPLAY_NAMES: Record<TemplateType, string> = {
   push: 'Push',
   pull: 'Pull',
   lower: 'Lower',
+  full_body: 'Full Body',
 };
 
-export const ALL_TEMPLATE_TYPES: TemplateType[] = ['push', 'pull', 'lower'];
+export const ALL_TEMPLATE_TYPES: TemplateType[] = ['push', 'pull', 'lower', 'full_body'];
 
 // Muscle Group Hierarchy - 6 main categories for analytics display
 export type AnalyticsCategory = 'back' | 'shoulders' | 'chest' | 'arms' | 'legs' | 'core';
