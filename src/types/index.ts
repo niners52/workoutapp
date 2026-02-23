@@ -271,6 +271,7 @@ export interface Workout {
   completedAt: string | null;
   templateId: string | null;
   skippedExerciseIds?: string[]; // Template exercises with zero sets logged
+  isDeload?: boolean; // Workout performed during a deload week
 }
 
 // Set
@@ -354,6 +355,7 @@ export interface UserSettings {
   fatigueDetectionEnabled?: boolean;
   fatigueSensitivity?: number;
   isOnDeload?: boolean;
+  deloadPercentage?: number; // Weight percentage during deload (default 50, range 40-60)
   // PR notifications
   milestoneCelebrationsEnabled?: boolean;
 }
@@ -396,6 +398,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   nutritionMode: 'recomp',
   calorieGoal: null,
   calorieTolerancePercent: 10,
+  deloadPercentage: 50,
   milestoneCelebrationsEnabled: true,
 };
 

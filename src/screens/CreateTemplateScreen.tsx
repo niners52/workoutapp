@@ -65,6 +65,7 @@ export function CreateTemplateScreen() {
   );
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [showAllExercises, setShowAllExercises] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState('');
 
   const handleSave = async () => {
     console.log('Save button pressed'); // Debug
@@ -177,7 +178,10 @@ export function CreateTemplateScreen() {
     const muscleMatch = exerciseMuscles.some(muscle => templateMuscles.includes(muscle));
 
     return muscleMatch;
-  });
+  }).filter(e => {
+    if (!exerciseSearch.trim()) return true;
+    return e.name.toLowerCase().includes(exerciseSearch.trim().toLowerCase());
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   const selectedExerciseObjects = selectedExercises
     .map(id => exercises.find(e => e.id === id))
@@ -342,6 +346,16 @@ export function CreateTemplateScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+            <TextInput
+              style={styles.searchInput}
+              value={exerciseSearch}
+              onChangeText={setExerciseSearch}
+              placeholder="Search exercises..."
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
             {filteredExercises.map(exercise => {
               const isSelected = selectedExercises.includes(exercise.id);
               return (
@@ -440,6 +454,14 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.primary,
     fontWeight: typography.weight.medium,
+  },
+  searchInput: {
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: typography.size.md,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
   input: {
     backgroundColor: colors.backgroundTertiary,

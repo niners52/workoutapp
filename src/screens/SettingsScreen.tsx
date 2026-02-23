@@ -788,7 +788,7 @@ export function SettingsScreen() {
                   step={5}
                 />
               </View>
-              <View style={[styles.settingRow, styles.settingRowLast]}>
+              <View style={[styles.settingRow, !userSettings.isOnDeload && styles.settingRowLast]}>
                 <Text style={styles.settingLabel}>Currently on Deload</Text>
                 <TouchableOpacity
                   style={[
@@ -807,6 +807,18 @@ export function SettingsScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+              {userSettings.isOnDeload && (
+                <View style={[styles.settingRow, styles.settingRowLast]}>
+                  <Text style={styles.settingLabel}>Deload Weight %</Text>
+                  <NumberInput
+                    value={userSettings.deloadPercentage ?? 50}
+                    onChangeValue={(value) => updateUserSettings({ deloadPercentage: value })}
+                    min={40}
+                    max={60}
+                    step={5}
+                  />
+                </View>
+              )}
             </Card>
           )}
           <Text style={styles.hint}>

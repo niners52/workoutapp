@@ -16,7 +16,7 @@ import {
   ALL_TRACKABLE_MUSCLE_GROUPS,
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
-import { getSetsInDateRange, getExercises, getUserSettings } from './storage';
+import { getSetsInDateRange, getExercises, getUserSettings, getWorkoutsInDateRange } from './storage';
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
 
 // Calculate volume (sets) per muscle group for a date range
@@ -27,6 +27,12 @@ export async function calculateVolumeForDateRange(
   const sets = await getSetsInDateRange(startDate, endDate);
   const exercises = await getExercises();
   const settings = await getUserSettings();
+
+  // Exclude sets from deload workouts
+  const workoutsInRange = await getWorkoutsInDateRange(startDate, endDate);
+  const deloadWorkoutIds = new Set(
+    workoutsInRange.filter(w => w.isDeload).map(w => w.id)
+  );
 
   const exerciseMap = new Map<string, Exercise>(
     exercises.map(e => [e.id, e])
@@ -45,6 +51,7 @@ export async function calculateVolumeForDateRange(
   // Count sets for each muscle group (primary only for volume calculation)
   // With multiple primary muscles, each primary muscle group gets credit for the set
   sets.forEach(set => {
+    if (deloadWorkoutIds.has(set.workoutId)) return; // Skip deload sets
     const exercise = exerciseMap.get(set.exerciseId);
     if (!exercise) return;
 
@@ -523,6 +530,12 @@ export async function getExerciseHistoryForMuscleGroup(
   const sets = await getSetsInDateRange(startDate, endDate);
   const exercises = await getExercises();
 
+  // Exclude deload workouts from history
+  const workoutsInRange = await getWorkoutsInDateRange(startDate, endDate);
+  const deloadWorkoutIds = new Set(
+    workoutsInRange.filter(w => w.isDeload).map(w => w.id)
+  );
+
   // Build exercise map
   const exerciseMap = new Map<string, Exercise>(
     exercises.map(e => [e.id, e])
@@ -539,6 +552,7 @@ export async function getExerciseHistoryForMuscleGroup(
   }>();
 
   sets.forEach(set => {
+    if (deloadWorkoutIds.has(set.workoutId)) return; // Skip deload sets
     const exercise = exerciseMap.get(set.exerciseId);
     if (!exercise) return;
 

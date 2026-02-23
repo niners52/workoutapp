@@ -95,9 +95,18 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     const loadHistories = async () => {
       if (!activeWorkout) return;
 
+      // When NOT on deload, exclude deload workouts so "last time" shows normal sessions
+      // When ON deload, also exclude deload workouts so we show what to base deload % on
+      const deloadWorkoutIds = new Set(
+        workouts.filter(w => w.isDeload).map(w => w.id)
+      );
+
       const histories: Record<string, ExerciseHistory> = {};
       for (const exerciseId of activeWorkout.exerciseIds) {
-        const lastWorkout = await getLastWorkoutForExercise(exerciseId);
+        const lastWorkout = await getLastWorkoutForExercise(
+          exerciseId,
+          deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined
+        );
         histories[exerciseId] = {
           exerciseId,
           sets: lastWorkout?.sets || [],
@@ -137,7 +146,12 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     // Fall back to history from previous sessions
     const history = exerciseHistories[selectedExerciseId];
     if (history && history.sets.length > 0) {
-      setWeight(history.sets[0].weight);
+      let suggestedWeight = history.sets[0].weight;
+      if (userSettings?.isOnDeload) {
+        const pct = (userSettings.deloadPercentage ?? 50) / 100;
+        suggestedWeight = Math.round((suggestedWeight * pct) / 5) * 5 || suggestedWeight * pct;
+      }
+      setWeight(suggestedWeight);
       setReps(history.sets[0].reps);
     }
   }, [selectedExerciseId, exerciseHistories, activeWorkout?.sets.length]);
@@ -665,6 +679,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                   fatigueWarning={fatigueWarnings.get(exerciseId)}
                   targetSets={targetSets}
                   isComplete={exerciseComplete}
+                  isOnDeload={userSettings?.isOnDeload}
+                  deloadPercentage={userSettings?.deloadPercentage}
                 />
               </React.Fragment>
             );
@@ -963,9 +979,11 @@ interface PreviousSetIndicatorProps {
   currentSets: WorkoutSet[];
   history: ExerciseHistory | undefined;
   units: UnitSystem;
+  isOnDeload?: boolean;
+  deloadPercentage?: number;
 }
 
-function PreviousSetIndicator({ currentSets, history, units }: PreviousSetIndicatorProps) {
+function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadPercentage }: PreviousSetIndicatorProps) {
   // Determine what to show: last set from current session, or last set from previous session
   const lastCurrentSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
   const lastHistorySet = history?.sets?.[0];
@@ -985,6 +1003,21 @@ function PreviousSetIndicator({ currentSets, history, units }: PreviousSetIndica
   if (lastHistorySet) {
     // Show last set from previous workout
     const historyDate = history?.date ? format(new Date(history.date), 'MMM d') : '';
+    if (isOnDeload) {
+      const pct = (deloadPercentage ?? 50) / 100;
+      const deloadWeight = Math.round((lastHistorySet.weight * pct) / 5) * 5 || lastHistorySet.weight * pct;
+      return (
+        <View style={styles.previousSetContainer}>
+          <Text style={styles.previousSetLabel}>Last time ({historyDate}):</Text>
+          <Text style={styles.previousSetValue}>
+            {formatWeight(lastHistorySet.weight, units)} × {lastHistorySet.reps} reps
+          </Text>
+          <Text style={styles.deloadSuggestion}>
+            Deload: {formatWeight(deloadWeight, units)} ({deloadPercentage ?? 50}%)
+          </Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.previousSetContainer}>
         <Text style={styles.previousSetLabel}>Last time ({historyDate}):</Text>
@@ -1028,6 +1061,8 @@ interface ExerciseCardProps {
   fatigueWarning?: ExerciseFatigueSignal;
   targetSets: number;
   isComplete: boolean;
+  isOnDeload?: boolean;
+  deloadPercentage?: number;
 }
 
 function ExerciseCard({
@@ -1055,6 +1090,8 @@ function ExerciseCard({
   fatigueWarning,
   targetSets,
   isComplete,
+  isOnDeload,
+  deloadPercentage,
 }: ExerciseCardProps) {
   const showPR = prCelebration?.exerciseId === exercise.id;
   const setCount = currentSets.length;
@@ -1193,6 +1230,8 @@ function ExerciseCard({
               currentSets={currentSets}
               history={history}
               units={units}
+              isOnDeload={isOnDeload}
+              deloadPercentage={deloadPercentage}
             />
 
             <View style={styles.inputRow}>
@@ -1524,6 +1563,7 @@ const styles = StyleSheet.create({
   },
   previousSetContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary + '20',
@@ -1531,6 +1571,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.base,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
+  },
+  deloadSuggestion: {
+    width: '100%',
+    textAlign: 'center',
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.success,
+    marginTop: 2,
   },
   previousSetLabel: {
     fontSize: typography.size.sm,

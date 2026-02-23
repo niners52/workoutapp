@@ -403,6 +403,19 @@ export function HomeScreen() {
           </Card>
         )}
 
+        {/* Deload Week Banner */}
+        {userSettings.isOnDeload && (
+          <Card style={styles.deloadCard}>
+            <View style={styles.recoveryHeader}>
+              <MaterialCommunityIcons name="restart" size={22} color={colors.primary} />
+              <Text style={styles.deloadTitle}>Deload Week Active</Text>
+            </View>
+            <Text style={styles.recoveryText}>
+              Weights reduced to {userSettings.deloadPercentage ?? 50}%. Fatigue tracking paused.
+            </Text>
+          </Card>
+        )}
+
         {/* Today's Rings - shows when data arrives */}
         {todayStatus ? (
           <TodayRings
@@ -906,6 +919,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   // Recovery banner styles
+  deloadCard: {
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  deloadTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
+    marginLeft: spacing.sm,
+  },
   recoveryCard: {
     marginBottom: spacing.md,
     borderWidth: 1,

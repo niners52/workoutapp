@@ -41,9 +41,15 @@ export async function getSetsByExerciseIdCompleted(
  * Users need to see their last session's data for progressive overload.
  */
 export async function getLastWorkoutForExercise(
-  exerciseId: string
+  exerciseId: string,
+  excludeWorkoutIds?: Set<string>
 ): Promise<LastWorkoutForExercise | null> {
-  const sets = await getSetsByExerciseId(exerciseId);
+  let sets = await getSetsByExerciseId(exerciseId);
+
+  // Optionally exclude sets from deload (or other) workouts
+  if (excludeWorkoutIds && excludeWorkoutIds.size > 0) {
+    sets = sets.filter(s => !excludeWorkoutIds.has(s.workoutId));
+  }
 
   if (sets.length === 0) return null;
 

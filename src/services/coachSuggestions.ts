@@ -424,12 +424,13 @@ export async function getTopSuggestions(
   const { workouts, sets, exercises, settings, shortfalls } = input;
 
   // Generate all suggestions
+  // During deload, skip volume/imbalance/missed suggestions — they aren't actionable
   const all: CoachSuggestion[] = [
     ...generateRecoverySuggestions(workouts, sets, exercises),
     ...generateFatigueSuggestions(workouts, sets, exercises, settings),
-    ...generateVolumeGapSuggestions(shortfalls),
-    ...generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings),
-    ...generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings),
+    ...(settings.isOnDeload ? [] : generateVolumeGapSuggestions(shortfalls)),
+    ...(settings.isOnDeload ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),
+    ...(settings.isOnDeload ? [] : generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings)),
   ];
 
   // Sort by priority descending

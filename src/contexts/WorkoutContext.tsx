@@ -393,6 +393,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       startedAt: new Date().toISOString(),
       completedAt: null,
       templateId: templateId || null,
+      isDeload: userSettings?.isOnDeload || undefined,
     };
 
     await addWorkout(workout);
