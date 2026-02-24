@@ -12,6 +12,7 @@ export type RootStackParamList = {
   ExercisePicker: { workoutId: string; onSelect?: (exerciseId: string) => void };
   ExerciseDetail: { exerciseId: string };
   ExerciseHistory: { exerciseId: string };
+  MergeExercisePicker: { sourceExerciseId: string };
   AddExercise: undefined;
   EditExercise: { exerciseId: string };
   TemplateDetail: { templateId: string };

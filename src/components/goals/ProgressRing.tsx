@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 import { colors, typography, spacing } from '../../theme';
+import { LetterGrade, GRADE_COLORS, gradeIsHit } from '../../services/streaks';
 
 interface ProgressRingProps {
   progress: number; // 0-100 (can exceed 100)
@@ -12,6 +13,7 @@ interface ProgressRingProps {
   isBoolean?: boolean; // If true, show checkmark when progress >= 100
   color?: string;
   trackColor?: string;
+  grade?: LetterGrade;
 }
 
 export function ProgressRing({
@@ -23,6 +25,7 @@ export function ProgressRing({
   isBoolean = false,
   color = colors.primary,
   trackColor = colors.backgroundTertiary,
+  grade,
 }: ProgressRingProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -30,13 +33,15 @@ export function ProgressRing({
   const strokeDashoffset = circumference - (cappedProgress / 100) * circumference;
 
   const isComplete = progress >= 100;
+  const ringColor = grade ? GRADE_COLORS[grade] : (isComplete ? colors.success : color);
+  const showGlow = grade ? gradeIsHit(grade) : isComplete;
+  const glowColor = grade ? GRADE_COLORS[grade] : colors.success;
 
   return (
     <View style={styles.container}>
       <View style={[styles.ringContainer, { width: size, height: size }]}>
         <Svg width={size} height={size}>
           <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
-            {/* Background track */}
             <Circle
               cx={size / 2}
               cy={size / 2}
@@ -45,12 +50,11 @@ export function ProgressRing({
               strokeWidth={strokeWidth}
               fill="transparent"
             />
-            {/* Progress arc */}
             <Circle
               cx={size / 2}
               cy={size / 2}
               r={radius}
-              stroke={isComplete ? colors.success : color}
+              stroke={ringColor}
               strokeWidth={strokeWidth}
               fill="transparent"
               strokeLinecap="round"
@@ -59,20 +63,23 @@ export function ProgressRing({
             />
           </G>
         </Svg>
-        {/* Center content */}
         <View style={[styles.centerContent, { width: size, height: size }]}>
           {isBoolean ? (
-            <Text style={[styles.checkmark, isComplete && styles.checkmarkComplete]}>
-              {isComplete ? '✓' : '○'}
+            <Text style={[styles.checkmark, { color: ringColor }]}>
+              {grade || (isComplete ? '✓' : '○')}
             </Text>
           ) : (
-            <Text style={styles.valueText} numberOfLines={1}>
-              {value}
-            </Text>
+            <>
+              <Text style={styles.valueText} numberOfLines={1}>
+                {value}
+              </Text>
+              {grade && (
+                <Text style={[styles.gradeText, { color: GRADE_COLORS[grade] }]}>{grade}</Text>
+              )}
+            </>
           )}
         </View>
-        {/* Glow effect when complete */}
-        {isComplete && (
+        {showGlow && (
           <View
             style={[
               styles.glowEffect,
@@ -80,7 +87,7 @@ export function ProgressRing({
                 width: size + 8,
                 height: size + 8,
                 borderRadius: (size + 8) / 2,
-                borderColor: colors.success,
+                borderColor: glowColor,
               },
             ]}
           />
@@ -113,11 +120,13 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: typography.size.lg,
+    fontWeight: typography.weight.bold,
     color: colors.textTertiary,
   },
-  checkmarkComplete: {
-    color: colors.success,
+  gradeText: {
+    fontSize: typography.size.xs - 2,
     fontWeight: typography.weight.bold,
+    marginTop: -1,
   },
   label: {
     fontSize: typography.size.xs,

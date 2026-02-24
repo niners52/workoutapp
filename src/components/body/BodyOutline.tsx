@@ -14,17 +14,18 @@ interface MeasurementPoint {
   side?: 'left' | 'right';
 }
 
-// Anatomically placed measurement points in viewBox coords (200x500)
+// Measurement points in viewBox coords (200x500)
+// Center points are spaced 55 units apart to prevent label overlap
 const MEASUREMENT_POINTS: MeasurementPoint[] = [
-  { key: 'neck', label: 'Neck', x: 100, y: 68 },
-  { key: 'shoulders', label: 'Shoulders', x: 100, y: 95 },
-  { key: 'chest', label: 'Chest', x: 100, y: 130 },
+  { key: 'neck', label: 'Neck', x: 100, y: 50 },
+  { key: 'shoulders', label: 'Shoulders', x: 100, y: 105 },
+  { key: 'chest', label: 'Chest', x: 100, y: 160 },
   { key: 'left_arm', label: 'L Arm', x: 32, y: 155, side: 'left' },
   { key: 'right_arm', label: 'R Arm', x: 168, y: 155, side: 'right' },
   { key: 'left_forearm', label: 'L Forearm', x: 22, y: 215, side: 'left' },
   { key: 'right_forearm', label: 'R Forearm', x: 178, y: 215, side: 'right' },
-  { key: 'waist', label: 'Waist', x: 100, y: 195 },
-  { key: 'hips', label: 'Hips', x: 100, y: 235 },
+  { key: 'waist', label: 'Waist', x: 100, y: 215 },
+  { key: 'hips', label: 'Hips', x: 100, y: 270 },
   { key: 'left_thigh', label: 'L Thigh', x: 72, y: 300, side: 'left' },
   { key: 'right_thigh', label: 'R Thigh', x: 128, y: 300, side: 'right' },
   { key: 'left_calf', label: 'L Calf', x: 70, y: 395, side: 'left' },
@@ -42,7 +43,7 @@ interface Props {
 }
 
 const CONTAINER_WIDTH = Dimensions.get('window').width - spacing.base * 4;
-const CONTAINER_HEIGHT = 420;
+const CONTAINER_HEIGHT = 500;
 
 // Athletic male silhouette — right side (mirrored for left)
 // Drawn as one continuous outline for a clean look

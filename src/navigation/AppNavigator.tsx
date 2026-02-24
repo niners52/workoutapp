@@ -24,6 +24,7 @@ import {
   ExercisesScreen,
   ExerciseDetailScreen,
   ExerciseHistoryScreen,
+  MergeExercisePickerScreen,
   AddExerciseScreen,
   TemplatesScreen,
   TemplateDetailScreen,
@@ -348,6 +349,15 @@ export function AppNavigator() {
           component={ExerciseHistoryScreen}
           options={{
             title: 'Exercise History',
+          }}
+        />
+        <Stack.Screen
+          name="MergeExercisePicker"
+          component={MergeExercisePickerScreen}
+          options={{
+            title: 'Merge Into...',
+            presentation: 'modal',
+            headerShown: false,
           }}
         />
         <Stack.Screen

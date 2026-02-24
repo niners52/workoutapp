@@ -35,6 +35,7 @@ import { supabase } from '../services/supabase';
 import {
   syncExercise,
   syncDeleteExercise,
+  syncSet,
   syncTemplate,
   syncDeleteTemplate,
   syncLocation,
@@ -58,6 +59,7 @@ import {
   addExercise as addExerciseToStorage,
   updateExercise as updateExerciseInStorage,
   deleteExercise as deleteExerciseFromStorage,
+  mergeExercise as mergeExerciseInStorage,
   addTemplate as addTemplateToStorage,
   updateTemplate as updateTemplateInStorage,
   deleteTemplate as deleteTemplateFromStorage,
@@ -106,6 +108,7 @@ interface DataContextType {
   addExercise: (exercise: Exercise) => Promise<void>;
   updateExercise: (exercise: Exercise) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
+  mergeExercise: (sourceId: string, keeperId: string) => Promise<void>;
 
   // Template CRUD
   addTemplate: (template: Template) => Promise<void>;
@@ -414,6 +417,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     syncDeleteExercise(id).catch(e => console.log('Sync error:', e));
   }, [refreshExercises, refreshTemplates]);
 
+  const mergeExercise = useCallback(async (sourceId: string, keeperId: string) => {
+    const { updatedSetIds, updatedTemplateIds } = await mergeExerciseInStorage(sourceId, keeperId);
+
+    // Refresh all affected state
+    await refreshExercises();
+    await refreshTemplates();
+    await refreshSets();
+    await refreshWorkouts();
+
+    // Fire-and-forget sync: updated sets
+    const allSets = await getSets();
+    const setsToSync = allSets.filter(s => updatedSetIds.includes(s.id));
+    setsToSync.forEach(s => {
+      syncSet(s).catch(e => console.log('Sync error:', e));
+    });
+
+    // Fire-and-forget sync: updated templates
+    const allTemplates = await getTemplates();
+    const templatesToSync = allTemplates.filter(t => updatedTemplateIds.includes(t.id));
+    templatesToSync.forEach(t => {
+      syncTemplate(t).catch(e => console.log('Sync error:', e));
+    });
+
+    // Fire-and-forget sync: updated keeper exercise (notes may have changed)
+    const keeperExercise = (await getExercises()).find(e => e.id === keeperId);
+    if (keeperExercise) {
+      syncExercise(keeperExercise).catch(e => console.log('Sync error:', e));
+    }
+
+    // Fire-and-forget sync: delete source from cloud
+    syncDeleteExercise(sourceId).catch(e => console.log('Sync error:', e));
+  }, [refreshExercises, refreshTemplates, refreshSets, refreshWorkouts]);
+
   // Template CRUD
   const addTemplate = useCallback(async (template: Template) => {
     await addTemplateToStorage(template);
@@ -645,6 +681,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     addExercise,
     updateExercise,
     deleteExercise,
+    mergeExercise,
     addTemplate,
     updateTemplate,
     deleteTemplate,

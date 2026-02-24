@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 import { colors, typography, spacing } from '../../theme';
 import { NutritionMode } from '../../types';
+import { LetterGrade, GRADE_COLORS, gradeIsHit } from '../../services/streaks';
 
 interface CalorieRingProps {
   consumed: number;
@@ -11,6 +12,7 @@ interface CalorieRingProps {
   tolerancePercent: number;
   size?: number;
   strokeWidth?: number;
+  grade?: LetterGrade;
 }
 
 const MODE_LABELS: Record<NutritionMode, string> = {
@@ -29,6 +31,7 @@ export function CalorieRing({
   tolerancePercent,
   size = 70,
   strokeWidth = 6,
+  grade,
 }: CalorieRingProps) {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -92,6 +95,14 @@ export function CalorieRing({
       ringColor = CALORIE_COLOR;
   }
 
+  // Override ring color when grade is provided
+  if (grade) {
+    ringColor = GRADE_COLORS[grade];
+  }
+
+  const showGlow = grade ? gradeIsHit(grade) : (isComplete && !isOver);
+  const glowColor = grade ? GRADE_COLORS[grade] : colors.success;
+
   const cappedProgress = Math.min(progress, 100);
   const strokeDashoffset = circumference - (cappedProgress / 100) * circumference;
 
@@ -144,9 +155,12 @@ export function CalorieRing({
           <Text style={[styles.valueText, { color: valueColor }]} numberOfLines={1}>
             {displayValue}
           </Text>
+          {grade && (
+            <Text style={[styles.gradeText, { color: GRADE_COLORS[grade] }]}>{grade}</Text>
+          )}
         </View>
-        {/* Glow effect when complete */}
-        {isComplete && !isOver && (
+        {/* Glow effect */}
+        {showGlow && (
           <View
             style={[
               styles.glowEffect,
@@ -154,7 +168,7 @@ export function CalorieRing({
                 width: size + 8,
                 height: size + 8,
                 borderRadius: (size + 8) / 2,
-                borderColor: colors.success,
+                borderColor: glowColor,
               },
             ]}
           />
@@ -184,6 +198,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs - 1, // Slightly smaller to fit numbers
     fontWeight: typography.weight.semibold,
     textAlign: 'center',
+  },
+  gradeText: {
+    fontSize: typography.size.xs - 2,
+    fontWeight: typography.weight.bold,
+    marginTop: -1,
   },
   label: {
     fontSize: typography.size.xs,

@@ -1,9 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../common';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { DailyGoalStatus } from '../../services/streaks';
+import { DailyGoalStatus, LetterGrade, GRADE_COLORS } from '../../services/streaks';
 import { DailyGoals } from '../../types';
 import { isFuture, parseISO } from 'date-fns';
 
@@ -14,19 +13,17 @@ interface WeeklyGridProps {
   dailyGoals: DailyGoals;
 }
 
-type GoalStatus = 'met' | 'missed' | 'future' | 'na';
+type GoalStatus = { type: 'grade'; grade: LetterGrade } | { type: 'future' } | { type: 'na' };
 
 function StatusIcon({ status }: { status: GoalStatus }) {
-  switch (status) {
-    case 'met':
-      return <Ionicons name="checkmark" size={14} color={colors.success} />;
-    case 'missed':
-      return <Ionicons name="close" size={14} color={colors.textTertiary} />;
-    case 'future':
-      return <Text style={styles.dash}>-</Text>;
-    case 'na':
-      return <Text style={styles.dash}>-</Text>;
+  if (status.type === 'future' || status.type === 'na') {
+    return <Text style={styles.dash}>-</Text>;
   }
+  return (
+    <Text style={[styles.gradeLetter, { color: GRADE_COLORS[status.grade] }]}>
+      {status.grade}
+    </Text>
+  );
 }
 
 function GridRow({
@@ -65,26 +62,27 @@ function GridRow({
 
 export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGridProps) {
   const getSleepStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
-    if (isFutureDay) return 'future';
-    if (day.sleep.hours === 0) return 'na';
-    return day.sleep.met ? 'met' : 'missed';
+    if (isFutureDay) return { type: 'future' };
+    if (day.sleep.hours === 0) return { type: 'na' };
+    return { type: 'grade', grade: day.sleep.grade };
   };
 
   const getProteinStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
-    if (isFutureDay) return 'future';
-    if (day.protein.grams === 0) return 'na';
-    return day.protein.met ? 'met' : 'missed';
+    if (isFutureDay) return { type: 'future' };
+    if (day.protein.grams === 0) return { type: 'na' };
+    return { type: 'grade', grade: day.protein.grade };
   };
 
   const getSupplementsStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
-    if (isFutureDay) return 'future';
-    if (day.supplements.total === 0) return 'na';
-    return day.supplements.allTaken ? 'met' : 'missed';
+    if (isFutureDay) return { type: 'future' };
+    if (day.supplements.total === 0) return { type: 'na' };
+    return { type: 'grade', grade: day.supplements.grade };
   };
 
   const getTrainingStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
-    if (isFutureDay) return 'future';
-    return day.training.completed ? 'met' : 'na'; // na for rest days
+    if (isFutureDay) return { type: 'future' };
+    if (!day.training.completed) return { type: 'na' }; // na for rest days
+    return { type: 'grade', grade: day.training.grade };
   };
 
   return (
@@ -210,6 +208,10 @@ const styles = StyleSheet.create({
   dash: {
     fontSize: typography.size.sm,
     color: colors.textTertiary,
+  },
+  gradeLetter: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.bold,
   },
 });
 

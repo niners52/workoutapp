@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
 import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition } from './healthKit';
 import { SleepData, NutritionData } from '../types';
+import { getManualSleepEntry } from './storage';
 
 /**
  * Get cache duration based on how old the date is:
@@ -41,22 +42,38 @@ export async function getSleepData(date: Date): Promise<SleepData | null> {
   const cacheDuration = getCacheDuration(date);
 
   try {
+    // Check HealthKit cache
     const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached) as CachedData<SleepData>;
       if (Date.now() - parsed.timestamp < cacheDuration) {
-        return parsed.data;
+        if (parsed.data) return parsed.data;
+        // HealthKit returned null — fall through to manual entry check
       }
     }
 
+    // Fetch from HealthKit
     const fresh = await withTimeout(getHealthKitSleep(date), 3000);
 
+    // Cache the HealthKit result regardless (even null)
     await AsyncStorage.setItem(
       cacheKey,
       JSON.stringify({ data: fresh, timestamp: Date.now() })
     ).catch(() => {});
 
-    return fresh;
+    if (fresh) return fresh;
+
+    // HealthKit returned null — check for manual entry
+    const manualEntry = await getManualSleepEntry(dateStr);
+    if (manualEntry) {
+      return {
+        date: dateStr,
+        totalHours: manualEntry.totalHours,
+        stages: null,
+      };
+    }
+
+    return null;
   } catch (error) {
     console.error('Error getting cached sleep data:', error);
     return null;
@@ -149,4 +166,29 @@ export async function clearCacheForDate(date: Date): Promise<void> {
   } catch (error) {
     console.error('Error clearing cache for date:', error);
   }
+}
+
+/**
+ * Calculate the average sleep hours over the last N days from HealthKit data.
+ * Only includes days with non-zero sleep. Returns null if no data.
+ */
+export async function getSleepAverage(days: number = 30): Promise<number | null> {
+  const dates: Date[] = [];
+  const today = new Date();
+  for (let i = 1; i <= days; i++) {
+    dates.push(new Date(today.getTime() - i * 24 * 60 * 60 * 1000));
+  }
+
+  const healthData = await batchFetchHealthData(dates);
+  let total = 0;
+  let count = 0;
+  for (const [, data] of healthData) {
+    if (data.sleepHours > 0) {
+      total += data.sleepHours;
+      count++;
+    }
+  }
+
+  if (count === 0) return null;
+  return Math.round((total / count) * 10) / 10;
 }

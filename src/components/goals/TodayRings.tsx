@@ -5,7 +5,7 @@ import { ProgressRing } from './ProgressRing';
 import { CalorieRing } from './CalorieRing';
 import { Card } from '../common';
 import { colors, typography, spacing } from '../../theme';
-import { DailyGoalStatus } from '../../services/streaks';
+import { DailyGoalStatus, LetterGrade, GRADE_COLORS, gradeIsHit } from '../../services/streaks';
 import { DailyGoals } from '../../types';
 
 // Enable LayoutAnimation on Android
@@ -23,30 +23,8 @@ interface GoalInfo {
   key: string;
   label: string;
   met: boolean;
+  grade: LetterGrade;
   color: string;
-}
-
-// Orange for calories
-const CALORIE_COLOR = '#FF9500';
-
-function isCalorieMet(status: DailyGoalStatus, tolerancePercent: number): boolean {
-  const { consumed, goal, mode } = status.calories;
-  if (goal <= 0) return false;
-  const tolerance = goal * (tolerancePercent / 100);
-
-  switch (mode) {
-    case 'bulk':
-      return consumed >= goal;
-    case 'cut':
-      return consumed <= goal && consumed > 0;
-    case 'recomp': {
-      const lower = goal - tolerance;
-      const upper = goal + tolerance;
-      return consumed >= lower && consumed <= upper;
-    }
-    default:
-      return false;
-  }
 }
 
 export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }: TodayRingsProps) {
@@ -55,24 +33,25 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
   // Build list of active goals
   const goals = useMemo<GoalInfo[]>(() => {
     const list: GoalInfo[] = [];
-    list.push({ key: 'sleep', label: 'Sleep', met: status.sleep.met, color: colors.chartSleep });
-    list.push({ key: 'protein', label: 'Protein', met: status.protein.met, color: colors.chartProtein });
+    list.push({ key: 'sleep', label: 'Sleep', grade: status.sleep.grade, met: gradeIsHit(status.sleep.grade), color: GRADE_COLORS[status.sleep.grade] });
+    list.push({ key: 'protein', label: 'Protein', grade: status.protein.grade, met: gradeIsHit(status.protein.grade), color: GRADE_COLORS[status.protein.grade] });
     if (status.calories.goal > 0) {
       list.push({
         key: 'calories',
         label: 'Calories',
-        met: isCalorieMet(status, calorieTolerancePercent),
-        color: CALORIE_COLOR,
+        grade: status.calories.grade,
+        met: gradeIsHit(status.calories.grade),
+        color: GRADE_COLORS[status.calories.grade],
       });
     }
     if (status.supplements.total > 0) {
-      list.push({ key: 'supps', label: 'Supps', met: status.supplements.allTaken, color: colors.primary });
+      list.push({ key: 'supps', label: 'Supps', grade: status.supplements.grade, met: gradeIsHit(status.supplements.grade), color: GRADE_COLORS[status.supplements.grade] });
     }
     if (dailyGoals.trackTraining) {
-      list.push({ key: 'training', label: 'Training', met: status.training.completed, color: colors.chartTraining });
+      list.push({ key: 'training', label: 'Training', grade: status.training.grade, met: gradeIsHit(status.training.grade), color: GRADE_COLORS[status.training.grade] });
     }
     return list;
-  }, [status, dailyGoals, calorieTolerancePercent]);
+  }, [status, dailyGoals]);
 
   const goalsMet = goals.filter(g => g.met).length;
   const totalGoals = goals.length;
@@ -166,7 +145,7 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
                   <View
                     style={[
                       styles.goalDot,
-                      { backgroundColor: goal.met ? goal.color : colors.backgroundTertiary },
+                      { backgroundColor: goal.color },
                       goal.met && styles.goalDotMet,
                     ]}
                   />
@@ -195,12 +174,14 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
                 label="Sleep"
                 value={sleepValue}
                 color={colors.chartSleep}
+                grade={status.sleep.grade}
               />
               <ProgressRing
                 progress={proteinProgress}
                 label="Protein"
                 value={proteinValue}
                 color={colors.chartProtein}
+                grade={status.protein.grade}
               />
               {status.calories.goal > 0 && (
                 <CalorieRing
@@ -208,6 +189,7 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
                   goal={status.calories.goal}
                   mode={status.calories.mode}
                   tolerancePercent={calorieTolerancePercent}
+                  grade={status.calories.grade}
                 />
               )}
               {status.supplements.total > 0 && (
@@ -216,6 +198,7 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
                   label="Supps"
                   value={supplementsValue}
                   color={colors.primary}
+                  grade={status.supplements.grade}
                 />
               )}
               {dailyGoals.trackTraining && (
@@ -224,6 +207,7 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
                   label="Training"
                   isBoolean
                   color={colors.chartTraining}
+                  grade={status.training.grade}
                 />
               )}
             </View>

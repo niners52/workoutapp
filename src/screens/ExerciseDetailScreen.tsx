@@ -318,6 +318,13 @@ export function ExerciseDetailScreen() {
             fullWidth
             style={styles.actionButton}
           />
+          <Button
+            title="Merge with Another Exercise"
+            onPress={() => navigation.navigate('MergeExercisePicker', { sourceExerciseId: exerciseId })}
+            variant="secondary"
+            fullWidth
+            style={styles.actionButton}
+          />
         </View>
 
         {/* All Sessions History */}

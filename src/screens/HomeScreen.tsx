@@ -18,6 +18,7 @@ import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../compone
 import { SupplementCheckbox } from '../components/supplements';
 import { useWorkoutBarPadding } from '../components/workout';
 import { WeeklySummaryModal } from '../components/WeeklySummaryModal';
+import { MissingSleepPrompt } from '../components/goals/MissingSleepPrompt';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import {
@@ -46,7 +47,12 @@ import {
   setLastAppOpened,
   getWeeklySummaryDismissed,
   setWeeklySummaryDismissed,
+  getManualSleepEntry,
+  saveManualSleepEntry,
+  getSleepFallbackDismissed,
+  setSleepFallbackDismissed,
 } from '../services/storage';
+import { getSleepData as getCachedSleepData, clearCacheForDate, getSleepAverage } from '../services/healthKitCache';
 import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
@@ -115,6 +121,11 @@ export function HomeScreen() {
   const [weeklySummaryWeekStart, setWeeklySummaryWeekStart] = useState<Date | null>(null);
   const hasCheckedWeeklySummary = useRef(false);
 
+  // Missing sleep prompt state
+  const [showMissingSleep, setShowMissingSleep] = useState(false);
+  const [averageSleepHours, setAverageSleepHours] = useState<number | null>(null);
+  const hasCheckedMissingSleep = useRef(false);
+
   // Memoize active routine for render
   const activeRoutine = useMemo(() => getActiveRoutine(), [getActiveRoutine]);
 
@@ -176,6 +187,57 @@ export function HomeScreen() {
       await setWeeklySummaryDismissed(weekId);
     }
   }, [weeklySummaryWeekStart]);
+
+  // Check for missing sleep data (once per session, morning only)
+  useEffect(() => {
+    if (hasCheckedMissingSleep.current) return;
+    hasCheckedMissingSleep.current = true;
+
+    const checkMissingSleep = async () => {
+      try {
+        const now = new Date();
+        // Only check before noon
+        if (now.getHours() >= 12) return;
+
+        const settings = await getUserSettings();
+        // Setting must be enabled
+        if (settings.sleepFallbackReminderEnabled === false) return;
+
+        // Already dismissed today?
+        const todayDate = format(now, 'yyyy-MM-dd');
+        const dismissed = await getSleepFallbackDismissed();
+        if (dismissed === todayDate) return;
+
+        // Check if sleep data already exists (HealthKit or prior manual entry)
+        const existingSleep = await getCachedSleepData(now);
+        if (existingSleep) return;
+
+        // No data — compute average for "Use my average" option
+        const avg = await getSleepAverage(30);
+        setAverageSleepHours(avg);
+
+        // Auto-average mode: silently fill in and skip prompt
+        if (settings.sleepFallbackAutoAverage && avg !== null) {
+          await saveManualSleepEntry({
+            date: todayDate,
+            totalHours: avg,
+            isManual: false,
+            isEstimate: true,
+            createdAt: new Date().toISOString(),
+          });
+          await clearCacheForDate(now);
+          return;
+        }
+
+        // Show the prompt
+        setShowMissingSleep(true);
+      } catch (error) {
+        console.error('[HomeScreen] Error checking missing sleep:', error);
+      }
+    };
+
+    checkMissingSleep();
+  }, []);
 
   /**
    * Load all computed data.
@@ -285,6 +347,27 @@ export function HomeScreen() {
       console.error('[HomeScreen] Failed to load:', error);
     }
   }, [user?.id]);
+
+  const handleSaveMissingSleep = useCallback(async (hours: number, isEstimate: boolean) => {
+    const todayDate = format(new Date(), 'yyyy-MM-dd');
+    await saveManualSleepEntry({
+      date: todayDate,
+      totalHours: hours,
+      isManual: !isEstimate,
+      isEstimate,
+      createdAt: new Date().toISOString(),
+    });
+    await clearCacheForDate(new Date());
+    await setSleepFallbackDismissed(todayDate);
+    setShowMissingSleep(false);
+    loadData();
+  }, [loadData]);
+
+  const handleDismissMissingSleep = useCallback(async () => {
+    const todayDate = format(new Date(), 'yyyy-MM-dd');
+    await setSleepFallbackDismissed(todayDate);
+    setShowMissingSleep(false);
+  }, []);
 
   // Load data on screen focus - stable deps, no re-render loop
   useFocusEffect(
@@ -666,6 +749,14 @@ export function HomeScreen() {
           weekStart={weeklySummaryWeekStart}
         />
       )}
+
+      {/* Missing Sleep Prompt */}
+      <MissingSleepPrompt
+        visible={showMissingSleep}
+        onDismiss={handleDismissMissingSleep}
+        onSave={handleSaveMissingSleep}
+        averageSleepHours={averageSleepHours}
+      />
     </SafeAreaView>
   );
 }

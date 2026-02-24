@@ -20,7 +20,7 @@ import { Button, Card, NumberInput } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
-import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, UnitSystem } from '../types';
+import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
@@ -1110,6 +1110,9 @@ function ExerciseCard({
       >
         <View style={styles.exerciseHeaderLeft}>
           <Text style={[styles.exerciseName, isComplete && styles.exerciseNameComplete]}>{exercise.name}</Text>
+          {exercise.cableAccessory && (
+            <Text style={styles.exerciseAccessory}>{CABLE_ACCESSORY_DISPLAY_NAMES[exercise.cableAccessory]}</Text>
+          )}
           {exercise.notes && (
             <Text style={styles.exerciseNotes} numberOfLines={1}>{exercise.notes}</Text>
           )}
@@ -1395,6 +1398,11 @@ const styles = StyleSheet.create({
   },
   exerciseNameComplete: {
     color: colors.textSecondary,
+  },
+  exerciseAccessory: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 1,
   },
   exerciseNotes: {
     fontSize: typography.size.sm,

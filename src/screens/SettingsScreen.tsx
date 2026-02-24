@@ -883,6 +883,61 @@ export function SettingsScreen() {
           </Card>
         </View>
 
+        {/* Sleep Tracking */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sleep Tracking</Text>
+          <Card padding="none">
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingLabel}>Remind if Sleep Missing</Text>
+                <Text style={styles.settingHint}>Prompt to log sleep when Watch data is unavailable</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.sleepFallbackReminderEnabled !== false && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    sleepFallbackReminderEnabled: userSettings.sleepFallbackReminderEnabled === false,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.sleepFallbackReminderEnabled !== false && styles.toggleTextActive,
+                ]}>
+                  {userSettings.sleepFallbackReminderEnabled !== false ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.settingRow, styles.settingRowLast]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingLabel}>Auto-Use Average</Text>
+                <Text style={styles.settingHint}>Automatically fill missing sleep with your 30-day average</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.sleepFallbackAutoAverage && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    sleepFallbackAutoAverage: !userSettings.sleepFallbackAutoAverage,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.sleepFallbackAutoAverage && styles.toggleTextActive,
+                ]}>
+                  {userSettings.sleepFallbackAutoAverage ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        </View>
+
         {/* Weekly Goals */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Weekly Goals</Text>
@@ -1657,6 +1712,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textTertiary,
     marginTop: spacing.sm,
+  },
+  settingHint: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   dangerTitle: {
     color: colors.error,

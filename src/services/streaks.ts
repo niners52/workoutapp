@@ -15,30 +15,100 @@ import {
   DEFAULT_DAILY_GOALS,
 } from '../types';
 
+// Letter grade system
+export type LetterGrade = 'A' | 'B' | 'C' | 'D' | 'F';
+
+export const GRADE_COLORS: Record<LetterGrade, string> = {
+  A: '#4CAF50',
+  B: '#8BC34A',
+  C: '#FFC107',
+  D: '#FF9800',
+  F: '#F44336',
+};
+
+export function gradeIsHit(grade: LetterGrade): boolean {
+  return grade === 'A' || grade === 'B';
+}
+
+export function getStandardGrade(percent: number): LetterGrade {
+  if (percent >= 100) return 'A';
+  if (percent >= 90) return 'B';
+  if (percent >= 75) return 'C';
+  if (percent >= 50) return 'D';
+  return 'F';
+}
+
+export function getCutCalorieGrade(percent: number): LetterGrade {
+  if (percent <= 100) return 'A';
+  if (percent <= 110) return 'B';
+  if (percent <= 125) return 'C';
+  if (percent <= 150) return 'D';
+  return 'F';
+}
+
+export function getBooleanGrade(done: boolean): LetterGrade {
+  return done ? 'A' : 'F';
+}
+
+export function getCalorieGrade(
+  consumed: number,
+  goal: number,
+  mode: NutritionMode,
+  tolerancePercent: number
+): LetterGrade {
+  if (!goal || goal <= 0) return 'A';
+  switch (mode) {
+    case 'bulk':
+      return getStandardGrade((consumed / goal) * 100);
+    case 'cut':
+      return getCutCalorieGrade((consumed / goal) * 100);
+    case 'recomp': {
+      const tolerance = goal * (tolerancePercent / 100);
+      const lower = goal - tolerance;
+      const upper = goal + tolerance;
+      if (consumed >= lower && consumed <= upper) return 'A';
+      const distance = consumed < lower
+        ? ((lower - consumed) / goal) * 100
+        : ((consumed - upper) / goal) * 100;
+      if (distance <= 5) return 'B';
+      if (distance <= 15) return 'C';
+      if (distance <= 30) return 'D';
+      return 'F';
+    }
+    default:
+      return 'F';
+  }
+}
+
 // Status for a single day's goal
 export interface DailyGoalStatus {
   date: string; // YYYY-MM-DD
   sleep: {
     hours: number;
     met: boolean;
+    grade: LetterGrade;
   };
   protein: {
     grams: number;
     met: boolean;
+    grade: LetterGrade;
   };
   calories: {
     consumed: number;
     goal: number;
     met: boolean;
     mode: NutritionMode;
+    grade: LetterGrade;
   };
   supplements: {
     taken: number;
     total: number;
     allTaken: boolean;
+    grade: LetterGrade;
   };
   training: {
     completed: boolean;
+    grade: LetterGrade;
   };
   perfectDay: boolean;
 }
@@ -77,19 +147,7 @@ export function checkCalorieGoalMet(
   mode: NutritionMode,
   tolerancePercent: number
 ): boolean {
-  if (!goal || goal <= 0) return true; // No goal = always met
-
-  switch (mode) {
-    case 'bulk':
-      return consumed >= goal;
-    case 'cut':
-      return consumed <= goal;
-    case 'recomp':
-      const tolerance = goal * (tolerancePercent / 100);
-      return consumed >= (goal - tolerance) && consumed <= (goal + tolerance);
-    default:
-      return false;
-  }
+  return gradeIsHit(getCalorieGrade(consumed, goal, mode, tolerancePercent));
 }
 
 /**
@@ -109,22 +167,28 @@ function calculateDailyStatus(
   const dateStr = format(date, 'yyyy-MM-dd');
   const dailyGoals = settings.dailyGoals || DEFAULT_DAILY_GOALS;
 
-  const sleepMet = sleepHours >= dailyGoals.sleepHours;
-  const proteinMet = proteinGrams >= dailyGoals.proteinGrams;
+  // Grades
+  const sleepPercent = dailyGoals.sleepHours > 0 ? (sleepHours / dailyGoals.sleepHours) * 100 : 100;
+  const sleepGrade = getStandardGrade(sleepPercent);
+  const sleepMet = gradeIsHit(sleepGrade);
 
-  // Calorie goal based on nutrition mode
+  const proteinPercent = dailyGoals.proteinGrams > 0 ? (proteinGrams / dailyGoals.proteinGrams) * 100 : 100;
+  const proteinGrade = getStandardGrade(proteinPercent);
+  const proteinMet = gradeIsHit(proteinGrade);
+
   const calorieGoal = settings.calorieGoal || 0;
   const nutritionMode = settings.nutritionMode || 'recomp';
   const tolerancePercent = settings.calorieTolerancePercent || 10;
-  const caloriesMet = checkCalorieGoalMet(calories, calorieGoal, nutritionMode, tolerancePercent);
+  const calorieGrade = getCalorieGrade(calories, calorieGoal, nutritionMode, tolerancePercent);
+  const caloriesMet = gradeIsHit(calorieGrade);
 
-  // Filter intakes for this specific date
   const dayIntakes = supplementIntakes.filter(i => i.date === dateStr);
   const totalSupplements = activeSupplements.length;
   const takenSupplements = activeSupplements.filter(s =>
     dayIntakes.some(i => i.supplementId === s.id)
   ).length;
   const allSupplementsTaken = totalSupplements > 0 && takenSupplements === totalSupplements;
+  const supplementGrade = getBooleanGrade(totalSupplements === 0 || allSupplementsTaken);
 
   let trainingCompleted = false;
   if (dailyGoals.trackTraining !== false) {
@@ -133,22 +197,22 @@ function calculateDailyStatus(
       return format(new Date(w.completedAt), 'yyyy-MM-dd') === dateStr;
     });
   }
+  const trainingGrade = getBooleanGrade(trainingCompleted);
 
-  // Perfect day requires all goals met (calories only if goal is set)
   const perfectDay =
-    sleepMet &&
-    proteinMet &&
-    (calorieGoal <= 0 || caloriesMet) &&
-    (totalSupplements === 0 || allSupplementsTaken) &&
-    (dailyGoals.trackTraining === false || trainingCompleted);
+    gradeIsHit(sleepGrade) &&
+    gradeIsHit(proteinGrade) &&
+    (calorieGoal <= 0 || gradeIsHit(calorieGrade)) &&
+    (totalSupplements === 0 || gradeIsHit(supplementGrade)) &&
+    (dailyGoals.trackTraining === false || gradeIsHit(trainingGrade));
 
   return {
     date: dateStr,
-    sleep: { hours: sleepHours, met: sleepMet },
-    protein: { grams: proteinGrams, met: proteinMet },
-    calories: { consumed: calories, goal: calorieGoal, met: caloriesMet, mode: nutritionMode },
-    supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken },
-    training: { completed: trainingCompleted },
+    sleep: { hours: sleepHours, met: sleepMet, grade: sleepGrade },
+    protein: { grams: proteinGrams, met: proteinMet, grade: proteinGrade },
+    calories: { consumed: calories, goal: calorieGoal, met: caloriesMet, mode: nutritionMode, grade: calorieGrade },
+    supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken, grade: supplementGrade },
+    training: { completed: trainingCompleted, grade: trainingGrade },
     perfectDay,
   };
 }
@@ -235,7 +299,7 @@ export async function calculateStreaks(
 
     // Sleep - last night's data is final, so today counts as met or broken
     if (!sleepBroken) {
-      if (status.sleep.met) {
+      if (gradeIsHit(status.sleep.grade)) {
         sleepStreak++;
       } else {
         sleepBroken = true;
@@ -244,7 +308,7 @@ export async function calculateStreaks(
 
     // Protein - today might not be complete yet, don't break on today
     if (!proteinBroken) {
-      if (status.protein.met) {
+      if (gradeIsHit(status.protein.grade)) {
         proteinStreak++;
       } else if (!isCurrentDay) {
         proteinBroken = true;
@@ -253,7 +317,7 @@ export async function calculateStreaks(
 
     // Calories - today might not be complete yet, don't break on today
     if (hasCalorieGoal && !calorieBroken) {
-      if (status.calories.met) {
+      if (gradeIsHit(status.calories.grade)) {
         calorieStreak++;
       } else if (!isCurrentDay) {
         calorieBroken = true;
@@ -262,7 +326,7 @@ export async function calculateStreaks(
 
     // Supplements - today might not be complete yet
     if (!supplementBroken) {
-      if (status.supplements.allTaken) {
+      if (gradeIsHit(status.supplements.grade)) {
         supplementStreak++;
       } else if (!isCurrentDay) {
         supplementBroken = true;
@@ -273,7 +337,7 @@ export async function calculateStreaks(
     if (!trainingBroken) {
       const isTrainingDay = isScheduledTrainingDay(date, activeRoutine);
       if (isTrainingDay) {
-        if (status.training.completed) {
+        if (gradeIsHit(status.training.grade)) {
           trainingStreak++;
         } else if (!isCurrentDay) {
           trainingBroken = true;
@@ -352,11 +416,11 @@ export async function getWeeklyGridData(
       // Future day - empty status
       days.push({
         date: dateStr,
-        sleep: { hours: 0, met: false },
-        protein: { grams: 0, met: false },
-        calories: { consumed: 0, goal: settings.calorieGoal || 0, met: false, mode: settings.nutritionMode || 'recomp' },
-        supplements: { taken: 0, total: 0, allTaken: false },
-        training: { completed: false },
+        sleep: { hours: 0, met: false, grade: 'F' },
+        protein: { grams: 0, met: false, grade: 'F' },
+        calories: { consumed: 0, goal: settings.calorieGoal || 0, met: false, mode: settings.nutritionMode || 'recomp', grade: 'F' },
+        supplements: { taken: 0, total: 0, allTaken: false, grade: 'F' },
+        training: { completed: false, grade: 'F' },
         perfectDay: false,
       });
     } else {

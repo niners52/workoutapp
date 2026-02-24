@@ -358,6 +358,9 @@ export interface UserSettings {
   deloadPercentage?: number; // Weight percentage during deload (default 50, range 40-60)
   // PR notifications
   milestoneCelebrationsEnabled?: boolean;
+  // Sleep fallback
+  sleepFallbackReminderEnabled?: boolean;  // default true
+  sleepFallbackAutoAverage?: boolean;      // default false
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
@@ -400,6 +403,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   calorieTolerancePercent: 10,
   deloadPercentage: 50,
   milestoneCelebrationsEnabled: true,
+  sleepFallbackReminderEnabled: true,
+  sleepFallbackAutoAverage: false,
 };
 
 // Apple Health Data Types
@@ -422,6 +427,14 @@ export interface SleepData {
   date: string; // ISO date string (date only, the morning you woke up)
   totalHours: number;
   stages: SleepStages | null;
+}
+
+export interface ManualSleepEntry {
+  date: string;         // 'YYYY-MM-DD'
+  totalHours: number;
+  isManual: boolean;    // true = user typed hours
+  isEstimate: boolean;  // true = "Use my average" tapped
+  createdAt: string;    // ISO timestamp
 }
 
 // Volume Analytics

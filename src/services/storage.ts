@@ -12,6 +12,7 @@ import {
   BodyMeasurement,
   BodyMeasurementTypeKey,
   ProgressPhoto,
+  ManualSleepEntry,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
@@ -41,6 +42,8 @@ const STORAGE_KEYS = {
   WEEKLY_SUMMARY_DISMISSED: '@workout_tracker/weekly_summary_dismissed',
   PROGRESS_PHOTOS: '@workout_tracker/progress_photos',
   ACTIVE_WORKOUT: '@workout_tracker/active_workout',
+  MANUAL_SLEEP_ENTRIES: '@workout_tracker/manual_sleep_entries',
+  SLEEP_FALLBACK_DISMISSED: '@workout_tracker/sleep_fallback_dismissed',
 } as const;
 
 // Current migration version
@@ -404,6 +407,104 @@ export async function deleteExercise(id: string): Promise<void> {
 
   // Note: We do NOT delete historical sets that used this exercise
   // to preserve workout history integrity
+}
+
+export async function mergeExercise(
+  sourceId: string,
+  keeperId: string
+): Promise<{ updatedSetIds: string[]; updatedTemplateIds: string[] }> {
+  // 1. Reassign all sets from source → keeper
+  const sets = await getSets();
+  const updatedSetIds: string[] = [];
+  const updatedSets = sets.map(s => {
+    if (s.exerciseId === sourceId) {
+      updatedSetIds.push(s.id);
+      return { ...s, exerciseId: keeperId };
+    }
+    return s;
+  });
+  await setItem(STORAGE_KEYS.SETS, updatedSets);
+
+  // 2. Update templates: replace source with keeper (avoid duplicates)
+  const templates = await getTemplates();
+  const updatedTemplateIds: string[] = [];
+  const updatedTemplates = templates.map(template => {
+    if (!template.exerciseIds.includes(sourceId)) return template;
+
+    updatedTemplateIds.push(template.id);
+    const hasKeeper = template.exerciseIds.includes(keeperId);
+
+    const newExerciseIds = hasKeeper
+      ? template.exerciseIds.filter(id => id !== sourceId)
+      : template.exerciseIds.map(id => id === sourceId ? keeperId : id);
+
+    return { ...template, exerciseIds: newExerciseIds };
+  });
+  await setItem(STORAGE_KEYS.TEMPLATES, updatedTemplates);
+
+  // 3. Update workouts: replace source in skippedExerciseIds
+  const workouts = await getWorkouts();
+  const updatedWorkouts = workouts.map(workout => {
+    if (!workout.skippedExerciseIds?.includes(sourceId)) return workout;
+
+    const hasKeeper = workout.skippedExerciseIds.includes(keeperId);
+    const newSkipped = hasKeeper
+      ? workout.skippedExerciseIds.filter(id => id !== sourceId)
+      : workout.skippedExerciseIds.map(id => id === sourceId ? keeperId : id);
+
+    return { ...workout, skippedExerciseIds: newSkipped };
+  });
+  await setItem(STORAGE_KEYS.WORKOUTS, updatedWorkouts);
+
+  // 4. Update active workout state if it references source
+  const activeState = await getActiveWorkoutState();
+  if (activeState) {
+    let changed = false;
+    let newExerciseIds = activeState.exerciseIds;
+    let newCurrentExerciseId = activeState.currentExerciseId;
+
+    if (newExerciseIds.includes(sourceId)) {
+      const hasKeeper = newExerciseIds.includes(keeperId);
+      newExerciseIds = hasKeeper
+        ? newExerciseIds.filter(id => id !== sourceId)
+        : newExerciseIds.map(id => id === sourceId ? keeperId : id);
+      changed = true;
+    }
+
+    if (newCurrentExerciseId === sourceId) {
+      newCurrentExerciseId = keeperId;
+      changed = true;
+    }
+
+    if (changed) {
+      const newIndex = newExerciseIds.indexOf(newCurrentExerciseId || '');
+      await saveActiveWorkoutState({
+        ...activeState,
+        exerciseIds: newExerciseIds,
+        currentExerciseId: newCurrentExerciseId,
+        currentExerciseIndex: newIndex >= 0 ? newIndex : 0,
+      });
+    }
+  }
+
+  // 5. Combine notes: keeper's notes first, then source's
+  const exercises = await getExercises();
+  const keeper = exercises.find(e => e.id === keeperId);
+  const source = exercises.find(e => e.id === sourceId);
+
+  if (keeper && source?.notes) {
+    const keeperIndex = exercises.findIndex(e => e.id === keeperId);
+    exercises[keeperIndex] = {
+      ...keeper,
+      notes: keeper.notes ? `${keeper.notes}\n${source.notes}` : source.notes,
+    };
+  }
+
+  // 6. Delete source exercise
+  const finalExercises = exercises.filter(e => e.id !== sourceId);
+  await setItem(STORAGE_KEYS.EXERCISES, finalExercises);
+
+  return { updatedSetIds, updatedTemplateIds };
 }
 
 // ==================== TEMPLATES ====================
@@ -1337,4 +1438,41 @@ export async function deleteProgressPhotoMetadata(id: string): Promise<void> {
 export async function getProgressPhotosByDate(date: string): Promise<ProgressPhoto[]> {
   const photos = await getProgressPhotos();
   return photos.filter(p => p.date === date);
+}
+
+// ==================== MANUAL SLEEP ENTRIES ====================
+
+export async function getManualSleepEntries(): Promise<ManualSleepEntry[]> {
+  return getItem(STORAGE_KEYS.MANUAL_SLEEP_ENTRIES, []);
+}
+
+export async function getManualSleepEntry(date: string): Promise<ManualSleepEntry | null> {
+  const entries = await getManualSleepEntries();
+  return entries.find(e => e.date === date) || null;
+}
+
+export async function saveManualSleepEntry(entry: ManualSleepEntry): Promise<void> {
+  const entries = await getManualSleepEntries();
+  const idx = entries.findIndex(e => e.date === entry.date);
+  if (idx >= 0) {
+    entries[idx] = entry;
+  } else {
+    entries.push(entry);
+  }
+  await setItem(STORAGE_KEYS.MANUAL_SLEEP_ENTRIES, entries);
+}
+
+export async function deleteManualSleepEntry(date: string): Promise<void> {
+  const entries = await getManualSleepEntries();
+  await setItem(STORAGE_KEYS.MANUAL_SLEEP_ENTRIES, entries.filter(e => e.date !== date));
+}
+
+// ==================== SLEEP FALLBACK DISMISSAL ====================
+
+export async function getSleepFallbackDismissed(): Promise<string | null> {
+  return AsyncStorage.getItem(STORAGE_KEYS.SLEEP_FALLBACK_DISMISSED);
+}
+
+export async function setSleepFallbackDismissed(date: string): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEYS.SLEEP_FALLBACK_DISMISSED, date);
 }

@@ -6,6 +6,7 @@ export { ExercisePickerScreen } from './ExercisePickerScreen';
 export { ExercisesScreen } from './ExercisesScreen';
 export { ExerciseDetailScreen } from './ExerciseDetailScreen';
 export { ExerciseHistoryScreen } from './ExerciseHistoryScreen';
+export { MergeExercisePickerScreen } from './MergeExercisePickerScreen';
 export { AddExerciseScreen } from './AddExerciseScreen';
 export { TemplatesScreen } from './TemplatesScreen';
 export { TemplateDetailScreen } from './TemplateDetailScreen';
