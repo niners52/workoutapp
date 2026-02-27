@@ -270,13 +270,43 @@ function generateMissedMuscleGroupSuggestions(
 
 // ─── 4. Recovery Suggestions ────────────────────────────────────────────────
 
+function isFullBodyRoutine(
+  routine: Routine | undefined,
+  templates: Template[]
+): boolean {
+  if (!routine) return false;
+
+  // Get all template IDs used in the routine's schedule
+  const routineTemplateIds = routine.daySchedule
+    .flatMap(day => day.templateIds)
+    .filter(id => id);
+  if (routineTemplateIds.length === 0) return false;
+
+  // Count how many are full_body vs other types
+  let fullBodyCount = 0;
+  for (const id of routineTemplateIds) {
+    const template = templates.find(t => t.id === id);
+    if (template?.type === 'full_body') fullBodyCount++;
+  }
+
+  // If majority of training days use full_body templates, it's a full body routine
+  return fullBodyCount > routineTemplateIds.length / 2;
+}
+
 function generateRecoverySuggestions(
   workouts: Workout[],
   sets: WorkoutSet[],
-  exercises: Exercise[]
+  exercises: Exercise[],
+  routine: Routine | undefined,
+  templates: Template[]
 ): CoachSuggestion[] {
+  const fullBody = isFullBodyRoutine(routine, templates);
+
+  // Full body routines intentionally hit every muscle each session —
+  // per-muscle consecutive day warnings are not useful
+  if (fullBody) return [];
+
   const today = new Date();
-  const todayStr = format(today, 'yyyy-MM-dd');
 
   // Look at last 5 days (to detect 3+ consecutive)
   const recentDays: string[] = [];
@@ -421,12 +451,12 @@ export async function getTopSuggestions(
   input: CoachSuggestionsInput,
   maxCount: number = 2
 ): Promise<CoachSuggestion[]> {
-  const { workouts, sets, exercises, settings, shortfalls } = input;
+  const { workouts, sets, exercises, templates, routine, settings, shortfalls } = input;
 
   // Generate all suggestions
   // During deload, skip volume/imbalance/missed suggestions — they aren't actionable
   const all: CoachSuggestion[] = [
-    ...generateRecoverySuggestions(workouts, sets, exercises),
+    ...generateRecoverySuggestions(workouts, sets, exercises, routine, templates),
     ...generateFatigueSuggestions(workouts, sets, exercises, settings),
     ...(settings.isOnDeload ? [] : generateVolumeGapSuggestions(shortfalls)),
     ...(settings.isOnDeload ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),

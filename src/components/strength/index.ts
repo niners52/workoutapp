@@ -1,0 +1,1 @@
+export { StrengthMapCard } from './StrengthMapCard';

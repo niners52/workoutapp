@@ -65,6 +65,7 @@ import {
   inchesToFeetAndInches,
 } from '../services/units';
 import { BodyMeasurementsSection, CaliperTestModal } from '../components/body';
+import { StrengthMapCard } from '../components/strength';
 import { BodyMeasurementTypeKey } from '../types';
 import {
   WeeklyVolume,
@@ -900,6 +901,9 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
 
         {/* Bodybuilding Body Measurements */}
         <BodyMeasurementsSection onNavigateToHistory={handleMeasurementHistoryPress} />
+
+        {/* Strength Map */}
+        <StrengthMapCard />
 
         {/* Category Summary */}
         {categoryVolumes.length > 0 && (

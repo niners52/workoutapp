@@ -13,10 +13,10 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format } from 'date-fns';
+import { format, startOfWeek } from 'date-fns';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { Button, Card, NumberInput } from '../components/common';
+import { Button, Card, NumberInput, SearchBar } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
@@ -53,7 +53,7 @@ interface ExerciseHistory {
 
 export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings, locations, workouts, sets } = useData();
+  const { exercises, templates, userSettings, locations, workouts, sets, getActiveRoutine } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -79,6 +79,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [customRestTime, setCustomRestTime] = useState(userSettings?.restTimerSeconds || 90);
   const [swapModalVisible, setSwapModalVisible] = useState(false);
   const [exerciseToSwap, setExerciseToSwap] = useState<Exercise | null>(null);
+  const [swapSearchQuery, setSwapSearchQuery] = useState('');
+  const [showAllExercises, setShowAllExercises] = useState(false);
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestStep, setSuggestStep] = useState<'location' | 'exercises'>('location');
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
@@ -461,6 +463,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
   const handleOpenSwapModal = (exercise: Exercise) => {
     setExerciseToSwap(exercise);
+    setSwapSearchQuery('');
+    setShowAllExercises(false);
     setSwapModalVisible(true);
   };
 
@@ -516,29 +520,116 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     setSelectedExerciseId(newExercise.id);
   };
 
-  // Get exercises with the same muscle group for swap options
-  const getSwapOptions = (exercise: Exercise): Exercise[] => {
-    // Get primary muscles for current exercise (support both array and deprecated single field)
+  // Get exercises organized into smart swap sections
+  interface SwapSection {
+    title: string;
+    exercises: Exercise[];
+    collapsed?: boolean;
+  }
+
+  const getSwapSections = (exercise: Exercise): SwapSection[] => {
+    // Get primary muscles for current exercise
     const currentPrimaryMuscles = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
       ? exercise.primaryMuscleGroups
       : exercise.primaryMuscleGroup
       ? [exercise.primaryMuscleGroup]
       : [];
 
-    return exercises.filter(e => {
-      if (e.id === exercise.id) return false;
-      if (activeWorkout.exerciseIds.includes(e.id)) return false;
+    // Build exclude set: self + already in workout
+    const excludeIds = new Set([exercise.id, ...activeWorkout.exerciseIds]);
 
-      // Get primary muscles for potential swap exercise
-      const ePrimaryMuscles = e.primaryMuscleGroups && e.primaryMuscleGroups.length > 0
+    // Get all routine exercise IDs
+    const routine = getActiveRoutine();
+    const routineExerciseIds = new Set<string>();
+    if (routine) {
+      for (const day of routine.daySchedule) {
+        for (const templateId of day.templateIds) {
+          const template = templates.find(t => t.id === templateId);
+          if (template) {
+            for (const eid of template.exerciseIds) {
+              routineExerciseIds.add(eid);
+            }
+          }
+        }
+      }
+    }
+
+    // Get exercises done this week
+    const weekStartsOn = userSettings?.weekStartDay === 'monday' ? 1 : 0;
+    const weekStart = startOfWeek(new Date(), { weekStartsOn });
+    const weekStartStr = format(weekStart, 'yyyy-MM-dd');
+    const doneThisWeek = new Set<string>();
+    for (const s of sets) {
+      if (s.loggedAt >= weekStartStr) {
+        doneThisWeek.add(s.exerciseId);
+      }
+    }
+
+    // Helper: get primary muscles for an exercise
+    const getPrimaryMuscles = (e: Exercise) =>
+      e.primaryMuscleGroups && e.primaryMuscleGroups.length > 0
         ? e.primaryMuscleGroups
-        : e.primaryMuscleGroup
-        ? [e.primaryMuscleGroup]
-        : [];
+        : e.primaryMuscleGroup ? [e.primaryMuscleGroup] : [];
 
-      // Check if any primary muscles overlap
-      return currentPrimaryMuscles.some(m => ePrimaryMuscles.includes(m));
-    });
+    // Helper: shares a primary muscle with the swap target
+    const sharesMuscle = (e: Exercise) =>
+      getPrimaryMuscles(e).some(m => currentPrimaryMuscles.includes(m));
+
+    // Categorize all available exercises
+    const section1: Exercise[] = [];
+    const section2: Exercise[] = [];
+    const section3: Exercise[] = [];
+    const usedIds = new Set<string>();
+
+    for (const e of exercises) {
+      if (excludeIds.has(e.id)) continue;
+
+      const inRoutine = routineExerciseIds.has(e.id);
+      const notDoneThisWeek = !doneThisWeek.has(e.id);
+      const sameMuscle = sharesMuscle(e);
+
+      if (inRoutine && notDoneThisWeek && sameMuscle) {
+        section1.push(e);
+        usedIds.add(e.id);
+      }
+    }
+
+    for (const e of exercises) {
+      if (excludeIds.has(e.id) || usedIds.has(e.id)) continue;
+
+      const inRoutine = routineExerciseIds.has(e.id);
+      const notDoneThisWeek = !doneThisWeek.has(e.id);
+
+      if (inRoutine && notDoneThisWeek) {
+        section2.push(e);
+        usedIds.add(e.id);
+      }
+    }
+
+    for (const e of exercises) {
+      if (excludeIds.has(e.id) || usedIds.has(e.id)) continue;
+      section3.push(e);
+    }
+
+    const sections: SwapSection[] = [];
+    if (section1.length > 0) {
+      sections.push({ title: 'Same Muscle — In Routine', exercises: section1 });
+    }
+    if (section2.length > 0) {
+      sections.push({ title: 'Other Routine Exercises', exercises: section2 });
+    }
+    if (section3.length > 0) {
+      // Collapse section 3 unless there are no other sections
+      sections.push({ title: 'All Exercises', exercises: section3, collapsed: sections.length > 0 });
+    }
+
+    return sections;
+  };
+
+  // Legacy helper for hasSwapOptions check
+  const hasAnySwapOptions = (exercise: Exercise): boolean => {
+    const excludeIds = new Set([exercise.id, ...activeWorkout.exerciseIds]);
+    return exercises.some(e => !excludeIds.has(e.id));
   };
 
   const toggleExercise = (exerciseId: string) => {
@@ -636,8 +727,6 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
             if (!exercise) return null;
 
-            const swapOptions = getSwapOptions(exercise);
-
             // Show "Completed" separator when transitioning from incomplete to complete
             const prevId = index > 0 ? activeWorkout.exerciseIds[index - 1] : null;
             const prevExercise = prevId ? exercises.find(e => e.id === prevId) : null;
@@ -666,7 +755,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                   onOpenRestTimer={() => setRestTimerModalVisible(true)}
                   onSwap={() => handleOpenSwapModal(exercise)}
                   onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
-                  hasSwapOptions={swapOptions.length > 0}
+                  hasSwapOptions={hasAnySwapOptions(exercise)}
                   weight={weight}
                   setWeight={setWeight}
                   reps={reps}
@@ -824,7 +913,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             activeOpacity={1}
             onPress={() => setSwapModalVisible(false)}
           >
-            <View style={[styles.modalContent, styles.swapModalContent]}>
+            <View style={[styles.modalContent, styles.swapModalContent]} onStartShouldSetResponder={() => true}>
               <Text style={styles.modalTitle}>
                 Swap {exerciseToSwap?.name}
               </Text>
@@ -835,20 +924,72 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     : exerciseToSwap.primaryMuscleGroup
                     ? MUSCLE_GROUP_DISPLAY_NAMES[exerciseToSwap.primaryMuscleGroup]
                     : 'Unknown'
-                )} exercises
+                )}
               </Text>
 
+              <View style={styles.swapSearchContainer}>
+                <SearchBar
+                  value={swapSearchQuery}
+                  onChangeText={setSwapSearchQuery}
+                  placeholder="Search exercises..."
+                />
+              </View>
+
               <ScrollView style={styles.swapList}>
-                {exerciseToSwap && getSwapOptions(exerciseToSwap).map(exercise => (
-                  <TouchableOpacity
-                    key={exercise.id}
-                    style={styles.swapOption}
-                    onPress={() => handleSwapExercise(exercise)}
-                  >
-                    <Text style={styles.swapOptionName}>{exercise.name}</Text>
-                    <Text style={styles.swapOptionEquipment}>{exercise.equipment}</Text>
-                  </TouchableOpacity>
-                ))}
+                {exerciseToSwap && (() => {
+                  const sections = getSwapSections(exerciseToSwap);
+
+                  // When searching, flatten all sections and filter by name
+                  if (swapSearchQuery) {
+                    const query = swapSearchQuery.toLowerCase();
+                    const allExercises = sections.flatMap(s => s.exercises);
+                    const filtered = allExercises.filter(e =>
+                      e.name.toLowerCase().includes(query)
+                    );
+                    return filtered.map(exercise => (
+                      <TouchableOpacity
+                        key={exercise.id}
+                        style={styles.swapOption}
+                        onPress={() => handleSwapExercise(exercise)}
+                      >
+                        <Text style={styles.swapOptionName}>{exercise.name}</Text>
+                        <Text style={styles.swapOptionEquipment}>
+                          {EQUIPMENT_DISPLAY_NAMES[exercise.equipment] || exercise.equipment}
+                        </Text>
+                      </TouchableOpacity>
+                    ));
+                  }
+
+                  // Sectioned view
+                  return sections.map(section => (
+                    <View key={section.title}>
+                      <Text style={styles.swapSectionHeader}>{section.title}</Text>
+                      {section.collapsed && !showAllExercises ? (
+                        <TouchableOpacity
+                          style={styles.showAllButton}
+                          onPress={() => setShowAllExercises(true)}
+                        >
+                          <Text style={styles.showAllText}>
+                            Show all exercises ({section.exercises.length})
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        section.exercises.map(exercise => (
+                          <TouchableOpacity
+                            key={exercise.id}
+                            style={styles.swapOption}
+                            onPress={() => handleSwapExercise(exercise)}
+                          >
+                            <Text style={styles.swapOptionName}>{exercise.name}</Text>
+                            <Text style={styles.swapOptionEquipment}>
+                              {EQUIPMENT_DISPLAY_NAMES[exercise.equipment] || exercise.equipment}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </View>
+                  ));
+                })()}
               </ScrollView>
 
               <Button
@@ -1709,17 +1850,37 @@ const styles = StyleSheet.create({
   },
   // Swap modal styles
   swapModalContent: {
-    maxHeight: '70%',
+    maxHeight: '80%',
   },
   swapModalSubtitle: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: -spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  swapSearchContainer: {
+    marginBottom: spacing.sm,
+  },
+  swapSectionHeader: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  showAllButton: {
+    paddingVertical: spacing.md,
+  },
+  showAllText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    textAlign: 'center',
   },
   swapList: {
-    maxHeight: 300,
+    maxHeight: 350,
   },
   swapOption: {
     flexDirection: 'row',
