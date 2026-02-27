@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
-import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition } from './healthKit';
+import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition, getLatestWeight as getHealthKitLatestWeight } from './healthKit';
 import { SleepData, NutritionData } from '../types';
 import { getManualSleepEntry } from './storage';
 
@@ -27,6 +27,7 @@ interface CachedData<T> {
 const CACHE_KEYS = {
   SLEEP: (date: string) => `healthkit_sleep_${date}`,
   NUTRITION: (date: string) => `healthkit_nutrition_${date}`,
+  BODY_WEIGHT: 'healthkit_body_weight',
 };
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
@@ -104,6 +105,32 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     return fresh;
   } catch (error) {
     console.error('Error getting cached nutrition data:', error);
+    return null;
+  }
+}
+
+const BODY_WEIGHT_CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+
+export async function getCachedBodyWeight(): Promise<{ value: number; date: string } | null> {
+  try {
+    const cached = await AsyncStorage.getItem(CACHE_KEYS.BODY_WEIGHT);
+    if (cached) {
+      const parsed = JSON.parse(cached) as CachedData<{ value: number; date: string }>;
+      if (parsed.data && Date.now() - parsed.timestamp < BODY_WEIGHT_CACHE_DURATION) {
+        return parsed.data;
+      }
+    }
+
+    const fresh = await withTimeout(getHealthKitLatestWeight(), 3000);
+
+    await AsyncStorage.setItem(
+      CACHE_KEYS.BODY_WEIGHT,
+      JSON.stringify({ data: fresh, timestamp: Date.now() })
+    ).catch(() => {});
+
+    return fresh;
+  } catch (error) {
+    console.error('Error getting cached body weight:', error);
     return null;
   }
 }

@@ -627,8 +627,19 @@ export async function processPendingSync(
     if (operations.length === 0) return { processed: 0, failed: 0 };
 
     // Clean up: drop stale ops, then deduplicate
+    const originalCount = operations.length;
     operations = dropStaleOperations(operations);
     operations = deduplicateOperations(operations);
+
+    // Save cleaned queue immediately so pending count reflects actual processable ops
+    if (operations.length !== originalCount) {
+      console.log(`[Sync] Cleaned queue: ${originalCount} → ${operations.length} (dropped ${originalCount - operations.length} stale/duplicate ops)`);
+      await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(operations));
+    }
+
+    if (operations.length === 0) {
+      return { processed: 0, failed: 0 };
+    }
 
     const total = operations.length;
     console.log(`Processing ${total} pending sync operations (after dedup)...`);
@@ -760,7 +771,7 @@ class SyncManager {
     }
   }
 
-  async processQueue(onProgress?: SyncProgressCallback): Promise<{ processed: number; failed: number }> {
+  async processQueue(onProgress?: SyncProgressCallback, force?: boolean): Promise<{ processed: number; failed: number }> {
     if (this.isSyncing) return { processed: 0, failed: 0 };
 
     const count = await getPendingOperationsCount();
@@ -771,13 +782,19 @@ class SyncManager {
     }
 
     // Exponential backoff: skip this cycle if we've been failing
-    if (this.consecutiveFailures > 0) {
+    // When force=true (manual Sync Now), always bypass backoff
+    if (!force && this.consecutiveFailures > 0) {
       const backoffCycles = Math.min(2 ** this.consecutiveFailures, 32); // max ~16 min at 30s interval
       // Use a simple counter — we skip processing for backoffCycles intervals
       if (this.consecutiveFailures > 5) {
         console.log(`[SyncManager] Backing off (${this.consecutiveFailures} consecutive failures)`);
         return { processed: 0, failed: 0 };
       }
+    }
+
+    // Reset backoff counter when forcing (manual sync)
+    if (force) {
+      this.consecutiveFailures = 0;
     }
 
     this.isSyncing = true;
@@ -990,6 +1007,11 @@ export async function getPendingOperationsCount(): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+export async function clearPendingSyncQueue(): Promise<void> {
+  await AsyncStorage.removeItem(SYNC_KEYS.PENDING_OPERATIONS);
+  console.log('[Sync] Pending sync queue cleared');
 }
 
 export async function getLastCloudPull(): Promise<string | null> {

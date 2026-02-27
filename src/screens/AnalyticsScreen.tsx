@@ -66,6 +66,7 @@ import {
 } from '../services/units';
 import { BodyMeasurementsSection, CaliperTestModal } from '../components/body';
 import { StrengthMapCard } from '../components/strength';
+import { InsightsCard } from '../components/insights/InsightsCard';
 import { BodyMeasurementTypeKey } from '../types';
 import {
   WeeklyVolume,
@@ -904,6 +905,9 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
 
         {/* Strength Map */}
         <StrengthMapCard />
+
+        {/* Holistic Insights */}
+        <InsightsCard />
 
         {/* Category Summary */}
         {categoryVolumes.length > 0 && (

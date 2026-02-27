@@ -1,9 +1,20 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+  TextInput,
+  ActivityIndicator,
+  Platform,
+} from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { Card } from '../common';
 import { useData } from '../../contexts/DataContext';
+import { useBodyWeight } from '../../hooks/useBodyWeight';
 import { PrimaryMuscleGroup } from '../../types';
+import { formatWeight, inputToLbs, weightUnit } from '../../services/units';
 import { MuscleMapFront } from './MuscleMapFront';
 import { MuscleMapBack } from './MuscleMapBack';
 import { MuscleDetailModal } from './MuscleDetailModal';
@@ -25,13 +36,32 @@ const MAP_HEIGHT = MAP_WIDTH * 2.2; // Maintain ~200:440 aspect ratio
 const LEGEND_LEVELS: StrengthLevel[] = ['beginner', 'novice', 'intermediate', 'advanced', 'elite'];
 
 export function StrengthMapCard() {
-  const { exercises, sets, workouts, getLatestBodyMeasurement, userSettings } = useData();
+  const { exercises, sets, workouts, userSettings, addBodyMeasurement } = useData();
+  const { weightLbs: bodyWeight, source: weightSource, loading: weightLoading } = useBodyWeight();
 
   const [view, setView] = useState<ViewMode>('front');
   const [snapshot, setSnapshot] = useState<Snapshot>('now');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
+  const [manualWeightInput, setManualWeightInput] = useState('');
+  const [showWeightEdit, setShowWeightEdit] = useState(false);
 
-  const bodyWeight = getLatestBodyMeasurement()?.weight;
+  const handleSaveWeight = useCallback(async () => {
+    const parsed = parseFloat(manualWeightInput);
+    if (!parsed || parsed <= 0) return;
+
+    const weightInLbs = inputToLbs(parsed, userSettings.units);
+    const today = new Date().toISOString().split('T')[0];
+
+    await addBodyMeasurement({
+      id: `body-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      date: today,
+      weight: weightInLbs,
+      source: 'manual',
+    });
+
+    setManualWeightInput('');
+    setShowWeightEdit(false);
+  }, [manualWeightInput, userSettings.units, addBodyMeasurement]);
 
   // Calculate current strength levels
   const currentLevels = useMemo(() => {
@@ -73,10 +103,37 @@ export function StrengthMapCard() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Strength Map</Text>
         <Card style={styles.emptyCard}>
-          <Text style={styles.emptyText}>Log your body weight to see strength levels</Text>
-          <Text style={styles.emptySubtext}>
-            Body weight is needed to calculate strength ratios
-          </Text>
+          {weightLoading ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <>
+              <Text style={styles.emptyText}>Enter your body weight to see strength levels</Text>
+              <Text style={styles.emptySubtext}>
+                {Platform.OS === 'ios'
+                  ? 'Or sync from Apple Health in Settings'
+                  : 'Body weight is needed to calculate strength ratios'}
+              </Text>
+              <View style={styles.inlineWeightInput}>
+                <TextInput
+                  style={styles.weightInput}
+                  placeholder={`Weight (${weightUnit(userSettings.units)})`}
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={manualWeightInput}
+                  onChangeText={setManualWeightInput}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveWeight}
+                />
+                <TouchableOpacity
+                  style={[styles.saveWeightButton, !manualWeightInput && styles.saveWeightButtonDisabled]}
+                  onPress={handleSaveWeight}
+                  disabled={!manualWeightInput}
+                >
+                  <Text style={styles.saveWeightText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </Card>
       </View>
     );
@@ -134,6 +191,44 @@ export function StrengthMapCard() {
             </View>
           )}
         </View>
+
+        {/* Weight source info */}
+        {bodyWeight && !showWeightEdit && (
+          <View style={styles.weightSourceRow}>
+            <Text style={styles.weightSourceText}>
+              Based on {formatWeight(bodyWeight, userSettings.units)}
+              {weightSource === 'healthkit' ? ' from Apple Health' : ''}
+            </Text>
+            <TouchableOpacity onPress={() => setShowWeightEdit(true)}>
+              <Text style={styles.weightEditLink}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {showWeightEdit && (
+          <View style={styles.editWeightRow}>
+            <TextInput
+              style={styles.weightInput}
+              placeholder={`Weight (${weightUnit(userSettings.units)})`}
+              placeholderTextColor={colors.textTertiary}
+              keyboardType="decimal-pad"
+              value={manualWeightInput}
+              onChangeText={setManualWeightInput}
+              returnKeyType="done"
+              onSubmitEditing={handleSaveWeight}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.saveWeightButton, !manualWeightInput && styles.saveWeightButtonDisabled]}
+              onPress={handleSaveWeight}
+              disabled={!manualWeightInput}
+            >
+              <Text style={styles.saveWeightText}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => { setShowWeightEdit(false); setManualWeightInput(''); }}>
+              <Text style={styles.weightEditLink}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Muscle Map */}
         <View style={styles.mapContainer}>
@@ -272,6 +367,58 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: 'center',
     marginTop: spacing.sm,
+  },
+  weightSourceRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  weightSourceText: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+  },
+  weightEditLink: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  editWeightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  inlineWeightInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  weightInput: {
+    flex: 1,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: typography.size.md,
+    color: colors.text,
+  },
+  saveWeightButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  saveWeightButtonDisabled: {
+    opacity: 0.5,
+  },
+  saveWeightText: {
+    fontSize: typography.size.sm,
+    color: colors.background,
+    fontWeight: typography.weight.semibold,
   },
 });
 

@@ -25,7 +25,8 @@ export type CoachSuggestionType =
   | 'muscle_imbalance'
   | 'missed_muscle_group'
   | 'recovery'
-  | 'fatigue';
+  | 'fatigue'
+  | 'insight';
 
 export interface CoachSuggestion {
   id: string;

@@ -14,22 +14,40 @@ interface MeasurementPoint {
   side?: 'left' | 'right';
 }
 
-// Measurement points in viewBox coords (200x500)
-// Center points are spaced 55 units apart to prevent label overlap
-const MEASUREMENT_POINTS: MeasurementPoint[] = [
-  { key: 'neck', label: 'Neck', x: 100, y: 50 },
-  { key: 'shoulders', label: 'Shoulders', x: 100, y: 105 },
-  { key: 'chest', label: 'Chest', x: 100, y: 160 },
-  { key: 'left_arm', label: 'L Arm', x: 32, y: 155, side: 'left' },
-  { key: 'right_arm', label: 'R Arm', x: 168, y: 155, side: 'right' },
-  { key: 'left_forearm', label: 'L Forearm', x: 22, y: 215, side: 'left' },
-  { key: 'right_forearm', label: 'R Forearm', x: 178, y: 215, side: 'right' },
-  { key: 'waist', label: 'Waist', x: 100, y: 215 },
-  { key: 'hips', label: 'Hips', x: 100, y: 270 },
-  { key: 'left_thigh', label: 'L Thigh', x: 72, y: 300, side: 'left' },
-  { key: 'right_thigh', label: 'R Thigh', x: 128, y: 300, side: 'right' },
-  { key: 'left_calf', label: 'L Calf', x: 70, y: 395, side: 'left' },
-  { key: 'right_calf', label: 'R Calf', x: 130, y: 395, side: 'right' },
+// ─── Measurement points per silhouette (200×500 viewBox) ────────────────────
+// Center measurements (neck, shoulders, chest, waist, hips) stay at x=100
+// Side measurements shift inward for the female silhouette (narrower frame)
+
+const MALE_MEASUREMENT_POINTS: MeasurementPoint[] = [
+  { key: 'neck', label: 'Neck', x: 100, y: 62 },
+  { key: 'shoulders', label: 'Shoulders', x: 100, y: 92 },
+  { key: 'chest', label: 'Chest', x: 100, y: 135 },
+  { key: 'left_arm', label: 'L Arm', x: 36, y: 150, side: 'left' },
+  { key: 'right_arm', label: 'R Arm', x: 164, y: 150, side: 'right' },
+  { key: 'left_forearm', label: 'L Forearm', x: 28, y: 210, side: 'left' },
+  { key: 'right_forearm', label: 'R Forearm', x: 172, y: 210, side: 'right' },
+  { key: 'waist', label: 'Waist', x: 100, y: 198 },
+  { key: 'hips', label: 'Hips', x: 100, y: 240 },
+  { key: 'left_thigh', label: 'L Thigh', x: 78, y: 295, side: 'left' },
+  { key: 'right_thigh', label: 'R Thigh', x: 122, y: 295, side: 'right' },
+  { key: 'left_calf', label: 'L Calf', x: 74, y: 390, side: 'left' },
+  { key: 'right_calf', label: 'R Calf', x: 126, y: 390, side: 'right' },
+];
+
+const FEMALE_MEASUREMENT_POINTS: MeasurementPoint[] = [
+  { key: 'neck', label: 'Neck', x: 100, y: 62 },
+  { key: 'shoulders', label: 'Shoulders', x: 100, y: 92 },
+  { key: 'chest', label: 'Chest', x: 100, y: 130 },
+  { key: 'left_arm', label: 'L Arm', x: 42, y: 148, side: 'left' },
+  { key: 'right_arm', label: 'R Arm', x: 158, y: 148, side: 'right' },
+  { key: 'left_forearm', label: 'L Forearm', x: 34, y: 208, side: 'left' },
+  { key: 'right_forearm', label: 'R Forearm', x: 166, y: 208, side: 'right' },
+  { key: 'waist', label: 'Waist', x: 100, y: 195 },
+  { key: 'hips', label: 'Hips', x: 100, y: 235 },
+  { key: 'left_thigh', label: 'L Thigh', x: 76, y: 290, side: 'left' },
+  { key: 'right_thigh', label: 'R Thigh', x: 124, y: 290, side: 'right' },
+  { key: 'left_calf', label: 'L Calf', x: 74, y: 388, side: 'left' },
+  { key: 'right_calf', label: 'R Calf', x: 126, y: 388, side: 'right' },
 ];
 
 const VB_W = 200;
@@ -40,98 +58,241 @@ interface Props {
   units: UnitSystem;
   onMeasurementPress: (key: BodyMeasurementTypeKey) => void;
   trends?: Record<string, 'up' | 'down' | 'same' | null>;
+  sex?: 'male' | 'female' | null;
 }
 
 const CONTAINER_WIDTH = Dimensions.get('window').width - spacing.base * 4;
 const CONTAINER_HEIGHT = 500;
 
-// Athletic male silhouette — right side then left side
-// 8-head proportions: broad shoulders, V-taper, arms to mid-thigh
-const BODY_RIGHT_HALF = `
-  M 100 52
-  C 104 52, 108 54, 111 57
-  C 113 60, 113 63, 113 66
-  C 118 68, 132 74, 148 80
-  C 156 84, 162 88, 165 94
-  C 168 100, 170 106, 172 114
-  C 174 124, 178 138, 180 150
-  C 182 160, 184 172, 186 184
-  C 188 196, 188 208, 187 218
-  C 186 232, 182 248, 178 262
-  C 175 272, 172 280, 170 288
-  L 168 294
-  C 166 298, 163 299, 160 296
-  C 162 288, 164 278, 166 268
-  C 169 254, 171 240, 172 226
-  C 173 214, 172 202, 170 190
-  C 168 178, 164 166, 160 156
-  C 157 148, 154 140, 150 132
-  C 147 126, 143 120, 140 116
-  C 140 126, 139 138, 138 150
-  C 137 165, 136 178, 134 192
-  C 133 202, 132 210, 132 218
-  C 133 228, 134 238, 137 248
-  C 140 256, 142 264, 143 272
-  C 144 282, 143 292, 142 302
-  C 140 316, 138 330, 137 344
-  C 136 354, 136 362, 137 372
-  C 138 382, 139 392, 139 402
-  C 139 410, 137 420, 134 430
-  C 131 440, 128 448, 126 456
-  L 124 464
-  C 123 468, 122 471, 122 474
-  L 142 476
-  L 142 480
-  L 118 480
-  C 116 478, 115 475, 116 470
-  C 117 466, 118 462, 119 458
-  L 120 450
-`;
+// ─── Male Silhouette ────────────────────────────────────────────────────────
+// Properly proportioned athletic male: 7.5-head canon
+// Legs ≈ 50% of height, arms to mid-thigh, V-taper (broad shoulders, narrow waist)
+// Head center y=33, shoulders y=88, waist y=195, crotch y=255, feet y=476
 
-const BODY_LEFT_HALF = `
-  L 80 450
-  C 81 454, 82 460, 83 466
-  C 84 470, 84 475, 82 480
-  L 58 480
-  L 58 476
-  L 78 474
-  C 78 471, 77 468, 76 464
-  L 74 456
-  C 72 448, 69 440, 66 430
-  C 63 420, 61 410, 61 402
-  C 61 392, 62 382, 63 372
-  C 64 362, 64 354, 63 344
-  C 62 330, 60 316, 58 302
-  C 57 292, 56 282, 57 272
-  C 58 264, 60 256, 63 248
-  C 66 238, 67 228, 68 218
-  C 68 210, 67 202, 66 192
-  C 64 178, 63 165, 62 150
-  C 61 138, 60 126, 60 116
-  C 57 120, 53 126, 50 132
-  C 46 140, 43 148, 40 156
-  C 36 166, 32 178, 30 190
-  C 28 202, 27 214, 28 226
-  C 29 240, 31 254, 34 268
-  C 36 278, 38 288, 40 296
-  C 37 299, 34 298, 32 294
-  L 30 288
-  C 28 280, 25 272, 22 262
-  C 18 248, 14 232, 13 218
-  C 12 208, 12 196, 14 184
-  C 16 172, 18 160, 20 150
-  C 22 138, 26 124, 28 114
-  C 30 106, 32 100, 35 94
-  C 38 88, 44 84, 52 80
-  C 68 74, 82 68, 87 66
-  C 87 63, 87 60, 89 57
-  C 92 54, 96 52, 100 52
+const MALE_BODY = `
+  M 100 54
+  C 106 54, 110 56, 113 60
+  C 115 63, 114 66, 113 68
+  C 120 72, 134 78, 148 84
+  C 155 87, 160 90, 162 96
+  C 164 102, 165 110, 166 118
+  C 167 128, 170 140, 172 152
+  C 174 164, 176 176, 177 186
+  C 178 196, 178 206, 176 216
+  C 174 228, 170 242, 166 254
+  C 163 264, 161 270, 160 276
+  L 158 282
+  C 156 286, 153 287, 150 284
+  C 152 276, 154 266, 156 256
+  C 159 242, 161 228, 161 214
+  C 161 202, 160 190, 158 178
+  C 156 166, 152 154, 148 144
+  C 145 136, 142 128, 139 120
+  C 138 128, 136 140, 135 152
+  C 134 166, 132 180, 130 194
+  C 129 206, 128 216, 128 224
+  C 129 234, 130 244, 133 254
+  C 136 262, 138 270, 139 278
+  C 140 288, 140 298, 138 308
+  C 136 322, 134 336, 133 350
+  C 132 362, 132 372, 134 382
+  C 136 392, 136 402, 135 412
+  C 134 422, 131 432, 128 442
+  C 126 452, 124 460, 122 466
+  L 120 472
+  C 120 474, 120 476, 120 478
+  L 138 478
+  L 138 482
+  L 116 482
+  C 114 480, 114 477, 115 473
+  C 116 468, 117 464, 118 458
+  L 80 458
+  C 82 464, 83 468, 84 473
+  C 85 477, 85 480, 83 482
+  L 62 482
+  L 62 478
+  L 80 478
+  C 80 476, 80 474, 79 472
+  L 78 466
+  C 76 460, 74 452, 72 442
+  C 69 432, 66 422, 65 412
+  C 64 402, 64 392, 66 382
+  C 68 372, 68 362, 67 350
+  C 66 336, 64 322, 62 308
+  C 60 298, 60 288, 61 278
+  C 62 270, 64 262, 67 254
+  C 70 244, 71 234, 72 224
+  C 72 216, 71 206, 70 194
+  C 68 180, 66 166, 65 152
+  C 64 140, 62 128, 61 120
+  C 58 128, 55 136, 52 144
+  C 48 154, 44 166, 42 178
+  C 40 190, 39 202, 39 214
+  C 39 228, 41 242, 44 256
+  C 46 266, 48 276, 50 284
+  C 47 287, 44 286, 42 282
+  L 40 276
+  C 39 270, 37 264, 34 254
+  C 30 242, 26 228, 24 216
+  C 22 206, 22 196, 23 186
+  C 24 176, 26 164, 28 152
+  C 30 140, 33 128, 34 118
+  C 35 110, 36 102, 38 96
+  C 40 90, 45 87, 52 84
+  C 66 78, 80 72, 87 68
+  C 86 66, 85 63, 87 60
+  C 90 56, 94 54, 100 54
   Z
 `;
 
-export function BodyOutline({ measurements, units, onMeasurementPress, trends }: Props) {
+// ─── Female Silhouette ──────────────────────────────────────────────────────
+// Properly proportioned athletic female: 7.5-head canon
+// Narrower shoulders, wider hips (hourglass), thinner arms, longer legs proportionally
+
+const FEMALE_BODY = `
+  M 100 54
+  C 106 54, 110 56, 112 60
+  C 114 63, 113 66, 112 68
+  C 118 72, 128 78, 142 84
+  C 148 87, 152 90, 154 96
+  C 156 102, 157 110, 158 118
+  C 159 128, 160 140, 162 152
+  C 163 162, 164 172, 165 182
+  C 166 192, 166 202, 164 212
+  C 162 224, 158 236, 154 248
+  C 151 258, 149 264, 148 270
+  L 146 276
+  C 144 280, 141 281, 139 278
+  C 140 270, 142 260, 144 250
+  C 147 236, 149 224, 149 210
+  C 149 198, 148 188, 146 176
+  C 144 164, 141 154, 138 144
+  C 136 136, 134 128, 132 120
+  C 131 128, 130 138, 128 150
+  C 127 164, 126 178, 124 192
+  C 123 204, 122 214, 122 222
+  C 123 232, 126 244, 130 256
+  C 134 264, 137 272, 138 280
+  C 140 290, 140 300, 138 310
+  C 136 324, 134 338, 132 352
+  C 131 364, 131 374, 132 384
+  C 134 394, 134 404, 133 414
+  C 131 424, 128 434, 126 444
+  C 124 452, 122 460, 120 466
+  L 118 472
+  C 118 474, 118 476, 118 478
+  L 136 478
+  L 136 482
+  L 114 482
+  C 113 480, 112 477, 113 473
+  C 114 468, 115 464, 116 458
+  L 82 458
+  C 84 464, 85 468, 86 473
+  C 87 477, 87 480, 85 482
+  L 64 482
+  L 64 478
+  L 82 478
+  C 82 476, 82 474, 81 472
+  L 80 466
+  C 78 460, 76 452, 74 444
+  C 72 434, 69 424, 67 414
+  C 66 404, 66 394, 68 384
+  C 69 374, 69 364, 68 352
+  C 66 338, 64 324, 62 310
+  C 60 300, 60 290, 62 280
+  C 63 272, 66 264, 70 256
+  C 74 244, 77 232, 78 222
+  C 78 214, 77 204, 76 192
+  C 74 178, 73 164, 72 150
+  C 70 138, 69 128, 68 120
+  C 66 128, 64 136, 62 144
+  C 59 154, 56 164, 54 176
+  C 52 188, 51 198, 51 210
+  C 51 224, 53 236, 56 250
+  C 58 260, 60 270, 61 278
+  C 59 281, 56 280, 54 276
+  L 52 270
+  C 51 264, 49 258, 46 248
+  C 42 236, 38 224, 36 212
+  C 34 202, 34 192, 35 182
+  C 36 172, 37 162, 38 152
+  C 40 140, 41 128, 42 118
+  C 43 110, 44 102, 46 96
+  C 48 90, 52 87, 58 84
+  C 72 78, 82 72, 88 68
+  C 87 66, 87 63, 88 60
+  C 90 56, 94 54, 100 54
+  Z
+`;
+
+// ─── Head parameters ────────────────────────────────────────────────────────
+
+const MALE_HEAD = { cx: 100, cy: 30, rx: 17, ry: 22 };
+const FEMALE_HEAD = { cx: 100, cy: 30, rx: 16, ry: 21 };
+
+// ─── Subtle definition lines ────────────────────────────────────────────────
+
+function MaleDefinitionLines() {
+  return (
+    <G opacity={0.3}>
+      {/* Chest split */}
+      <Path
+        d="M 100 90 L 100 160"
+        stroke={colors.textTertiary}
+        strokeWidth="0.5"
+      />
+      {/* Pec lines */}
+      <Path
+        d="M 72 115 C 80 126, 92 130, 100 128"
+        stroke={colors.textTertiary}
+        strokeWidth="0.5"
+        fill="none"
+      />
+      <Path
+        d="M 128 115 C 120 126, 108 130, 100 128"
+        stroke={colors.textTertiary}
+        strokeWidth="0.5"
+        fill="none"
+      />
+      {/* Ab lines */}
+      <Path d="M 88 168 L 112 168" stroke={colors.textTertiary} strokeWidth="0.5" />
+      <Path d="M 87 182 L 113 182" stroke={colors.textTertiary} strokeWidth="0.5" />
+      <Path d="M 86 196 L 114 196" stroke={colors.textTertiary} strokeWidth="0.5" />
+    </G>
+  );
+}
+
+function FemaleDefinitionLines() {
+  return (
+    <G opacity={0.25}>
+      {/* Subtle waist curve */}
+      <Path
+        d="M 78 190 C 85 186, 95 184, 100 184 C 105 184, 115 186, 122 190"
+        stroke={colors.textTertiary}
+        strokeWidth="0.5"
+        fill="none"
+      />
+      {/* Navel */}
+      <Path
+        d="M 98 196 C 99 198, 101 198, 102 196"
+        stroke={colors.textTertiary}
+        strokeWidth="0.4"
+        fill="none"
+      />
+    </G>
+  );
+}
+
+// ─── Component ──────────────────────────────────────────────────────────────
+
+export function BodyOutline({ measurements, units, onMeasurementPress, trends, sex }: Props) {
   const toScreenX = (vx: number) => (vx / VB_W) * CONTAINER_WIDTH;
   const toScreenY = (vy: number) => (vy / VB_H) * CONTAINER_HEIGHT;
+
+  const isFemale = sex === 'female';
+  const bodyPath = isFemale ? FEMALE_BODY : MALE_BODY;
+  const head = isFemale ? FEMALE_HEAD : MALE_HEAD;
+  const points = isFemale ? FEMALE_MEASUREMENT_POINTS : MALE_MEASUREMENT_POINTS;
 
   const getTrendColor = (key: string): string => {
     const trend = trends?.[key];
@@ -155,10 +316,10 @@ export function BodyOutline({ measurements, units, onMeasurementPress, trends }:
       >
         {/* Head */}
         <Ellipse
-          cx="100"
-          cy="28"
-          rx="17"
-          ry="22"
+          cx={String(head.cx)}
+          cy={String(head.cy)}
+          rx={String(head.rx)}
+          ry={String(head.ry)}
           fill={colors.backgroundTertiary}
           stroke={colors.textTertiary}
           strokeWidth="1"
@@ -166,54 +327,18 @@ export function BodyOutline({ measurements, units, onMeasurementPress, trends }:
 
         {/* Body silhouette */}
         <Path
-          d={BODY_RIGHT_HALF + BODY_LEFT_HALF}
+          d={bodyPath}
           fill={colors.backgroundTertiary}
           stroke={colors.textTertiary}
           strokeWidth="1"
           strokeLinejoin="round"
         />
 
-        {/* Subtle muscle definition lines */}
-        <G opacity={0.3}>
-          {/* Chest split */}
-          <Path
-            d="M 100 90 L 100 165"
-            stroke={colors.textTertiary}
-            strokeWidth="0.5"
-          />
-          {/* Pec lines */}
-          <Path
-            d="M 72 120 C 80 132, 92 138, 100 136"
-            stroke={colors.textTertiary}
-            strokeWidth="0.5"
-            fill="none"
-          />
-          <Path
-            d="M 128 120 C 120 132, 108 138, 100 136"
-            stroke={colors.textTertiary}
-            strokeWidth="0.5"
-            fill="none"
-          />
-          {/* Ab lines */}
-          <Path
-            d="M 86 172 L 114 172"
-            stroke={colors.textTertiary}
-            strokeWidth="0.5"
-          />
-          <Path
-            d="M 85 188 L 115 188"
-            stroke={colors.textTertiary}
-            strokeWidth="0.5"
-          />
-          <Path
-            d="M 84 204 L 116 204"
-            stroke={colors.textTertiary}
-            strokeWidth="0.5"
-          />
-        </G>
+        {/* Subtle definition lines */}
+        {isFemale ? <FemaleDefinitionLines /> : <MaleDefinitionLines />}
 
         {/* Measurement point dots */}
-        {MEASUREMENT_POINTS.map((point) => {
+        {points.map((point) => {
           const measurement = measurements[point.key];
           const hasValue = measurement?.value !== undefined;
 
@@ -232,7 +357,7 @@ export function BodyOutline({ measurements, units, onMeasurementPress, trends }:
       </Svg>
 
       {/* Touchable measurement labels */}
-      {MEASUREMENT_POINTS.map((point) => {
+      {points.map((point) => {
         const measurement = measurements[point.key];
         const hasValue = measurement?.value !== undefined;
 

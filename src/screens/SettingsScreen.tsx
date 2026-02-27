@@ -9,6 +9,7 @@ import {
   Share,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -39,6 +40,7 @@ import {
   pullFromCloud,
   getLastSyncTimestamp,
   getPendingOperationsCount,
+  clearPendingSyncQueue,
   isAuthenticated as checkIsAuthenticated,
   SyncProgress,
 } from '../services/syncService';
@@ -137,7 +139,7 @@ export function SettingsScreen() {
     try {
       const result = await syncManager.processQueue((progress) => {
         setSyncProgress(progress);
-      });
+      }, true);
 
       // Refresh sync status
       await loadSyncStatus();
@@ -155,6 +157,25 @@ export function SettingsScreen() {
       setSyncProgress(null);
       Alert.alert('Sync Failed', 'Unable to sync with cloud');
     }
+  };
+
+  const handleResetSyncQueue = () => {
+    Alert.alert(
+      'Reset Sync Queue',
+      `This will clear all ${pendingCount} pending sync operations. Data already saved locally won't be affected, but un-synced changes won't be pushed to the cloud.\n\nYou can re-sync by pulling from cloud and making new changes.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Queue',
+          style: 'destructive',
+          onPress: async () => {
+            await clearPendingSyncQueue();
+            await loadSyncStatus();
+            Alert.alert('Queue Reset', 'Pending sync operations cleared');
+          },
+        },
+      ]
+    );
   };
 
   const handleWeekStartChange = (day: WeekStartDay) => {
@@ -475,7 +496,7 @@ export function SettingsScreen() {
                     </Text>
                   </View>
                 )}
-                <View style={[styles.settingRow, styles.settingRowLast]}>
+                <View style={styles.settingRow}>
                   <TouchableOpacity
                     onPress={handleSyncNow}
                     disabled={isSyncing}
@@ -491,6 +512,16 @@ export function SettingsScreen() {
                     )}
                   </TouchableOpacity>
                 </View>
+                {pendingCount > 0 && !isSyncing && (
+                  <View style={[styles.settingRow, styles.settingRowLast]}>
+                    <TouchableOpacity
+                      onPress={handleResetSyncQueue}
+                      style={styles.syncButton}
+                    >
+                      <Text style={styles.resetQueueText}>Reset Sync Queue</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </>
             )}
           </Card>
@@ -1109,6 +1140,45 @@ export function SettingsScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+              {Platform.OS === 'ios' && (
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Body Weight Source</Text>
+                  <View style={styles.segmentedControl}>
+                    <TouchableOpacity
+                      style={[
+                        styles.segment,
+                        (userSettings.bodyWeightSource ?? 'auto') === 'auto' && styles.segmentSelected,
+                      ]}
+                      onPress={() => updateUserSettings({ bodyWeightSource: 'auto' })}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentText,
+                          (userSettings.bodyWeightSource ?? 'auto') === 'auto' && styles.segmentTextSelected,
+                        ]}
+                      >
+                        Apple Health
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.segment,
+                        userSettings.bodyWeightSource === 'manual' && styles.segmentSelected,
+                      ]}
+                      onPress={() => updateUserSettings({ bodyWeightSource: 'manual' })}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentText,
+                          userSettings.bodyWeightSource === 'manual' && styles.segmentTextSelected,
+                        ]}
+                      >
+                        Manual
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
               <View style={styles.settingRow}>
                 <Text style={styles.settingLabel}>Birth Year</Text>
                 <NumberInput
@@ -1874,6 +1944,11 @@ const styles = StyleSheet.create({
   syncingText: {
     fontSize: typography.size.sm,
     color: colors.primary,
+  },
+  resetQueueText: {
+    fontSize: typography.size.sm,
+    color: colors.error,
+    fontWeight: typography.weight.medium,
   },
   formulaOption: {
     width: '100%',

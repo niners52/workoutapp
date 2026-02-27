@@ -361,6 +361,8 @@ export interface UserSettings {
   // Sleep fallback
   sleepFallbackReminderEnabled?: boolean;  // default true
   sleepFallbackAutoAverage?: boolean;      // default false
+  // Body weight source for Strength Map
+  bodyWeightSource?: 'auto' | 'manual';   // default 'auto' — HealthKit first, then manual
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {

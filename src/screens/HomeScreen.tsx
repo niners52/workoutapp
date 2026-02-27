@@ -60,6 +60,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getActivePartnership, getPartnerId, getPartnerStats } from '../services/partnershipService';
 import { getActiveChallenge, getDaysRemaining } from '../services/challengeService';
 import { getTopSuggestions, CoachSuggestion, dismissSuggestion } from '../services/coachSuggestions';
+import { getCachedInsights, insightToCoachSuggestion } from '../services/insights';
 import { CoachSuggestionsCard } from '../components/coach';
 import { syncManager } from '../services/syncService';
 
@@ -297,7 +298,32 @@ export function HomeScreen() {
             settings: freshSettings,
             shortfalls: shortfallData,
           }, 2);
-          setCoachSuggestions(suggestions);
+
+          // Merge top insight into coach suggestions (max 3 total)
+          try {
+            const insightsResult = await getCachedInsights({
+              exercises: freshExercises,
+              sets: freshSets,
+              workouts: freshWorkouts,
+              bodyMeasurements: [],
+              userSettings: freshSettings,
+              bodyWeightLbs: null,
+              nutritionHistory: new Map(),
+              sleepHistory: new Map(),
+            });
+            if (insightsResult.length > 0) {
+              const topInsight = insightToCoachSuggestion(insightsResult[0]);
+              // Only add if not duplicate type
+              const hasInsight = suggestions.some(s => s.type === 'insight');
+              if (!hasInsight) {
+                suggestions.push(topInsight);
+              }
+            }
+          } catch {
+            // Insights are optional — don't block coach
+          }
+
+          setCoachSuggestions(suggestions.slice(0, 3));
         } catch (e) {
           console.error('[HomeScreen] Coach suggestions error:', e);
         }

@@ -16,6 +16,7 @@ import { useData } from '../contexts/DataContext';
 import { formatVolume } from '../services/units';
 import { PersonalRecord, getExercisePRsInDateRange } from '../services/personalRecords';
 import { getWeeklyGridData, DailyGoalStatus } from '../services/streaks';
+import { getCachedInsights, Insight } from '../services/insights';
 import { WeekStartDay } from '../types';
 
 interface WeeklySummaryData {
@@ -42,9 +43,10 @@ interface Props {
 }
 
 export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
-  const { workouts, sets, exercises, userSettings } = useData();
+  const { workouts, sets, exercises, userSettings, bodyMeasurements } = useData();
   const [data, setData] = useState<WeeklySummaryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [weekInsights, setWeekInsights] = useState<Insight[]>([]);
 
   const units = userSettings?.units || 'imperial';
   const weekStartDay: WeekStartDay = userSettings?.weekStartDay || 'sunday';
@@ -141,11 +143,27 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         prevTotalSets: prevWeekSets.length,
         prevTotalVolume,
       });
+      // Load insights for the weekly summary
+      try {
+        const insights = await getCachedInsights({
+          exercises,
+          sets,
+          workouts,
+          bodyMeasurements,
+          userSettings,
+          bodyWeightLbs: null,
+          nutritionHistory: new Map(),
+          sleepHistory: new Map(),
+        });
+        setWeekInsights(insights.slice(0, 3));
+      } catch {
+        setWeekInsights([]);
+      }
     } catch (error) {
       console.error('[WeeklySummary] Error loading data:', error);
     }
     setLoading(false);
-  }, [weekStart, workouts, sets, exercises, userSettings, weekStartDay]);
+  }, [weekStart, workouts, sets, exercises, userSettings, weekStartDay, bodyMeasurements]);
 
   useEffect(() => {
     if (visible) {
@@ -319,6 +337,29 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
                     </Text>
                   )}
                 </View>
+              </Card>
+            )}
+
+            {/* Weekly Insights */}
+            {weekInsights.length > 0 && (
+              <Card style={styles.insightsCard}>
+                <View style={styles.insightsHeader}>
+                  <Ionicons name="bulb-outline" size={20} color={colors.primary} />
+                  <Text style={styles.sectionTitle}>Weekly Insights</Text>
+                </View>
+                {weekInsights.map((insight) => (
+                  <View key={insight.id} style={styles.insightRow}>
+                    <Ionicons
+                      name={insight.icon as any}
+                      size={16}
+                      color={colors.primary}
+                    />
+                    <View style={styles.insightTextContainer}>
+                      <Text style={styles.insightTitle}>{insight.title}</Text>
+                      <Text style={styles.insightDetail} numberOfLines={2}>{insight.detail}</Text>
+                    </View>
+                  </View>
+                ))}
               </Card>
             )}
 
@@ -528,6 +569,36 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     color: colors.textTertiary,
     marginTop: spacing.xs,
+  },
+  insightsCard: {
+    marginBottom: spacing.md,
+  },
+  insightsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  insightRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  insightTextContainer: {
+    flex: 1,
+  },
+  insightTitle: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  insightDetail: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+    lineHeight: typography.size.xs * 1.5,
   },
   footer: {
     padding: spacing.base,

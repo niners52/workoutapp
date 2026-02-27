@@ -279,6 +279,7 @@ export function BodyMeasurementsSection({ onNavigateToHistory }: Props) {
             }
           }}
           trends={data.trends}
+          sex={userSettings.biologicalSex}
         />
       </Card>
 
