@@ -14,7 +14,7 @@ import {
   STRENGTH_LEVELS,
   StrengthLevel,
 } from '../strengthStandards';
-import { Insight, InsightsInput } from './types';
+import { Insight, InsightsInput, getDeloadWorkoutIds, getNonDeloadSets, getNonDeloadWorkouts } from './types';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -236,11 +236,16 @@ export function analyzeStrengthToSize(input: InsightsInput): Insight[] {
 
   if (!bodyWeightLbs || bodyWeightLbs <= 0) return insights;
 
-  // Current and start strength levels
-  const currentLevels = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs);
-  const startCutoff = getStartSnapshotCutoff(workouts);
+  // Exclude deload data — deload weights would artificially lower strength levels
+  const deloadIds = getDeloadWorkoutIds(workouts);
+  const nonDeloadSets = getNonDeloadSets(sets, deloadIds);
+  const nonDeloadWorkouts = getNonDeloadWorkouts(workouts);
+
+  // Current and start strength levels (non-deload only)
+  const currentLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs);
+  const startCutoff = getStartSnapshotCutoff(nonDeloadWorkouts);
   const startLevels = startCutoff
-    ? calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs, { beforeDate: startCutoff })
+    ? calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs, { beforeDate: startCutoff })
     : null;
 
   // Check each measurement type for correlations

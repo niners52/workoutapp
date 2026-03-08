@@ -26,6 +26,30 @@ interface PendingSyncOperation {
   operation: 'upsert' | 'delete';
   data: any;
   timestamp: number;
+  retries?: number;  // Track how many times this op has failed
+}
+
+// Simple mutex to prevent concurrent queue read/write
+let queueLock = false;
+async function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  while (queueLock) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  queueLock = true;
+  try {
+    return await fn();
+  } finally {
+    queueLock = false;
+  }
+}
+
+// Max retries before an operation is dropped
+const MAX_RETRIES = 10;
+
+// Helper to get a dedup key for an operation
+function getOpKey(op: { table: string; operation: string; data: any }): string {
+  const id = op.data?.id || op.data?.user_id || 'unknown';
+  return `${op.table}:${op.operation}:${id}`;
 }
 
 // Helper to get current user ID
@@ -38,16 +62,24 @@ async function getUserId(): Promise<string | null> {
   }
 }
 
-// Helper to add operation to pending queue
+// Helper to add operation to pending queue (deduplicates at add time)
 async function addToPendingQueue(operation: Omit<PendingSyncOperation, 'timestamp'>): Promise<void> {
-  try {
-    const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
-    const operations: PendingSyncOperation[] = existing ? JSON.parse(existing) : [];
-    operations.push({ ...operation, timestamp: Date.now() });
-    await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(operations));
-  } catch (error) {
-    console.log('Failed to add to pending queue:', error);
-  }
+  await withQueueLock(async () => {
+    try {
+      const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
+      const operations: PendingSyncOperation[] = existing ? JSON.parse(existing) : [];
+
+      // Deduplicate: replace existing op for the same table+operation+id
+      const newKey = getOpKey(operation);
+      const filtered = operations.filter(op => getOpKey(op) !== newKey);
+      filtered.push({ ...operation, timestamp: Date.now(), retries: 0 });
+
+      await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(filtered));
+      console.log(`[Sync] Queued ${operation.operation} for ${operation.table} (${filtered.length} pending)`);
+    } catch (error) {
+      console.log('Failed to add to pending queue:', error);
+    }
+  });
 }
 
 // Helper to chunk arrays for batch operations
@@ -612,37 +644,59 @@ export type SyncProgressCallback = (progress: SyncProgress) => void;
 
 export async function processPendingSync(
   onProgress?: SyncProgressCallback
-): Promise<{ processed: number; failed: number }> {
+): Promise<{ processed: number; failed: number; dropped: number }> {
   const userId = await getUserId();
-  if (!userId) return { processed: 0, failed: 0 };
+  if (!userId) return { processed: 0, failed: 0, dropped: 0 };
 
   let processed = 0;
   let failed = 0;
+  let dropped = 0;
 
   try {
-    const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
-    if (!existing) return { processed: 0, failed: 0 };
+    // Acquire lock to prevent race with addToPendingQueue
+    const operations = await withQueueLock(async () => {
+      const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
+      if (!existing) return [];
 
-    let operations: PendingSyncOperation[] = JSON.parse(existing);
-    if (operations.length === 0) return { processed: 0, failed: 0 };
+      let ops: PendingSyncOperation[] = JSON.parse(existing);
+      if (ops.length === 0) return [];
 
-    // Clean up: drop stale ops, then deduplicate
-    const originalCount = operations.length;
-    operations = dropStaleOperations(operations);
-    operations = deduplicateOperations(operations);
+      // Clean up: drop stale ops, drop over-retried ops, then deduplicate
+      const originalCount = ops.length;
+      ops = dropStaleOperations(ops);
+      const afterStale = ops.length;
 
-    // Save cleaned queue immediately so pending count reflects actual processable ops
-    if (operations.length !== originalCount) {
-      console.log(`[Sync] Cleaned queue: ${originalCount} → ${operations.length} (dropped ${originalCount - operations.length} stale/duplicate ops)`);
-      await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(operations));
-    }
+      // Drop operations that have exceeded retry limit
+      const overRetried = ops.filter(op => (op.retries || 0) >= MAX_RETRIES);
+      if (overRetried.length > 0) {
+        console.log(`[Sync] Dropping ${overRetried.length} operations that exceeded ${MAX_RETRIES} retries:`);
+        for (const op of overRetried) {
+          console.log(`  - ${op.operation} ${op.table} id=${op.data?.id || 'n/a'} (${op.retries} retries)`);
+        }
+        dropped += overRetried.length;
+      }
+      ops = ops.filter(op => (op.retries || 0) < MAX_RETRIES);
+
+      ops = deduplicateOperations(ops);
+
+      if (ops.length !== originalCount) {
+        console.log(`[Sync] Cleaned queue: ${originalCount} → ${ops.length} (stale: ${originalCount - afterStale}, over-retried: ${overRetried.length}, deduped: ${afterStale - overRetried.length - ops.length})`);
+      }
+
+      // Clear the queue — we own these operations now.
+      // New operations added via addToPendingQueue during processing
+      // will go into a fresh queue (protected by the lock releasing).
+      await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify([]));
+
+      return ops;
+    });
 
     if (operations.length === 0) {
-      return { processed: 0, failed: 0 };
+      return { processed: 0, failed: 0, dropped };
     }
 
     const total = operations.length;
-    console.log(`Processing ${total} pending sync operations (after dedup)...`);
+    console.log(`[Sync] Processing ${total} pending operations...`);
     onProgress?.({ total, processed: 0, failed: 0 });
 
     // Group upserts by table for batch processing
@@ -674,15 +728,15 @@ export async function processPendingSync(
             .upsert(rows, { onConflict: conflictKey });
 
           if (error) {
-            console.log(`Batch upsert failed for ${table} (${batch.length} rows):`, error.message);
-            remaining.push(...batch);
+            console.log(`[Sync] Batch upsert failed for ${table} (${batch.length} rows):`, error.message);
+            remaining.push(...batch.map(op => ({ ...op, retries: (op.retries || 0) + 1 })));
             failed += batch.length;
           } else {
             processed += batch.length;
           }
         } catch (error) {
-          console.log(`Batch upsert error for ${table}:`, error);
-          remaining.push(...batch);
+          console.log(`[Sync] Batch upsert error for ${table}:`, error);
+          remaining.push(...batch.map(op => ({ ...op, retries: (op.retries || 0) + 1 })));
           failed += batch.length;
         }
         onProgress?.({ total, processed, failed });
@@ -699,32 +753,37 @@ export async function processPendingSync(
           .eq('user_id', op.data.user_id);
 
         if (error) {
-          console.log(`Delete retry failed for ${op.table}:`, error.message);
-          remaining.push(op);
+          console.log(`[Sync] Delete failed for ${op.table} id=${op.data.id}:`, error.message);
+          remaining.push({ ...op, retries: (op.retries || 0) + 1 });
           failed++;
         } else {
           processed++;
         }
       } catch (error) {
-        console.log(`Delete error for ${op.table}:`, error);
-        remaining.push(op);
+        console.log(`[Sync] Delete error for ${op.table}:`, error);
+        remaining.push({ ...op, retries: (op.retries || 0) + 1 });
         failed++;
       }
       onProgress?.({ total, processed, failed });
     }
 
-    // Save remaining operations back to queue
-    await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(remaining));
+    // Merge remaining failed ops back into queue (new ops may have been added during processing)
+    await withQueueLock(async () => {
+      const currentQueue = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
+      const newOps: PendingSyncOperation[] = currentQueue ? JSON.parse(currentQueue) : [];
+      const merged = [...newOps, ...remaining];
+      await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(merged));
+    });
 
     if (processed > 0) {
       await updateLastSyncTimestamp();
     }
 
-    console.log(`Pending sync complete: ${processed} processed, ${failed} failed, ${remaining.length} remaining`);
-    return { processed, failed };
+    console.log(`[Sync] Complete: ${processed} synced, ${failed} failed (will retry), ${dropped} dropped, ${remaining.length} remaining`);
+    return { processed, failed, dropped };
   } catch (error) {
-    console.log('Error processing pending sync:', error);
-    return { processed, failed };
+    console.log('[Sync] Error processing pending sync:', error);
+    return { processed, failed, dropped };
   }
 }
 
@@ -783,13 +842,11 @@ class SyncManager {
 
     // Exponential backoff: skip this cycle if we've been failing
     // When force=true (manual Sync Now), always bypass backoff
-    if (!force && this.consecutiveFailures > 0) {
-      const backoffCycles = Math.min(2 ** this.consecutiveFailures, 32); // max ~16 min at 30s interval
-      // Use a simple counter — we skip processing for backoffCycles intervals
-      if (this.consecutiveFailures > 5) {
-        console.log(`[SyncManager] Backing off (${this.consecutiveFailures} consecutive failures)`);
-        return { processed: 0, failed: 0 };
-      }
+    if (!force && this.consecutiveFailures > 5) {
+      console.log(`[SyncManager] Backing off (${this.consecutiveFailures} consecutive failures, ${count} pending)`);
+      // Still notify so UI shows current count (it may have changed from cleanup)
+      await this.notifyListeners();
+      return { processed: 0, failed: 0 };
     }
 
     // Reset backoff counter when forcing (manual sync)
@@ -803,9 +860,10 @@ class SyncManager {
     try {
       const result = await processPendingSync(onProgress);
 
-      if (result.failed > 0 && result.processed === 0) {
+      if (result.failed > 0 && result.processed === 0 && result.dropped === 0) {
         this.consecutiveFailures++;
       } else {
+        // Any progress (synced or dropped) resets backoff
         this.consecutiveFailures = 0;
       }
 
@@ -1010,8 +1068,10 @@ export async function getPendingOperationsCount(): Promise<number> {
 }
 
 export async function clearPendingSyncQueue(): Promise<void> {
+  const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
+  const count = existing ? JSON.parse(existing).length : 0;
   await AsyncStorage.removeItem(SYNC_KEYS.PENDING_OPERATIONS);
-  console.log('[Sync] Pending sync queue cleared');
+  console.log(`[Sync] Pending sync queue cleared (${count} operations removed)`);
 }
 
 export async function getLastCloudPull(): Promise<string | null> {

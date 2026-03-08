@@ -7,7 +7,7 @@
  */
 
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
-import { Insight, InsightsInput } from './types';
+import { Insight, InsightsInput, getDeloadWorkoutIds, getNonDeloadSets } from './types';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -25,9 +25,13 @@ function buildWeekSummaries(input: InsightsInput, numWeeks: number): WeekSummary
   const summaries: WeekSummary[] = [];
   const weekStartsOn = userSettings.weekStartDay === 'monday' ? 1 : 0;
 
+  // Exclude deload workouts from volume/set comparisons
+  const deloadIds = getDeloadWorkoutIds(workouts);
+  const nonDeloadSets = getNonDeloadSets(sets, deloadIds);
+
   const completedWorkouts = new Map<string, string>();
   for (const w of workouts) {
-    if (w.completedAt) {
+    if (w.completedAt && !w.isDeload) {
       completedWorkouts.set(w.id, format(new Date(w.completedAt), 'yyyy-MM-dd'));
     }
   }
@@ -64,7 +68,7 @@ function buildWeekSummaries(input: InsightsInput, numWeeks: number): WeekSummary
       }
     }
 
-    for (const set of sets) {
+    for (const set of nonDeloadSets) {
       if (!weekWorkoutIds.has(set.workoutId)) continue;
       totalSets++;
       totalVolume += (set.weight || 0) * (set.reps || 0);

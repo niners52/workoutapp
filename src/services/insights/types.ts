@@ -69,6 +69,59 @@ export interface InsightsInput {
   sleepHistory: Map<string, number>;  // date -> hours
 }
 
+// ─── Deload Filtering Helpers ──────────────────────────────────────────────
+
+/** Build a Set of workout IDs that were tagged as deload */
+export function getDeloadWorkoutIds(workouts: Workout[]): Set<string> {
+  return new Set(workouts.filter(w => w.isDeload).map(w => w.id));
+}
+
+/** Filter workouts to only non-deload completed workouts */
+export function getNonDeloadWorkouts(workouts: Workout[]): Workout[] {
+  return workouts.filter(w => !w.isDeload);
+}
+
+/** Filter sets to exclude those belonging to deload workouts */
+export function getNonDeloadSets(sets: WorkoutSet[], deloadIds: Set<string>): WorkoutSet[] {
+  return sets.filter(s => !deloadIds.has(s.workoutId));
+}
+
+/**
+ * Detect if the user just came back from a deload week.
+ * Returns the date of the last deload workout if the most recent non-deload
+ * workout is newer than the most recent deload workout (i.e., first workout back).
+ */
+export function getPostDeloadInfo(workouts: Workout[]): {
+  isPostDeload: boolean;
+  lastDeloadDate: string | null;
+  lastNonDeloadDate: string | null;
+} {
+  const completed = workouts.filter(w => w.completedAt).sort(
+    (a, b) => b.completedAt!.localeCompare(a.completedAt!)
+  );
+
+  const lastDeload = completed.find(w => w.isDeload);
+  const lastNonDeload = completed.find(w => !w.isDeload);
+
+  if (!lastDeload || !lastNonDeload) {
+    return { isPostDeload: false, lastDeloadDate: null, lastNonDeloadDate: null };
+  }
+
+  // Post-deload = last non-deload workout is more recent than last deload,
+  // AND the deload was within 2 weeks (not ancient history)
+  const deloadDate = new Date(lastDeload.completedAt!);
+  const nonDeloadDate = new Date(lastNonDeload.completedAt!);
+  const daysSinceDeload = (nonDeloadDate.getTime() - deloadDate.getTime()) / (1000 * 60 * 60 * 24);
+
+  const isPostDeload = nonDeloadDate > deloadDate && daysSinceDeload <= 14;
+
+  return {
+    isPostDeload,
+    lastDeloadDate: lastDeload.completedAt!,
+    lastNonDeloadDate: lastNonDeload.completedAt!,
+  };
+}
+
 // ─── Cache ─────────────────────────────────────────────────────────────────
 
 export interface InsightsCache {

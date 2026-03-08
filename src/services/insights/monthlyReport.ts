@@ -20,7 +20,7 @@ import {
   STRENGTH_LEVELS,
   StrengthLevel,
 } from '../strengthStandards';
-import { MonthlyReport, InsightsInput } from './types';
+import { MonthlyReport, InsightsInput, getDeloadWorkoutIds, getNonDeloadSets, getNonDeloadWorkouts } from './types';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -53,21 +53,27 @@ export async function generateMonthlyReportData(
 
   const { workouts, sets, exercises, bodyMeasurements, userSettings, bodyWeightLbs, nutritionHistory } = input;
 
+  // Exclude deload workouts from comparisons and volume calculations
+  const deloadIds = getDeloadWorkoutIds(workouts);
+
   // ── Training Score ──────────────────────────────────────────────────────
 
-  const monthWorkouts = workouts.filter(w => {
+  // Count all workouts for training consistency (deload still counts as showing up)
+  const allMonthWorkouts = workouts.filter(w => {
     if (!w.completedAt) return false;
     const d = format(new Date(w.completedAt), 'yyyy-MM-dd');
     return d >= monthStartStr && d <= monthEndStr;
   });
 
-  const workoutsCompleted = monthWorkouts.length;
+  // Non-deload workouts for volume/set/PR calculations
+  const monthWorkouts = allMonthWorkouts.filter(w => !w.isDeload);
+  const workoutsCompleted = allMonthWorkouts.length; // Deload workouts count toward attendance
 
   // Simple training score: workouts / expected training days
   const expectedTraining = userSettings.weeklyGoals.trainingDays * 4.33; // ~4.33 weeks/month
   const trainingScore = Math.min(100, Math.round((workoutsCompleted / expectedTraining) * 100));
 
-  // Count total sets this month
+  // Count total sets this month (non-deload only for volume accuracy)
   const monthWorkoutIds = new Set(monthWorkouts.map(w => w.id));
   const monthSets = sets.filter(s => monthWorkoutIds.has(s.workoutId));
   const totalSets = monthSets.length;
@@ -140,9 +146,11 @@ export async function generateMonthlyReportData(
   // ── PRs Count ───────────────────────────────────────────────────────────
 
   // Count sets that were workout-best e1RM in the month (simplified PR detection)
+  // Exclude deload sets from PR calculations — reduced weights shouldn't count
   let prsCount = 0;
   const exerciseBests = new Map<string, number>(); // exerciseId -> best e1RM before this month
   const priorSets = sets.filter(s => {
+    if (deloadIds.has(s.workoutId)) return false;
     const w = workouts.find(wk => wk.id === s.workoutId);
     if (!w?.completedAt) return false;
     return format(new Date(w.completedAt), 'yyyy-MM-dd') < monthStartStr;
@@ -168,9 +176,11 @@ export async function generateMonthlyReportData(
   // ── Strength Changes ────────────────────────────────────────────────────
 
   const strengthChanges: MonthlyReport['strengthChanges'] = [];
+  const nonDeloadSets = getNonDeloadSets(sets, deloadIds);
+  const nonDeloadWorkouts = getNonDeloadWorkouts(workouts);
   if (bodyWeightLbs && bodyWeightLbs > 0) {
-    const currentLevels = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs);
-    const atMonthStart = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs, {
+    const currentLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs);
+    const atMonthStart = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs, {
       beforeDate: monthStart,
     });
 

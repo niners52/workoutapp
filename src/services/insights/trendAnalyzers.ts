@@ -14,7 +14,14 @@ import {
   STRENGTH_LEVELS,
   StrengthLevel,
 } from '../strengthStandards';
-import { Insight, InsightsInput } from './types';
+import {
+  Insight,
+  InsightsInput,
+  getDeloadWorkoutIds,
+  getNonDeloadSets,
+  getNonDeloadWorkouts,
+  getPostDeloadInfo,
+} from './types';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -66,6 +73,11 @@ export function analyzePhaseRecommendation(input: InsightsInput): Insight[] {
   const insights: Insight[] = [];
   const mode = userSettings.nutritionMode;
 
+  // Filter out deload data for accurate comparisons
+  const deloadIds = getDeloadWorkoutIds(workouts);
+  const nonDeloadSets = getNonDeloadSets(sets, deloadIds);
+  const nonDeloadWorkouts = getNonDeloadWorkouts(workouts);
+
   const weightHistory = getWeightHistory(bodyMeasurements);
   if (weightHistory.length < 4) return insights;
 
@@ -84,12 +96,12 @@ export function analyzePhaseRecommendation(input: InsightsInput): Insight[] {
   const totalChange = avgRecent - avgOlder;
   const weeklyChange = weeksOfData > 0 ? totalChange / weeksOfData : 0;
 
-  // Check strength trends
+  // Check strength trends (using non-deload data only)
   let strengthStalling = false;
   if (bodyWeightLbs && bodyWeightLbs > 0) {
-    const currentLevels = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs);
+    const currentLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs);
     const fourWeeksAgo = subWeeks(new Date(), 4);
-    const olderLevels = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs, {
+    const olderLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs, {
       beforeDate: fourWeeksAgo,
     });
 
@@ -186,8 +198,13 @@ export function analyzeTrendPredictions(input: InsightsInput): Insight[] {
 
   if (!bodyWeightLbs || bodyWeightLbs <= 0) return insights;
 
+  // Exclude deload data from strength calculations
+  const deloadIds = getDeloadWorkoutIds(workouts);
+  const nonDeloadSets = getNonDeloadSets(sets, deloadIds);
+  const nonDeloadWorkouts = getNonDeloadWorkouts(workouts);
+
   // Strength prediction — look at percentToNext for the most advanced exercise
-  const currentLevels = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs);
+  const currentLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs);
 
   // Find muscles closest to leveling up
   for (const [mg, result] of currentLevels) {
@@ -255,8 +272,24 @@ export function analyzeTrendPredictions(input: InsightsInput): Insight[] {
 // ─── 6. Smart Alerts ───────────────────────────────────────────────────────
 
 export function analyzeSmartAlerts(input: InsightsInput): Insight[] {
-  const { bodyMeasurements, nutritionHistory, sleepHistory, userSettings } = input;
+  const { bodyMeasurements, nutritionHistory, sleepHistory, userSettings, workouts } = input;
   const insights: Insight[] = [];
+
+  // Detect post-deload state — show welcome-back message instead of misleading comparisons
+  const postDeload = getPostDeloadInfo(workouts);
+  if (postDeload.isPostDeload) {
+    insights.push({
+      id: 'alert:post_deload',
+      category: 'smart_alert',
+      priority: 'medium',
+      priorityScore: 70,
+      icon: 'refresh-outline',
+      title: 'Welcome back from deload',
+      detail: 'First workout back from deload week — comparisons are based on your pre-deload performance, not deload weights.',
+      generatedAt: '',
+      minDataWeeks: 2,
+    });
+  }
 
   // Alert 1: Sudden weight change (> 3 lbs in a week)
   const recentWeights = bodyMeasurements
@@ -346,9 +379,10 @@ export function analyzeSmartAlerts(input: InsightsInput): Insight[] {
   }
 
   // Alert 4: No training in 5+ days (when not on deload)
+  // Count from last non-deload workout so deload weeks don't mask real gaps
   if (!userSettings.isOnDeload) {
     const completedWorkouts = input.workouts
-      .filter(w => w.completedAt)
+      .filter(w => w.completedAt && !w.isDeload)
       .sort((a, b) => b.completedAt!.localeCompare(a.completedAt!));
 
     if (completedWorkouts.length > 0) {

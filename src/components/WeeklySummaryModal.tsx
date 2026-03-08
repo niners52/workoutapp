@@ -34,6 +34,7 @@ interface WeeklySummaryData {
   prevTotalWorkouts: number;
   prevTotalSets: number;
   prevTotalVolume: number;
+  prevWeekWasDeload: boolean;
 }
 
 interface Props {
@@ -66,13 +67,19 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         return date >= weekStart && date <= weekEnd;
       });
 
-      // Get sets for this week
+      // Identify deload workouts
+      const deloadWorkoutIds = new Set(
+        thisWeekWorkouts.filter(w => w.isDeload).map(w => w.id)
+      );
+
+      // Get sets for this week (exclude deload for volume accuracy)
       const thisWeekSets = sets.filter(s => {
+        if (deloadWorkoutIds.has(s.workoutId)) return false;
         const date = parseISO(s.loggedAt);
         return date >= weekStart && date <= weekEnd;
       });
 
-      // Calculate volume
+      // Calculate volume (non-deload only)
       const totalVolume = thisWeekSets.reduce((sum, s) => {
         return sum + ((s.weight || 0) * (s.reps || 0));
       }, 0);
@@ -96,8 +103,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
           userSettings,
           workouts,
           [],
-          [],
-          weekStart
+          []
         );
         if (gridData) {
           for (const day of gridData.days) {
@@ -119,7 +125,16 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         return date >= prevWeekStart && date <= prevWeekEnd;
       });
 
+      // Check if previous week was a deload week (majority of workouts were deload)
+      const prevDeloadCount = prevWeekWorkouts.filter(w => w.isDeload).length;
+      const prevWeekWasDeload = prevWeekWorkouts.length > 0 && prevDeloadCount > prevWeekWorkouts.length / 2;
+
+      // Exclude deload from previous week comparison too
+      const prevDeloadIds = new Set(
+        prevWeekWorkouts.filter(w => w.isDeload).map(w => w.id)
+      );
       const prevWeekSets = sets.filter(s => {
+        if (prevDeloadIds.has(s.workoutId)) return false;
         const date = parseISO(s.loggedAt);
         return date >= prevWeekStart && date <= prevWeekEnd;
       });
@@ -131,7 +146,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
       setData({
         weekStart,
         weekEnd,
-        totalWorkouts: thisWeekWorkouts.length,
+        totalWorkouts: thisWeekWorkouts.filter(w => !w.isDeload).length,
         totalSets: thisWeekSets.length,
         totalVolume,
         prsThisWeek,
@@ -139,9 +154,10 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         proteinGoalDays,
         perfectDays,
         trainingDays,
-        prevTotalWorkouts: prevWeekWorkouts.length,
+        prevTotalWorkouts: prevWeekWorkouts.filter(w => !w.isDeload).length,
         prevTotalSets: prevWeekSets.length,
         prevTotalVolume,
+        prevWeekWasDeload,
       });
       // Load insights for the weekly summary
       try {
@@ -247,16 +263,26 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
                 <MaterialCommunityIcons name="weight-lifter" size={28} color={colors.primary} />
                 <Text style={styles.statValue}>{data.totalWorkouts}</Text>
                 <Text style={styles.statLabel}>Workouts</Text>
-                {renderComparison(data.totalWorkouts, data.prevTotalWorkouts)}
+                {!data.prevWeekWasDeload && renderComparison(data.totalWorkouts, data.prevTotalWorkouts)}
               </Card>
 
               <Card style={styles.statCard}>
                 <MaterialCommunityIcons name="dumbbell" size={28} color={colors.primary} />
                 <Text style={styles.statValue}>{data.totalSets.toLocaleString()}</Text>
                 <Text style={styles.statLabel}>Total Sets</Text>
-                {renderComparison(data.totalSets, data.prevTotalSets)}
+                {!data.prevWeekWasDeload && renderComparison(data.totalSets, data.prevTotalSets)}
               </Card>
             </View>
+
+            {/* Post-deload notice */}
+            {data.prevWeekWasDeload && (
+              <View style={styles.deloadNotice}>
+                <Ionicons name="refresh-outline" size={16} color={colors.primary} />
+                <Text style={styles.deloadNoticeText}>
+                  Previous week was deload — comparisons skipped
+                </Text>
+              </View>
+            )}
 
             {/* Volume */}
             {data.totalVolume > 0 && (
@@ -266,7 +292,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
                   <Text style={styles.volumeLabel}>Total Volume</Text>
                 </View>
                 <Text style={styles.volumeValue}>{formatVolume(data.totalVolume, units)}</Text>
-                {renderVolumeComparison(data.totalVolume, data.prevTotalVolume)}
+                {!data.prevWeekWasDeload && renderVolumeComparison(data.totalVolume, data.prevTotalVolume)}
               </Card>
             )}
 
@@ -599,6 +625,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
     lineHeight: typography.size.xs * 1.5,
+  },
+  deloadNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+  },
+  deloadNoticeText: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    flex: 1,
   },
   footer: {
     padding: spacing.base,

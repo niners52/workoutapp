@@ -505,8 +505,14 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     setExerciseToSwap(null);
 
     // Load history for the new exercise (swap doesn't change exerciseIds.length,
-    // so the useEffect won't trigger)
-    const lastWorkout = await getLastWorkoutForExercise(newExercise.id);
+    // so the useEffect won't trigger). Exclude deload workouts from "last time" lookup.
+    const deloadWorkoutIds = new Set(
+      workouts.filter(w => w.isDeload).map(w => w.id)
+    );
+    const lastWorkout = await getLastWorkoutForExercise(
+      newExercise.id,
+      deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined
+    );
     setExerciseHistories(prev => ({
       ...prev,
       [newExercise.id]: {

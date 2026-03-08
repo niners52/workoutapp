@@ -704,15 +704,22 @@ export async function getSetsInDateRange(start: Date, end: Date): Promise<Workou
 }
 
 // Get last sets for an exercise (for showing "last time" info)
+// Automatically skips deload workouts so suggestions always reference normal sessions
 export async function getLastSetsForExercise(exerciseId: string, limit: number = 5): Promise<WorkoutSet[]> {
-  const sets = await getSetsByExerciseId(exerciseId);
+  const [sets, workouts] = await Promise.all([
+    getSetsByExerciseId(exerciseId),
+    getWorkouts(),
+  ]);
 
-  // Sort by loggedAt descending and get unique workout sessions
-  const sortedSets = sets.sort(
-    (a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()
-  );
+  // Build set of deload workout IDs to exclude
+  const deloadIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
 
-  // Find the last workout that included this exercise
+  // Filter out deload sets, then sort by loggedAt descending
+  const sortedSets = sets
+    .filter(s => !deloadIds.has(s.workoutId))
+    .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
+
+  // Find the last non-deload workout that included this exercise
   if (sortedSets.length === 0) return [];
 
   const lastWorkoutId = sortedSets[0].workoutId;

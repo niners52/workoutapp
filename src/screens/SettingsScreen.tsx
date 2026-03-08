@@ -145,10 +145,14 @@ export function SettingsScreen() {
       await loadSyncStatus();
       setSyncProgress(null);
 
+      const parts: string[] = [];
+      if (result.processed > 0) parts.push(`${result.processed} synced`);
+      if (result.failed > 0) parts.push(`${result.failed} still pending`);
+
       if (result.failed > 0) {
-        Alert.alert('Sync Partial', `${result.processed} synced, ${result.failed} still pending`);
+        Alert.alert('Sync Partial', parts.join(', '));
       } else if (result.processed > 0) {
-        Alert.alert('Sync Complete', `${result.processed} operations synced successfully`);
+        Alert.alert('Sync Complete', parts.join(', '));
       } else {
         Alert.alert('Already Synced', 'No pending operations to sync');
       }
@@ -162,7 +166,7 @@ export function SettingsScreen() {
   const handleResetSyncQueue = () => {
     Alert.alert(
       'Reset Sync Queue',
-      `This will clear all ${pendingCount} pending sync operations. Data already saved locally won't be affected, but un-synced changes won't be pushed to the cloud.\n\nYou can re-sync by pulling from cloud and making new changes.`,
+      `This will clear all ${pendingCount} pending sync operations. Data already saved locally won't be affected, but un-synced changes won't be pushed to the cloud.\n\nNew changes you make will sync normally going forward.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -170,8 +174,10 @@ export function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             await clearPendingSyncQueue();
+            // Reset backoff so auto-sync resumes immediately
+            await syncManager.onAppResume();
             await loadSyncStatus();
-            Alert.alert('Queue Reset', 'Pending sync operations cleared');
+            Alert.alert('Queue Reset', 'Pending sync operations cleared. New changes will sync normally.');
           },
         },
       ]

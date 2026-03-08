@@ -126,9 +126,9 @@ function generateMuscleImbalanceSuggestions(
   const weekStart = startOfWeek(new Date(), { weekStartsOn });
   const weekStartStr = format(weekStart, 'yyyy-MM-dd');
 
-  // Get completed workouts this week
+  // Get completed non-deload workouts this week
   const thisWeekWorkouts = workouts.filter(w => {
-    if (!w.completedAt) return false;
+    if (!w.completedAt || w.isDeload) return false;
     return format(new Date(w.completedAt), 'yyyy-MM-dd') >= weekStartStr;
   });
 
@@ -211,10 +211,10 @@ function generateMissedMuscleGroupSuggestions(
 ): CoachSuggestion[] {
   const today = new Date();
 
-  // Build map: muscle group -> most recent date trained
+  // Build map: muscle group -> most recent date trained (non-deload only)
   const lastTrained = new Map<PrimaryMuscleGroup, Date>();
 
-  const completedWorkouts = workouts.filter(w => w.completedAt);
+  const completedWorkouts = workouts.filter(w => w.completedAt && !w.isDeload);
   const workoutDateMap = new Map<string, Date>();
   for (const w of completedWorkouts) {
     workoutDateMap.set(w.id, new Date(w.completedAt!));
@@ -323,7 +323,7 @@ function generateRecoverySuggestions(
 
   const workoutDateMap = new Map<string, string>();
   for (const w of workouts) {
-    if (!w.completedAt) continue;
+    if (!w.completedAt || w.isDeload) continue; // Skip deload workouts
     const dateStr = format(new Date(w.completedAt), 'yyyy-MM-dd');
     if (dayMuscles.has(dateStr)) {
       workoutDateMap.set(w.id, dateStr);
