@@ -672,11 +672,12 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   // Calculate total sets logged
   const totalSetsLogged = activeWorkout.sets.length;
 
-  const Wrapper = embedded ? View : SafeAreaView;
-  const wrapperProps = embedded ? { style: styles.container } : { style: commonStyles.safeArea, edges: ['top'] as const };
+  // Always use SafeAreaView for top inset — embedded mode (TrainScreen tab) still
+  // needs safe area since TrainScreen doesn't wrap the active workout in SafeAreaView.
+  const wrapperProps = { style: commonStyles.safeArea, edges: ['top'] as const };
 
   return (
-    <Wrapper {...wrapperProps}>
+    <SafeAreaView {...wrapperProps}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -1130,7 +1131,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           </TouchableOpacity>
         </Modal>
       </View>
-    </Wrapper>
+    </SafeAreaView>
   );
 }
 
