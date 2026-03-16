@@ -115,17 +115,18 @@ class LiveActivityModule: NSObject {
             )
 
             Task {
-                // Update to show completion state
-                await activity.update(using: finalState)
-
-                // End the activity after a brief delay so user can see it completed
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-
+                // End the activity immediately — no delay to prevent stacking
                 await activity.end(
                     using: finalState,
                     dismissalPolicy: .immediate
                 )
                 self.currentActivity = nil
+
+                // Also clean up any orphaned activities
+                for orphan in Activity<RestTimerAttributes>.activities {
+                    await orphan.end(using: finalState, dismissalPolicy: .immediate)
+                }
+
                 resolve(true)
             }
         } else {

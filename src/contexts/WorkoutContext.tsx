@@ -303,7 +303,13 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
               // Timer finished while in background
               playTimerEndSound();
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null };
+
+              // End the Live Activity that's stuck at 0:00
+              if (prev.liveActivityId) {
+                liveActivityService.endTimerWithAlert();
+              }
+
+              return { ...prev, isRunning: false, secondsRemaining: 0, endTime: null, liveActivityId: null };
             }
             return { ...prev, secondsRemaining: remaining };
           }

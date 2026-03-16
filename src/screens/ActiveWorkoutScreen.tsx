@@ -722,64 +722,77 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           {/* Exercise List */}
           <Text style={styles.sectionTitle}>Exercises</Text>
 
-          {activeWorkout.exerciseIds.map((exerciseId, index) => {
-            const exercise = exercises.find(e => e.id === exerciseId);
-            const currentSets = getSetsForExercise(exerciseId);
-            const history = exerciseHistories[exerciseId];
-            const isExpanded = selectedExerciseId === exerciseId;
+          {(() => {
             const baseTargetSets = userSettings?.defaultTargetSets ?? 3;
-            const targetSets = exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
-            const exerciseComplete = currentSets.length >= targetSets;
 
-            if (!exercise) return null;
+            // Sort exercises: incomplete first (in template order), then completed (in template order)
+            const incomplete: string[] = [];
+            const completed: string[] = [];
+            for (const id of activeWorkout.exerciseIds) {
+              const ex = exercises.find(e => e.id === id);
+              const target = ex?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
+              if (getSetsForExercise(id).length >= target) {
+                completed.push(id);
+              } else {
+                incomplete.push(id);
+              }
+            }
+            const sortedIds = [...incomplete, ...completed];
 
-            // Show "Completed" separator when transitioning from incomplete to complete
-            const prevId = index > 0 ? activeWorkout.exerciseIds[index - 1] : null;
-            const prevExercise = prevId ? exercises.find(e => e.id === prevId) : null;
-            const prevTargetSets = prevExercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
-            const prevComplete = prevId ? getSetsForExercise(prevId).length >= prevTargetSets : false;
-            const showSeparator = exerciseComplete && !prevComplete && index > 0;
+            return sortedIds.map((exerciseId, index) => {
+              const exercise = exercises.find(e => e.id === exerciseId);
+              const currentSets = getSetsForExercise(exerciseId);
+              const history = exerciseHistories[exerciseId];
+              const isExpanded = selectedExerciseId === exerciseId;
+              const targetSets = exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
+              const exerciseComplete = currentSets.length >= targetSets;
 
-            return (
-              <React.Fragment key={exerciseId}>
-                {showSeparator && (
-                  <View style={styles.completedSeparator}>
-                    <View style={styles.completedSeparatorLine} />
-                    <Text style={styles.completedSeparatorText}>Completed</Text>
-                    <View style={styles.completedSeparatorLine} />
-                  </View>
-                )}
-                <ExerciseCard
-                  exercise={exercise}
-                  currentSets={currentSets}
-                  history={history}
-                  isExpanded={isExpanded}
-                  onToggle={() => toggleExercise(exerciseId)}
-                  onLogSet={handleLogSet}
-                  onDeleteSet={handleDeleteSet}
-                  onRemove={() => handleRemoveExercise(exercise)}
-                  onOpenRestTimer={() => setRestTimerModalVisible(true)}
-                  onSwap={() => handleOpenSwapModal(exercise)}
-                  onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
-                  hasSwapOptions={hasAnySwapOptions(exercise)}
-                  weight={weight}
-                  setWeight={setWeight}
-                  reps={reps}
-                  setReps={setReps}
-                  restTimerSeconds={customRestTime}
-                  units={units}
-                  prCelebration={prCelebration}
-                  prAnimValue={prAnimValue}
-                  sessionPRs={sessionPRs}
-                  fatigueWarning={fatigueWarnings.get(exerciseId)}
-                  targetSets={targetSets}
-                  isComplete={exerciseComplete}
-                  isOnDeload={userSettings?.isOnDeload}
-                  deloadPercentage={userSettings?.deloadPercentage}
-                />
-              </React.Fragment>
-            );
-          })}
+              if (!exercise) return null;
+
+              // Show "Completed" separator once, right before the first completed exercise
+              const showSeparator = exerciseComplete && index === incomplete.length && completed.length > 0;
+
+              return (
+                <React.Fragment key={exerciseId}>
+                  {showSeparator && (
+                    <View style={styles.completedSeparator}>
+                      <View style={styles.completedSeparatorLine} />
+                      <Text style={styles.completedSeparatorText}>Completed</Text>
+                      <View style={styles.completedSeparatorLine} />
+                    </View>
+                  )}
+                  <ExerciseCard
+                    exercise={exercise}
+                    currentSets={currentSets}
+                    history={history}
+                    isExpanded={isExpanded}
+                    onToggle={() => toggleExercise(exerciseId)}
+                    onLogSet={handleLogSet}
+                    onDeleteSet={handleDeleteSet}
+                    onRemove={() => handleRemoveExercise(exercise)}
+                    onOpenRestTimer={() => setRestTimerModalVisible(true)}
+                    onSwap={() => handleOpenSwapModal(exercise)}
+                    onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
+                    hasSwapOptions={hasAnySwapOptions(exercise)}
+                    weight={weight}
+                    setWeight={setWeight}
+                    reps={reps}
+                    setReps={setReps}
+                    restTimerSeconds={customRestTime}
+                    units={units}
+                    prCelebration={prCelebration}
+                    prAnimValue={prAnimValue}
+                    sessionPRs={sessionPRs}
+                    fatigueWarning={fatigueWarnings.get(exerciseId)}
+                    targetSets={targetSets}
+                    isComplete={exerciseComplete}
+                    isOnDeload={userSettings?.isOnDeload}
+                    deloadPercentage={userSettings?.deloadPercentage}
+                  />
+                </React.Fragment>
+              );
+            });
+          })()}
 
           {/* Remaining Exercises Summary */}
           {(() => {

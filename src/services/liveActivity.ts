@@ -162,7 +162,7 @@ export const liveActivityService = {
    * End the timer with completion alert (timer finished naturally)
    */
   async endTimerWithAlert(): Promise<boolean> {
-    if (Platform.OS !== 'ios' || !currentActivityId) {
+    if (Platform.OS !== 'ios') {
       return false;
     }
 
@@ -175,12 +175,18 @@ export const liveActivityService = {
         },
       };
 
-      LiveActivity.stopActivity(currentActivityId, state);
-      currentActivityId = null;
+      if (currentActivityId) {
+        LiveActivity.stopActivity(currentActivityId, state);
+        currentActivityId = null;
+      }
+
+      // Always call native cleanup to catch orphaned activities (e.g., from background expiry)
+      await nativeEndAllActivities();
       return true;
     } catch (error) {
       console.log('Failed to end Live Activity:', error);
       currentActivityId = null;
+      await nativeEndAllActivities();
       return false;
     }
   },
