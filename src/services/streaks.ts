@@ -262,7 +262,9 @@ function isScheduledTrainingDay(date: Date, activeRoutine: Routine | undefined):
   const dayOfWeek = date.getDay();
   const daySchedule = activeRoutine.daySchedule.find(d => d.day === dayOfWeek);
   if (!daySchedule) return true;
-  return daySchedule.templateIds.length > 0;
+  // Cardio and active recovery count as training days
+  const dayType = daySchedule.dayType || (daySchedule.templateIds.length > 0 ? 'workout' : 'rest');
+  return dayType !== 'rest';
 }
 
 // ============================================================

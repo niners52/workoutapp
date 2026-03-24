@@ -13,7 +13,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Card, Button } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { RootStackParamList } from '../navigation/types';
-import { DAY_NAMES_SHORT } from '../types';
+import { DAY_NAMES_SHORT, CARDIO_TYPE_DISPLAY_NAMES } from '../types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -27,11 +27,15 @@ export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
     const routine = routines.find(r => r.id === routineId);
     if (!routine) return '';
 
-    const workoutDays = routine.daySchedule
-      .filter(d => d.templateIds && d.templateIds.length > 0)
+    const activeDays = routine.daySchedule
+      .filter(d =>
+        (d.templateIds && d.templateIds.length > 0) ||
+        d.dayType === 'cardio' ||
+        d.dayType === 'active_recovery'
+      )
       .length;
 
-    return `${workoutDays} workout days`;
+    return `${activeDays} active days`;
   };
 
   const getScheduleSummary = (routineId: string) => {
@@ -40,7 +44,15 @@ export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
 
     return routine.daySchedule
       .map((d) => {
-        if (!d.templateIds || d.templateIds.length === 0) return null;
+        const dayType = d.dayType || (d.templateIds && d.templateIds.length > 0 ? 'workout' : 'rest');
+        if (dayType === 'rest') return null;
+        if (dayType === 'cardio') {
+          const label = d.cardioType ? CARDIO_TYPE_DISPLAY_NAMES[d.cardioType] : 'Cardio';
+          return `${DAY_NAMES_SHORT[d.day]}: ${label}`;
+        }
+        if (dayType === 'active_recovery') {
+          return `${DAY_NAMES_SHORT[d.day]}: Recovery`;
+        }
         const templateNames = d.templateIds
           .map(id => templates.find(t => t.id === id)?.name)
           .filter(Boolean);

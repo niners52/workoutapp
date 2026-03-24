@@ -20,7 +20,10 @@ import {
   DAY_NAMES,
   MUSCLE_GROUP_DISPLAY_NAMES,
   EQUIPMENT_DISPLAY_NAMES,
+  CARDIO_TYPE_DISPLAY_NAMES,
+  CARDIO_INTENSITY_DISPLAY_NAMES,
   PrimaryMuscleGroup,
+  RoutineDayType,
 } from '../types';
 import { calculateProjectedVolumeForRoutine, aggregateIntoCategories } from '../services/analytics';
 
@@ -115,7 +118,18 @@ export function RoutineDetailScreen() {
       .filter((t): t is NonNullable<typeof t> => t !== undefined);
   };
 
-  const workoutDayCount = routine.daySchedule.filter(d => d.templateIds && d.templateIds.length > 0).length;
+  const workoutDayCount = routine.daySchedule.filter(d =>
+    (d.templateIds && d.templateIds.length > 0) ||
+    d.dayType === 'cardio' ||
+    d.dayType === 'active_recovery'
+  ).length;
+
+  const getDayType = (day: number): RoutineDayType => {
+    const schedule = routine.daySchedule.find(d => d.day === day);
+    if (!schedule) return 'rest';
+    if (schedule.dayType) return schedule.dayType;
+    return schedule.templateIds && schedule.templateIds.length > 0 ? 'workout' : 'rest';
+  };
 
   const handleSetActive = async () => {
     await setActiveRoutine(routine.id);
@@ -185,7 +199,9 @@ export function RoutineDetailScreen() {
           <Card padding="none">
             {DAY_NAMES.map((dayName, dayIndex) => {
               const dayTemplates = getTemplatesForDay(dayIndex);
-              const isRestDay = dayTemplates.length === 0;
+              const dayType = getDayType(dayIndex);
+              const schedule = routine.daySchedule.find(d => d.day === dayIndex);
+              const isRestDay = dayType === 'rest';
 
               return (
                 <View
@@ -201,6 +217,14 @@ export function RoutineDetailScreen() {
                   <View style={styles.dayTemplates}>
                     {isRestDay ? (
                       <Text style={[styles.templateName, styles.restDay]}>Rest</Text>
+                    ) : dayType === 'cardio' ? (
+                      <Text style={[styles.templateName, { color: colors.chartCardio }]}>
+                        {schedule?.cardioType ? CARDIO_TYPE_DISPLAY_NAMES[schedule.cardioType] : 'Cardio'}
+                        {schedule?.cardioDurationMinutes ? ` (${schedule.cardioDurationMinutes}min)` : ''}
+                        {schedule?.cardioIntensity ? ` — ${CARDIO_INTENSITY_DISPLAY_NAMES[schedule.cardioIntensity]}` : ''}
+                      </Text>
+                    ) : dayType === 'active_recovery' ? (
+                      <Text style={[styles.templateName, { color: colors.success }]}>Active Recovery</Text>
                     ) : dayTemplates.length === 1 ? (
                       <Text style={styles.templateName}>{dayTemplates[0].name}</Text>
                     ) : (

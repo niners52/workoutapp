@@ -21,9 +21,12 @@ import {
   WorkoutLocation,
   Exercise,
   PrimaryMuscleGroup,
+  RoutineDaySchedule,
   ALL_TEMPLATE_TYPES,
   TEMPLATE_TYPE_DISPLAY_NAMES,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  CARDIO_TYPE_DISPLAY_NAMES,
+  CARDIO_INTENSITY_DISPLAY_NAMES,
   DAY_NAMES,
 } from '../types';
 import { getWeeklyVolume, getTemplatesForDay } from '../services/analytics';
@@ -67,8 +70,24 @@ export function StartWorkoutScreen() {
     if (!routine) return null;
 
     const today = new Date().getDay(); // 0=Sunday, 1=Monday, etc.
+    const daySchedule = routine.daySchedule.find(d => d.day === today);
+    const dayType = daySchedule?.dayType || (daySchedule?.templateIds && daySchedule.templateIds.length > 0 ? 'workout' : 'rest');
+
+    if (dayType === 'rest') {
+      return { isRestDay: true, isCardio: false, isActiveRecovery: false, templates: [] as Template[], dayName: DAY_NAMES[today], schedule: daySchedule };
+    }
+
+    if (dayType === 'cardio') {
+      return { isRestDay: false, isCardio: true, isActiveRecovery: false, templates: [] as Template[], dayName: DAY_NAMES[today], schedule: daySchedule };
+    }
+
+    if (dayType === 'active_recovery') {
+      return { isRestDay: false, isCardio: false, isActiveRecovery: true, templates: [] as Template[], dayName: DAY_NAMES[today], schedule: daySchedule };
+    }
+
+    // Strength workout
     const templateIds = getTemplatesForDay(routine, today);
-    if (templateIds.length === 0) return { isRestDay: true, templates: [] as Template[], dayName: DAY_NAMES[today] };
+    if (templateIds.length === 0) return { isRestDay: true, isCardio: false, isActiveRecovery: false, templates: [] as Template[], dayName: DAY_NAMES[today], schedule: daySchedule };
 
     const scheduledTemplates = templateIds
       .map(id => templates.find(t => t.id === id))
@@ -76,7 +95,7 @@ export function StartWorkoutScreen() {
 
     if (scheduledTemplates.length === 0) return null;
 
-    return { isRestDay: false, templates: scheduledTemplates, dayName: DAY_NAMES[today] };
+    return { isRestDay: false, isCardio: false, isActiveRecovery: false, templates: scheduledTemplates, dayName: DAY_NAMES[today], schedule: daySchedule };
   }, [getActiveRoutine, templates]);
 
   // Filter templates based on selections
@@ -631,8 +650,40 @@ export function StartWorkoutScreen() {
 
         {renderStepIndicator()}
 
+        {/* Today's Cardio Day */}
+        {todaySchedule?.isCardio && todaySchedule.schedule && (
+          <Card style={styles.cardioScheduleCard}>
+            <Text style={styles.scheduledTitle}>Scheduled for {todaySchedule.dayName}</Text>
+            <View style={styles.cardioScheduleContent}>
+              <MaterialCommunityIcons name="run" size={32} color={colors.chartCardio} />
+              <View style={styles.cardioScheduleInfo}>
+                <Text style={styles.cardioScheduleType}>
+                  {todaySchedule.schedule.cardioType ? CARDIO_TYPE_DISPLAY_NAMES[todaySchedule.schedule.cardioType] : 'Cardio'}
+                </Text>
+                <Text style={styles.cardioScheduleDetail}>
+                  {todaySchedule.schedule.cardioDurationMinutes ? `${todaySchedule.schedule.cardioDurationMinutes} minutes` : ''}
+                  {todaySchedule.schedule.cardioIntensity ? ` — ${CARDIO_INTENSITY_DISPLAY_NAMES[todaySchedule.schedule.cardioIntensity]}` : ''}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.cardioScheduleHint}>
+              Log via Apple Watch or track manually. Counts toward your weekly cardio goal.
+            </Text>
+          </Card>
+        )}
+
+        {/* Today's Active Recovery */}
+        {todaySchedule?.isActiveRecovery && (
+          <Card style={styles.restDayCard}>
+            <Text style={styles.restDayTitle}>{todaySchedule.dayName} — Active Recovery</Text>
+            <Text style={styles.restDayText}>
+              Light activity today — stretching, walking, yoga, or mobility work.
+            </Text>
+          </Card>
+        )}
+
         {/* Today's Scheduled Workout */}
-        {todaySchedule && !todaySchedule.isRestDay && (
+        {todaySchedule && !todaySchedule.isRestDay && !todaySchedule.isCardio && !todaySchedule.isActiveRecovery && (
           <View style={styles.scheduledSection}>
             <Text style={styles.scheduledTitle}>Scheduled for {todaySchedule.dayName}</Text>
             {todaySchedule.templates.map(template => {
@@ -844,6 +895,36 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textTertiary,
     marginTop: spacing.xs,
+  },
+  cardioScheduleCard: {
+    marginBottom: spacing.lg,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.chartCardio,
+  },
+  cardioScheduleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  cardioScheduleInfo: {
+    flex: 1,
+  },
+  cardioScheduleType: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  cardioScheduleDetail: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  cardioScheduleHint: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: spacing.md,
+    fontStyle: 'italic',
   },
   divider: {
     flexDirection: 'row',

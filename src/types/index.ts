@@ -497,9 +497,48 @@ export interface SetgraphExerciseMapping {
 }
 
 // Weekly Routine types
+export type RoutineDayType = 'workout' | 'cardio' | 'active_recovery' | 'rest';
+
+export type CardioType = 'running' | 'cycling' | 'walking' | 'elliptical' | 'rowing' | 'swimming' | 'hiking' | 'hiit' | 'other';
+export type CardioIntensity = 'low' | 'moderate' | 'high';
+
+export const CARDIO_TYPE_DISPLAY_NAMES: Record<CardioType, string> = {
+  running: 'Running',
+  cycling: 'Cycling',
+  walking: 'Walking',
+  elliptical: 'Elliptical',
+  rowing: 'Rowing',
+  swimming: 'Swimming',
+  hiking: 'Hiking',
+  hiit: 'HIIT',
+  other: 'Other',
+};
+
+export const CARDIO_INTENSITY_DISPLAY_NAMES: Record<CardioIntensity, string> = {
+  low: 'Low (Zone 2)',
+  moderate: 'Moderate',
+  high: 'High (Intervals)',
+};
+
+export const ALL_CARDIO_TYPES: CardioType[] = ['running', 'cycling', 'walking', 'elliptical', 'rowing', 'swimming', 'hiking', 'hiit', 'other'];
+export const ALL_CARDIO_INTENSITIES: CardioIntensity[] = ['low', 'moderate', 'high'];
+
+export const ROUTINE_DAY_TYPE_DISPLAY_NAMES: Record<RoutineDayType, string> = {
+  workout: 'Strength',
+  cardio: 'Cardio',
+  active_recovery: 'Active Recovery',
+  rest: 'Rest',
+};
+
 export interface RoutineDaySchedule {
   day: number;              // 0-6 (0=Sunday, 1=Monday, etc.)
-  templateIds: string[];    // empty array = rest day, can have multiple for AM/PM workouts
+  templateIds: string[];    // empty array = rest day (for workout type)
+  dayType?: RoutineDayType; // undefined defaults to 'workout' for backward compat
+  // Cardio-specific fields (only used when dayType === 'cardio')
+  cardioType?: CardioType;
+  cardioDurationMinutes?: number;  // e.g., 30
+  cardioIntensity?: CardioIntensity;
+  cardioNotes?: string;            // e.g., "Zone 2 steady state"
 }
 
 export interface Routine {
