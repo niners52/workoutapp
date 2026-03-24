@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { format } from 'date-fns';
-import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition, getLatestWeight as getHealthKitLatestWeight } from './healthKit';
+import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition, getLatestWeight as getHealthKitLatestWeight, getDailyYogaCardioMinutes, YogaCardioMinutes } from './healthKit';
 import { SleepData, NutritionData } from '../types';
 import { getManualSleepEntry } from './storage';
 
@@ -27,6 +27,7 @@ interface CachedData<T> {
 const CACHE_KEYS = {
   SLEEP: (date: string) => `healthkit_sleep_${date}`,
   NUTRITION: (date: string) => `healthkit_nutrition_${date}`,
+  YOGA_CARDIO: (date: string) => `healthkit_yoga_cardio_${date}`,
   BODY_WEIGHT: 'healthkit_body_weight',
 };
 
@@ -109,6 +110,34 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
   }
 }
 
+export async function getYogaCardioData(date: Date): Promise<YogaCardioMinutes | null> {
+  const dateStr = format(date, 'yyyy-MM-dd');
+  const cacheKey = CACHE_KEYS.YOGA_CARDIO(dateStr);
+  const cacheDuration = getCacheDuration(date);
+
+  try {
+    const cached = await AsyncStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached) as CachedData<YogaCardioMinutes>;
+      if (Date.now() - parsed.timestamp < cacheDuration) {
+        return parsed.data;
+      }
+    }
+
+    const fresh = await withTimeout(getDailyYogaCardioMinutes(date), 3000);
+
+    await AsyncStorage.setItem(
+      cacheKey,
+      JSON.stringify({ data: fresh, timestamp: Date.now() })
+    ).catch(() => {});
+
+    return fresh;
+  } catch (error) {
+    console.error('Error getting cached yoga/cardio data:', error);
+    return null;
+  }
+}
+
 const BODY_WEIGHT_CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 
 export async function getCachedBodyWeight(): Promise<{ value: number; date: string } | null> {
@@ -140,10 +169,18 @@ export async function getCachedBodyWeight(): Promise<{ value: number; date: stri
  * Processes in chunks of 5 to avoid overwhelming HealthKit.
  * Each individual call has a 3-second timeout and caching.
  */
+export interface BatchHealthData {
+  sleepHours: number;
+  proteinGrams: number;
+  calories: number;
+  yogaMinutes: number;
+  cardioMinutes: number;
+}
+
 export async function batchFetchHealthData(
   dates: Date[]
-): Promise<Map<string, { sleepHours: number; proteinGrams: number; calories: number }>> {
-  const result = new Map<string, { sleepHours: number; proteinGrams: number; calories: number }>();
+): Promise<Map<string, BatchHealthData>> {
+  const result = new Map<string, BatchHealthData>();
 
   const chunkSize = 5;
   for (let i = 0; i < dates.length; i += chunkSize) {
@@ -152,17 +189,20 @@ export async function batchFetchHealthData(
       chunk.map(async (date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         try {
-          const [sleep, nutrition] = await Promise.all([
+          const [sleep, nutrition, yogaCardio] = await Promise.all([
             getSleepData(date),
             getNutritionData(date),
+            getYogaCardioData(date),
           ]);
           result.set(dateStr, {
             sleepHours: sleep?.totalHours || 0,
             proteinGrams: nutrition?.protein || 0,
             calories: nutrition?.calories || 0,
+            yogaMinutes: yogaCardio?.yogaMinutes || 0,
+            cardioMinutes: yogaCardio?.cardioMinutes || 0,
           });
         } catch {
-          result.set(dateStr, { sleepHours: 0, proteinGrams: 0, calories: 0 });
+          result.set(dateStr, { sleepHours: 0, proteinGrams: 0, calories: 0, yogaMinutes: 0, cardioMinutes: 0 });
         }
       })
     );
@@ -188,6 +228,7 @@ export async function clearCacheForDate(date: Date): Promise<void> {
     await AsyncStorage.multiRemove([
       CACHE_KEYS.SLEEP(dateStr),
       CACHE_KEYS.NUTRITION(dateStr),
+      CACHE_KEYS.YOGA_CARDIO(dateStr),
     ]);
     console.log(`Cleared cache for ${dateStr}`);
   } catch (error) {

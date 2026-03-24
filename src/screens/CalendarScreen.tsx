@@ -46,6 +46,8 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [goalStatusMap, setGoalStatusMap] = useState<GoalStatusMap>({});
   const [incompleteDates, setIncompleteDates] = useState<Set<string>>(new Set());
+  const [yogaDates, setYogaDates] = useState<Set<string>>(new Set());
+  const [cardioDates, setCardioDates] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   /**
@@ -84,10 +86,12 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
 
       // Build status map synchronously (no async calls in loop)
       const statusMap: GoalStatusMap = {};
+      const yogaSet = new Set<string>();
+      const cardioSet = new Set<string>();
 
       for (const day of datesToProcess) {
         const dateStr = format(day, 'yyyy-MM-dd');
-        const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0 };
+        const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0, yogaMinutes: 0, cardioMinutes: 0 };
 
         let goalsMetCount = 0;
 
@@ -123,9 +127,15 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
         }
 
         statusMap[dateStr] = goalsMetCount;
+
+        // Track yoga/cardio session days
+        if (health.yogaMinutes > 0) yogaSet.add(dateStr);
+        if (health.cardioMinutes > 0) cardioSet.add(dateStr);
       }
 
       setGoalStatusMap(statusMap);
+      setYogaDates(yogaSet);
+      setCardioDates(cardioSet);
 
       // Compute incomplete workout dates
       const incompleteDateSet = new Set(
@@ -208,6 +218,8 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
           onDayPress={handleDayPress}
           weekStartDay={userSettings.weekStartDay}
           incompleteDates={incompleteDates}
+          yogaDates={userSettings.trackYoga ? yogaDates : undefined}
+          cardioDates={userSettings.trackCardio ? cardioDates : undefined}
         />
 
         {/* Selected Date Workouts */}

@@ -1005,7 +1005,7 @@ export function SettingsScreen() {
                 step={1}
               />
             </View>
-            <View style={[styles.settingRow, styles.settingRowLast]}>
+            <View style={styles.settingRow}>
               <Text style={styles.settingLabel}>Training Days</Text>
               <NumberInput
                 value={userSettings.weeklyGoals?.trainingDays ?? 5}
@@ -1018,6 +1018,73 @@ export function SettingsScreen() {
                 step={1}
               />
             </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Track Yoga (HealthKit)</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.trackYoga && styles.toggleActive,
+                ]}
+                onPress={() => updateUserSettings({ trackYoga: !userSettings.trackYoga })}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.trackYoga && styles.toggleTextActive,
+                ]}>
+                  {userSettings.trackYoga ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {userSettings.trackYoga && (
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Yoga Goal (min/week)</Text>
+                <NumberInput
+                  value={userSettings.weeklyGoals?.yogaMinutes ?? 60}
+                  onChangeValue={(value) => {
+                    const weeklyGoals = { ...(userSettings.weeklyGoals || {}), yogaMinutes: value };
+                    updateUserSettings({ weeklyGoals });
+                  }}
+                  min={10}
+                  max={600}
+                  step={10}
+                />
+              </View>
+            )}
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Track Cardio (HealthKit)</Text>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.trackCardio && styles.toggleActive,
+                ]}
+                onPress={() => updateUserSettings({ trackCardio: !userSettings.trackCardio })}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.trackCardio && styles.toggleTextActive,
+                ]}>
+                  {userSettings.trackCardio ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {userSettings.trackCardio && (
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <Text style={styles.settingLabel}>Cardio Goal (min/week)</Text>
+                <NumberInput
+                  value={userSettings.weeklyGoals?.cardioMinutes ?? 60}
+                  onChangeValue={(value) => {
+                    const weeklyGoals = { ...(userSettings.weeklyGoals || {}), cardioMinutes: value };
+                    updateUserSettings({ weeklyGoals });
+                  }}
+                  min={10}
+                  max={600}
+                  step={10}
+                />
+              </View>
+            )}
+            {!userSettings.trackCardio && (
+              <View style={[styles.settingRow, styles.settingRowLast]} />
+            )}
           </Card>
         </View>
 

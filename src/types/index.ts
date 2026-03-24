@@ -303,6 +303,8 @@ export interface WeeklyGoals {
   proteinDays: number;       // e.g., 6 (days hitting daily goal)
   creatineDays: number;      // e.g., 7
   trainingDays: number;      // e.g., 5
+  yogaMinutes?: number;      // e.g., 60 (weekly target minutes)
+  cardioMinutes?: number;    // e.g., 60 (weekly target minutes)
 }
 
 export const DEFAULT_DAILY_GOALS: DailyGoals = {
@@ -317,6 +319,8 @@ export const DEFAULT_WEEKLY_GOALS: WeeklyGoals = {
   proteinDays: 6,
   creatineDays: 7,
   trainingDays: 5,
+  yogaMinutes: 60,
+  cardioMinutes: 60,
 };
 
 // Body fat calculation types
@@ -363,6 +367,9 @@ export interface UserSettings {
   sleepFallbackAutoAverage?: boolean;      // default false
   // Body weight source for Strength Map
   bodyWeightSource?: 'auto' | 'manual';   // default 'auto' — HealthKit first, then manual
+  // Yoga & Cardio tracking from HealthKit
+  trackYoga?: boolean;                    // default false
+  trackCardio?: boolean;                  // default false
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {

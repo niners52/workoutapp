@@ -190,6 +190,71 @@ export async function getWorkoutCount(
   return workouts.length;
 }
 
+// ============== YOGA & CARDIO FROM HEALTHKIT ==============
+
+// HealthKit activity names as returned by react-native-health
+const YOGA_ACTIVITIES = new Set([
+  'Yoga',
+]);
+
+const CARDIO_ACTIVITIES = new Set([
+  'Running',
+  'Cycling',
+  'Walking',
+  'Elliptical',
+  'Rowing',
+  'StairClimbing',
+  'Hiking',
+  'Swimming',
+  'Dance',
+  'JumpRope',
+  'Kickboxing',
+  'StepTraining',
+  'HighIntensityIntervalTraining',
+  'CrossTraining',
+]);
+
+export interface YogaCardioMinutes {
+  yogaMinutes: number;
+  cardioMinutes: number;
+}
+
+/**
+ * Get total yoga and cardio minutes from HealthKit workouts for a date range.
+ */
+export async function getYogaCardioMinutes(
+  startDate: Date,
+  endDate: Date = new Date()
+): Promise<YogaCardioMinutes> {
+  const workouts = await getWorkoutsFromHealthKit(startDate, endDate);
+
+  let yogaMinutes = 0;
+  let cardioMinutes = 0;
+
+  for (const w of workouts) {
+    const name = w.activityName;
+    if (YOGA_ACTIVITIES.has(name)) {
+      yogaMinutes += w.duration;
+    } else if (CARDIO_ACTIVITIES.has(name)) {
+      cardioMinutes += w.duration;
+    }
+  }
+
+  return {
+    yogaMinutes: Math.round(yogaMinutes),
+    cardioMinutes: Math.round(cardioMinutes),
+  };
+}
+
+/**
+ * Get yoga/cardio minutes for a single day.
+ */
+export async function getDailyYogaCardioMinutes(date: Date): Promise<YogaCardioMinutes> {
+  const start = startOfDay(date);
+  const end = endOfDay(date);
+  return getYogaCardioMinutes(start, end);
+}
+
 // Mock workouts for testing/non-iOS
 function getMockWorkouts(startDate: Date, endDate: Date): HealthKitWorkout[] {
   // Return empty array - workouts will come from the app's own tracking

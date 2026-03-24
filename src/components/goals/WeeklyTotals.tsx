@@ -3,12 +3,13 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Card, ProgressBar } from '../common';
 import { colors, typography, spacing } from '../../theme';
 import { WeeklySummary } from '../../services/streaks';
-import { WeeklyGoals, DailyGoals } from '../../types';
+import { WeeklyGoals, DailyGoals, UserSettings } from '../../types';
 
 interface WeeklyTotalsProps {
   summary: WeeklySummary;
   weeklyGoals: WeeklyGoals;
   dailyGoals: DailyGoals;
+  userSettings?: UserSettings;
 }
 
 interface TotalRowProps {
@@ -40,7 +41,7 @@ function TotalRow({ label, current, target, unit = '', color = colors.primary }:
   );
 }
 
-export function WeeklyTotals({ summary, weeklyGoals, dailyGoals }: WeeklyTotalsProps) {
+export function WeeklyTotals({ summary, weeklyGoals, dailyGoals, userSettings }: WeeklyTotalsProps) {
   return (
     <Card style={styles.card}>
       <Text style={styles.title}>Weekly Totals</Text>
@@ -75,6 +76,26 @@ export function WeeklyTotals({ summary, weeklyGoals, dailyGoals }: WeeklyTotalsP
           current={summary.trainingDays}
           target={weeklyGoals.trainingDays}
           color={colors.chartTraining}
+        />
+      )}
+
+      {userSettings?.trackYoga && (
+        <TotalRow
+          label="Yoga"
+          current={summary.yogaMinutes}
+          target={weeklyGoals.yogaMinutes ?? 60}
+          unit=" min"
+          color={colors.chartYoga}
+        />
+      )}
+
+      {userSettings?.trackCardio && (
+        <TotalRow
+          label="Cardio"
+          current={summary.cardioMinutes}
+          target={weeklyGoals.cardioMinutes ?? 60}
+          unit=" min"
+          color={colors.chartCardio}
         />
       )}
     </Card>

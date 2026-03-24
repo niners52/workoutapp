@@ -32,6 +32,8 @@ export const colors = {
   chartTraining: '#FFC52F', // Yellow for training
   chartProtein: '#FFD65A', // Lighter yellow for protein
   chartSleep: '#D9A825', // Muted yellow for sleep
+  chartYoga: '#7C3AED', // Purple for yoga
+  chartCardio: '#EF4444', // Red for cardio
 
   // Muscle group colors (Yellow/Navy variations with complementary colors)
   muscleColors: {

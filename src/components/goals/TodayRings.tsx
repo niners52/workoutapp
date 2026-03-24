@@ -5,8 +5,8 @@ import { ProgressRing } from './ProgressRing';
 import { CalorieRing } from './CalorieRing';
 import { Card } from '../common';
 import { colors, typography, spacing } from '../../theme';
-import { DailyGoalStatus, LetterGrade, GRADE_COLORS, gradeIsHit } from '../../services/streaks';
-import { DailyGoals } from '../../types';
+import { DailyGoalStatus, LetterGrade, GRADE_COLORS, gradeIsHit, getStandardGrade, WeeklySummary } from '../../services/streaks';
+import { DailyGoals, UserSettings } from '../../types';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -17,6 +17,8 @@ interface TodayRingsProps {
   status: DailyGoalStatus;
   dailyGoals: DailyGoals;
   calorieTolerancePercent?: number;
+  userSettings?: UserSettings;
+  weeklySummary?: WeeklySummary | null;
 }
 
 interface GoalInfo {
@@ -27,7 +29,7 @@ interface GoalInfo {
   color: string;
 }
 
-export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }: TodayRingsProps) {
+export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10, userSettings, weeklySummary }: TodayRingsProps) {
   const [expanded, setExpanded] = useState(false);
 
   // Build list of active goals
@@ -211,6 +213,42 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10 }:
                 />
               )}
             </View>
+            {/* Weekly yoga/cardio progress (not daily goals) */}
+            {(userSettings?.trackYoga || userSettings?.trackCardio) && weeklySummary && (
+              <View style={styles.weeklyRingsSection}>
+                <Text style={styles.weeklyRingsLabel}>Weekly Progress</Text>
+                <View style={styles.ringsRow}>
+                  {userSettings?.trackYoga && (() => {
+                    const yogaGoal = userSettings.weeklyGoals?.yogaMinutes ?? 60;
+                    const yogaProgress = yogaGoal > 0 ? (weeklySummary.yogaMinutes / yogaGoal) * 100 : 0;
+                    const yogaGrade = getStandardGrade(yogaProgress);
+                    return (
+                      <ProgressRing
+                        progress={yogaProgress}
+                        label="Yoga"
+                        value={`${weeklySummary.yogaMinutes}/${yogaGoal}`}
+                        color={colors.chartYoga}
+                        grade={yogaGrade}
+                      />
+                    );
+                  })()}
+                  {userSettings?.trackCardio && (() => {
+                    const cardioGoal = userSettings.weeklyGoals?.cardioMinutes ?? 60;
+                    const cardioProgress = cardioGoal > 0 ? (weeklySummary.cardioMinutes / cardioGoal) * 100 : 0;
+                    const cardioGrade = getStandardGrade(cardioProgress);
+                    return (
+                      <ProgressRing
+                        progress={cardioProgress}
+                        label="Cardio"
+                        value={`${weeklySummary.cardioMinutes}/${cardioGoal}`}
+                        color={colors.chartCardio}
+                        grade={cardioGrade}
+                      />
+                    );
+                  })()}
+                </View>
+              </View>
+            )}
           </View>
         )}
       </TouchableOpacity>
@@ -309,6 +347,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
+  },
+  weeklyRingsSection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+  },
+  weeklyRingsLabel: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
   },
 });
 

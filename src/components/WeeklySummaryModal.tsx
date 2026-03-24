@@ -30,6 +30,8 @@ interface WeeklySummaryData {
   proteinGoalDays: number;
   perfectDays: number;
   trainingDays: number;
+  yogaMinutes: number;
+  cardioMinutes: number;
   // Previous week comparison
   prevTotalWorkouts: number;
   prevTotalSets: number;
@@ -97,6 +99,8 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
       let proteinGoalDays = 0;
       let perfectDays = 0;
       let trainingDays = 0;
+      let yogaMinutes = 0;
+      let cardioMinutes = 0;
 
       try {
         const gridData = await getWeeklyGridData(
@@ -111,6 +115,8 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
             if (day.protein.met) proteinGoalDays++;
             if (day.perfectDay) perfectDays++;
             if (day.training.completed) trainingDays++;
+            yogaMinutes += day.yoga?.minutes || 0;
+            cardioMinutes += day.cardio?.minutes || 0;
           }
         }
       } catch (e) {
@@ -154,6 +160,8 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         proteinGoalDays,
         perfectDays,
         trainingDays,
+        yogaMinutes: Math.round(yogaMinutes),
+        cardioMinutes: Math.round(cardioMinutes),
         prevTotalWorkouts: prevWeekWorkouts.filter(w => !w.isDeload).length,
         prevTotalSets: prevWeekSets.length,
         prevTotalVolume,
@@ -326,6 +334,28 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
                     </View>
                     <Text style={styles.goalValue}>{data.perfectDays}/7 days</Text>
                   </View>
+                  {userSettings?.trackYoga && (
+                    <View style={styles.goalRow}>
+                      <View style={styles.goalInfo}>
+                        <MaterialCommunityIcons name="yoga" size={20} color={colors.chartYoga} />
+                        <Text style={styles.goalLabel}>Yoga</Text>
+                      </View>
+                      <Text style={styles.goalValue}>
+                        {data.yogaMinutes}/{userSettings.weeklyGoals?.yogaMinutes ?? 60} min
+                      </Text>
+                    </View>
+                  )}
+                  {userSettings?.trackCardio && (
+                    <View style={styles.goalRow}>
+                      <View style={styles.goalInfo}>
+                        <MaterialCommunityIcons name="run" size={20} color={colors.chartCardio} />
+                        <Text style={styles.goalLabel}>Cardio</Text>
+                      </View>
+                      <Text style={styles.goalValue}>
+                        {data.cardioMinutes}/{userSettings.weeklyGoals?.cardioMinutes ?? 60} min
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </Card>
             )}

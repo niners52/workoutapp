@@ -9,6 +9,8 @@ interface CalendarDayProps {
   isFuture: boolean;
   goalsMetCount: number; // 0-5 goals met (5 if calorie goal is set)
   hasIncompleteWorkout?: boolean;
+  hasYoga?: boolean;
+  hasCardio?: boolean;
   onPress: () => void;
 }
 
@@ -38,6 +40,8 @@ export function CalendarDay({
   isFuture,
   goalsMetCount,
   hasIncompleteWorkout,
+  hasYoga,
+  hasCardio,
   onPress,
 }: CalendarDayProps) {
   const dayNumber = date.getDate();
@@ -65,6 +69,12 @@ export function CalendarDay({
       </Text>
       {hasIncompleteWorkout && isCurrentMonth && (
         <View style={styles.incompleteIndicator} />
+      )}
+      {isCurrentMonth && !isFuture && (hasYoga || hasCardio) && (
+        <View style={styles.activityDots}>
+          {hasYoga && <View style={[styles.activityDot, { backgroundColor: colors.chartYoga }]} />}
+          {hasCardio && <View style={[styles.activityDot, { backgroundColor: colors.chartCardio }]} />}
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -98,6 +108,17 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.warning,
+  },
+  activityDots: {
+    position: 'absolute',
+    bottom: 2,
+    flexDirection: 'row',
+    gap: 2,
+  },
+  activityDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
 });
 

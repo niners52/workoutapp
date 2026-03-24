@@ -4,12 +4,13 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card } from '../common';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { StreakCounts } from '../../services/streaks';
-import { DailyGoals } from '../../types';
+import { DailyGoals, UserSettings } from '../../types';
 
 interface StreakCountersProps {
   streaks: StreakCounts;
   dailyGoals: DailyGoals;
   calorieGoal?: number | null;
+  userSettings?: UserSettings;
 }
 
 type IconType = 'ionicons' | 'material';
@@ -54,7 +55,7 @@ function StreakItem({ iconType, iconName, label, count, highlight }: StreakItemP
   );
 }
 
-export function StreakCounters({ streaks, dailyGoals, calorieGoal }: StreakCountersProps) {
+export function StreakCounters({ streaks, dailyGoals, calorieGoal, userSettings }: StreakCountersProps) {
   const showCalorieStreak = calorieGoal && calorieGoal > 0;
 
   return (
@@ -99,6 +100,22 @@ export function StreakCounters({ streaks, dailyGoals, calorieGoal }: StreakCount
             iconName="arm-flex"
             label="Training"
             count={streaks.training}
+          />
+        )}
+        {userSettings?.trackYoga && (
+          <StreakItem
+            iconType="material"
+            iconName="yoga"
+            label="Yoga"
+            count={streaks.yoga}
+          />
+        )}
+        {userSettings?.trackCardio && (
+          <StreakItem
+            iconType="material"
+            iconName="run"
+            label="Cardio"
+            count={streaks.cardio}
           />
         )}
         <StreakItem

@@ -30,6 +30,8 @@ interface CalendarViewProps {
   onDayPress: (date: Date) => void;
   weekStartDay: WeekStartDay;
   incompleteDates?: Set<string>;
+  yogaDates?: Set<string>;
+  cardioDates?: Set<string>;
 }
 
 export function CalendarView({
@@ -39,6 +41,8 @@ export function CalendarView({
   onDayPress,
   weekStartDay,
   incompleteDates,
+  yogaDates,
+  cardioDates,
 }: CalendarViewProps) {
   const today = startOfDay(new Date());
   const weekStartsOn = weekStartDay === 'sunday' ? 0 : 1;
@@ -124,6 +128,8 @@ export function CalendarView({
                   isFuture={isFuture}
                   goalsMetCount={goalsMetCount}
                   hasIncompleteWorkout={incompleteDates?.has(dateStr)}
+                  hasYoga={yogaDates?.has(dateStr)}
+                  hasCardio={cardioDates?.has(dateStr)}
                   onPress={() => onDayPress(date)}
                 />
               );

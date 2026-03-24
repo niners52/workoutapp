@@ -531,6 +531,8 @@ export function HomeScreen() {
             status={todayStatus}
             dailyGoals={dailyGoals}
             calorieTolerancePercent={userSettings.calorieTolerancePercent || 10}
+            userSettings={userSettings}
+            weeklySummary={weeklySummary}
           />
         ) : (
           <Card style={styles.loadingCard}>
@@ -544,6 +546,7 @@ export function HomeScreen() {
             streaks={streaks}
             dailyGoals={dailyGoals}
             calorieGoal={userSettings.calorieGoal}
+            userSettings={userSettings}
           />
         ) : (
           <Card style={styles.loadingCard}>
@@ -611,6 +614,7 @@ export function HomeScreen() {
             summary={weeklySummary}
             weeklyGoals={weeklyGoals}
             dailyGoals={dailyGoals}
+            userSettings={userSettings}
           />
         ) : (
           <Card style={styles.loadingCard}>
