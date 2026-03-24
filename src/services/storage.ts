@@ -8,6 +8,8 @@ import {
   WorkoutLocation,
   Supplement,
   SupplementIntake,
+  PTRoutine,
+  PTCompletion,
   Routine,
   BodyMeasurement,
   BodyMeasurementTypeKey,
@@ -33,6 +35,8 @@ const STORAGE_KEYS = {
   LOCATIONS: '@workout_tracker/locations',
   SUPPLEMENTS: '@workout_tracker/supplements',
   SUPPLEMENT_INTAKES: '@workout_tracker/supplement_intakes',
+  PT_ROUTINES: '@workout_tracker/pt_routines',
+  PT_COMPLETIONS: '@workout_tracker/pt_completions',
   ROUTINES: '@workout_tracker/routines',
   BODY_MEASUREMENTS: '@workout_tracker/body_measurements',
   INITIALIZED: '@workout_tracker/initialized',
@@ -1077,6 +1081,71 @@ export async function deleteSupplementIntakeBySupplementAndDate(
   const intakes = await getSupplementIntakes();
   const filtered = intakes.filter(i => !(i.supplementId === supplementId && i.date === date));
   await setItem(STORAGE_KEYS.SUPPLEMENT_INTAKES, filtered);
+}
+
+// ==================== PHYSICAL THERAPY ====================
+
+export async function getPTRoutines(): Promise<PTRoutine[]> {
+  return getItem(STORAGE_KEYS.PT_ROUTINES, []);
+}
+
+export async function addPTRoutine(routine: PTRoutine): Promise<void> {
+  const routines = await getPTRoutines();
+  const maxSortOrder = routines.reduce((max, r) => Math.max(max, r.sortOrder), -1);
+  routines.push({ ...routine, sortOrder: maxSortOrder + 1 });
+  await setItem(STORAGE_KEYS.PT_ROUTINES, routines);
+}
+
+export async function updatePTRoutine(routine: PTRoutine): Promise<void> {
+  const routines = await getPTRoutines();
+  const index = routines.findIndex(r => r.id === routine.id);
+  if (index !== -1) {
+    routines[index] = routine;
+    await setItem(STORAGE_KEYS.PT_ROUTINES, routines);
+  }
+}
+
+export async function deletePTRoutine(id: string): Promise<void> {
+  const routines = await getPTRoutines();
+  const filtered = routines.filter(r => r.id !== id);
+  await setItem(STORAGE_KEYS.PT_ROUTINES, filtered);
+
+  // Also delete associated completions
+  const completions = await getPTCompletions();
+  const filteredCompletions = completions.filter(c => c.ptRoutineId !== id);
+  await setItem(STORAGE_KEYS.PT_COMPLETIONS, filteredCompletions);
+}
+
+// ==================== PT COMPLETIONS ====================
+
+export async function getPTCompletions(): Promise<PTCompletion[]> {
+  return getItem(STORAGE_KEYS.PT_COMPLETIONS, []);
+}
+
+export async function getPTCompletionsForDate(date: string): Promise<PTCompletion[]> {
+  const completions = await getPTCompletions();
+  return completions.filter(c => c.date === date);
+}
+
+export async function addPTCompletion(completion: PTCompletion): Promise<void> {
+  const completions = await getPTCompletions();
+  completions.push(completion);
+  await setItem(STORAGE_KEYS.PT_COMPLETIONS, completions);
+}
+
+export async function deletePTCompletion(id: string): Promise<void> {
+  const completions = await getPTCompletions();
+  const filtered = completions.filter(c => c.id !== id);
+  await setItem(STORAGE_KEYS.PT_COMPLETIONS, filtered);
+}
+
+export async function deletePTCompletionByRoutineAndDate(
+  ptRoutineId: string,
+  date: string
+): Promise<void> {
+  const completions = await getPTCompletions();
+  const filtered = completions.filter(c => !(c.ptRoutineId === ptRoutineId && c.date === date));
+  await setItem(STORAGE_KEYS.PT_COMPLETIONS, filtered);
 }
 
 // ==================== CALENDAR HELPERS ====================

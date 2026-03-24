@@ -30,6 +30,7 @@ interface WeeklySummaryData {
   proteinGoalDays: number;
   perfectDays: number;
   trainingDays: number;
+  ptDays: number;
   yogaMinutes: number;
   cardioMinutes: number;
   // Previous week comparison
@@ -99,6 +100,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
       let proteinGoalDays = 0;
       let perfectDays = 0;
       let trainingDays = 0;
+      let ptDays = 0;
       let yogaMinutes = 0;
       let cardioMinutes = 0;
 
@@ -115,6 +117,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
             if (day.protein.met) proteinGoalDays++;
             if (day.perfectDay) perfectDays++;
             if (day.training.completed) trainingDays++;
+            if (day.physicalTherapy?.allCompleted) ptDays++;
             yogaMinutes += day.yoga?.minutes || 0;
             cardioMinutes += day.cardio?.minutes || 0;
           }
@@ -160,6 +163,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         proteinGoalDays,
         perfectDays,
         trainingDays,
+        ptDays,
         yogaMinutes: Math.round(yogaMinutes),
         cardioMinutes: Math.round(cardioMinutes),
         prevTotalWorkouts: prevWeekWorkouts.filter(w => !w.isDeload).length,
@@ -334,6 +338,17 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
                     </View>
                     <Text style={styles.goalValue}>{data.perfectDays}/7 days</Text>
                   </View>
+                  {userSettings?.dailyGoals?.trackPT && (
+                    <View style={styles.goalRow}>
+                      <View style={styles.goalInfo}>
+                        <MaterialCommunityIcons name="medical-bag" size={20} color={colors.success} />
+                        <Text style={styles.goalLabel}>Physical Therapy</Text>
+                      </View>
+                      <Text style={styles.goalValue}>
+                        {data.ptDays}/{userSettings.weeklyGoals?.ptDays ?? 7} days
+                      </Text>
+                    </View>
+                  )}
                   {userSettings?.trackYoga && (
                     <View style={styles.goalRow}>
                       <View style={styles.goalInfo}>

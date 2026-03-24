@@ -10,6 +10,8 @@ import {
   WorkoutLocation,
   Supplement,
   SupplementIntake,
+  PTRoutine,
+  PTCompletion,
   Routine,
   BodyMeasurement,
   DEFAULT_USER_SETTINGS,
@@ -80,6 +82,13 @@ import {
   addBodyMeasurement as addBodyMeasurementToStorage,
   updateBodyMeasurement as updateBodyMeasurementInStorage,
   deleteBodyMeasurement as deleteBodyMeasurementFromStorage,
+  getPTRoutines,
+  getPTCompletions,
+  addPTRoutine as addPTRoutineToStorage,
+  updatePTRoutine as updatePTRoutineInStorage,
+  deletePTRoutine as deletePTRoutineFromStorage,
+  addPTCompletion as addPTCompletionToStorage,
+  deletePTCompletionByRoutineAndDate,
 } from '../services/storage';
 
 interface DataContextType {
@@ -131,6 +140,16 @@ interface DataContextType {
   deleteSupplement: (id: string) => Promise<void>;
   toggleSupplementIntake: (supplementId: string, date: string) => Promise<void>;
 
+  // Physical therapy data and CRUD
+  ptRoutines: PTRoutine[];
+  ptCompletions: PTCompletion[];
+  refreshPTRoutines: () => Promise<void>;
+  refreshPTCompletions: () => Promise<void>;
+  addPTRoutine: (routine: PTRoutine) => Promise<void>;
+  updatePTRoutine: (routine: PTRoutine) => Promise<void>;
+  deletePTRoutine: (id: string) => Promise<void>;
+  togglePTCompletion: (ptRoutineId: string, date: string) => Promise<void>;
+
   // Routine data and CRUD
   routines: Routine[];
   refreshRoutines: () => Promise<void>;
@@ -172,6 +191,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   const [supplements, setSupplements] = useState<Supplement[]>([]);
   const [supplementIntakes, setSupplementIntakes] = useState<SupplementIntake[]>([]);
+  const [ptRoutines, setPTRoutines] = useState<PTRoutine[]>([]);
+  const [ptCompletions, setPTCompletions] = useState<PTCompletion[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [bodyMeasurements, setBodyMeasurements] = useState<BodyMeasurement[]>([]);
 
@@ -367,6 +388,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setSupplementIntakes(data);
   }, []);
 
+  const refreshPTRoutines = useCallback(async () => {
+    const data = await getPTRoutines();
+    data.sort((a, b) => a.sortOrder - b.sortOrder);
+    setPTRoutines(data);
+  }, []);
+
+  const refreshPTCompletions = useCallback(async () => {
+    const data = await getPTCompletions();
+    setPTCompletions(data);
+  }, []);
+
   const refreshRoutines = useCallback(async () => {
     const data = await getRoutines();
     setRoutines(data);
@@ -389,10 +421,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshUserSettings(),
       refreshSupplements(),
       refreshSupplementIntakes(),
+      refreshPTRoutines(),
+      refreshPTCompletions(),
       refreshRoutines(),
       refreshBodyMeasurements(),
     ]);
-  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshRoutines, refreshBodyMeasurements]);
+  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshPTRoutines, refreshPTCompletions, refreshRoutines, refreshBodyMeasurements]);
 
   // Exercise CRUD
   const addExercise = useCallback(async (exercise: Exercise) => {
@@ -569,6 +603,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supplementIntakes]);
 
+  // Physical Therapy CRUD
+  const addPTRoutine = useCallback(async (routine: PTRoutine) => {
+    await addPTRoutineToStorage(routine);
+    await refreshPTRoutines();
+  }, [refreshPTRoutines]);
+
+  const updatePTRoutine = useCallback(async (routine: PTRoutine) => {
+    await updatePTRoutineInStorage(routine);
+    await refreshPTRoutines();
+  }, [refreshPTRoutines]);
+
+  const deletePTRoutine = useCallback(async (id: string) => {
+    await deletePTRoutineFromStorage(id);
+    await refreshPTRoutines();
+    await refreshPTCompletions();
+  }, [refreshPTRoutines, refreshPTCompletions]);
+
+  const togglePTCompletion = useCallback(async (ptRoutineId: string, date: string) => {
+    const existing = ptCompletions.find(
+      c => c.ptRoutineId === ptRoutineId && c.date === date
+    );
+
+    if (existing) {
+      setPTCompletions(prev => prev.filter(c => c.id !== existing.id));
+      try {
+        await deletePTCompletionByRoutineAndDate(ptRoutineId, date);
+      } catch (error) {
+        console.error('Failed to delete PT completion:', error);
+        setPTCompletions(prev => [...prev, existing]);
+      }
+    } else {
+      const completion: PTCompletion = {
+        id: `pt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        ptRoutineId,
+        date,
+        completedAt: new Date().toISOString(),
+      };
+      setPTCompletions(prev => [...prev, completion]);
+      try {
+        await addPTCompletionToStorage(completion);
+      } catch (error) {
+        console.error('Failed to add PT completion:', error);
+        setPTCompletions(prev => prev.filter(c => c.id !== completion.id));
+      }
+    }
+  }, [ptCompletions]);
+
   // Routine CRUD
   const addRoutine = useCallback(async (routine: Routine) => {
     await addRoutineToStorage(routine);
@@ -697,6 +778,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateSupplement,
     deleteSupplement,
     toggleSupplementIntake,
+    ptRoutines,
+    ptCompletions,
+    refreshPTRoutines,
+    refreshPTCompletions,
+    addPTRoutine,
+    updatePTRoutine,
+    deletePTRoutine,
+    togglePTCompletion,
     routines,
     refreshRoutines,
     addRoutine,

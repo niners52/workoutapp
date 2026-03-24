@@ -39,6 +39,8 @@ import {
   getSets,
   getSupplements,
   getSupplementIntakes,
+  getPTRoutines,
+  getPTCompletions,
   getUserSettings,
   getRoutines,
   getTemplates,
@@ -74,6 +76,9 @@ export function HomeScreen() {
     supplements,
     supplementIntakes,
     toggleSupplementIntake,
+    ptRoutines,
+    ptCompletions,
+    togglePTCompletion,
     templates,
     exercises,
     getActiveRoutine,
@@ -86,6 +91,10 @@ export function HomeScreen() {
   const activeSupplements = useMemo(
     () => supplements.filter(s => s.isActive),
     [supplements]
+  );
+  const activePTRoutines = useMemo(
+    () => ptRoutines.filter(r => r.isActive),
+    [ptRoutines]
   );
 
   const [refreshing, setRefreshing] = useState(false);
@@ -257,6 +266,8 @@ export function HomeScreen() {
         freshRoutines,
         freshTemplates,
         freshExercises,
+        freshPTRoutines,
+        freshPTCompletions,
       ] = await Promise.all([
         getWorkouts(),
         getSets(),
@@ -266,9 +277,12 @@ export function HomeScreen() {
         getRoutines(),
         getTemplates(),
         getExercises(),
+        getPTRoutines(),
+        getPTCompletions(),
       ]);
 
       const activeSupps = freshSupplements.filter(s => s.isActive);
+      const activePT = freshPTRoutines.filter(r => r.isActive);
       const currentRoutine = freshRoutines.find(r => r.isActive);
 
       // Phase 2: Calculate shortfalls (no HealthKit, fast)
@@ -333,13 +347,13 @@ export function HomeScreen() {
 
       // Phase 3: Calculate HealthKit-dependent data (all in parallel)
       const [status, streakCounts, gridData, summary] = await Promise.all([
-        getTodayGoalStatus(freshSettings, freshWorkouts, freshIntakes, activeSupps)
+        getTodayGoalStatus(freshSettings, freshWorkouts, freshIntakes, activeSupps, freshPTCompletions, activePT)
           .catch(e => { console.error('[HomeScreen] Today status error:', e); return null; }),
-        calculateStreaks(freshSettings, freshWorkouts, freshIntakes, activeSupps, currentRoutine)
+        calculateStreaks(freshSettings, freshWorkouts, freshIntakes, activeSupps, currentRoutine, freshPTCompletions, activePT)
           .catch(e => { console.error('[HomeScreen] Streaks error:', e); return null; }),
-        getWeeklyGridData(freshSettings, freshWorkouts, freshIntakes, activeSupps)
+        getWeeklyGridData(freshSettings, freshWorkouts, freshIntakes, activeSupps, freshPTCompletions, activePT)
           .catch(e => { console.error('[HomeScreen] Grid error:', e); return null; }),
-        getWeeklySummary(freshSettings, freshWorkouts, freshIntakes, activeSupps)
+        getWeeklySummary(freshSettings, freshWorkouts, freshIntakes, activeSupps, freshPTCompletions, activePT)
           .catch(e => { console.error('[HomeScreen] Summary error:', e); return null; }),
       ]);
 
@@ -750,6 +764,30 @@ export function HomeScreen() {
                     onToggle={() => toggleSupplementIntake(supplement.id, todayStr)}
                     isFirst={index === 0}
                     isLast={index === activeSupplements.length - 1}
+                  />
+                );
+              })}
+            </Card>
+          </View>
+        )}
+
+        {/* Today's Physical Therapy */}
+        {activePTRoutines.length > 0 && userSettings.dailyGoals?.trackPT && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Physical Therapy</Text>
+            <Card padding="none">
+              {activePTRoutines.map((routine, index) => {
+                const isDone = ptCompletions.some(
+                  c => c.ptRoutineId === routine.id && c.date === todayStr
+                );
+                return (
+                  <SupplementCheckbox
+                    key={routine.id}
+                    supplement={{ ...routine, sortOrder: routine.sortOrder, isActive: routine.isActive }}
+                    isTaken={isDone}
+                    onToggle={() => togglePTCompletion(routine.id, todayStr)}
+                    isFirst={index === 0}
+                    isLast={index === activePTRoutines.length - 1}
                   />
                 );
               })}

@@ -28,6 +28,8 @@ import {
   getWorkouts,
   getSupplements,
   getSupplementIntakes,
+  getPTRoutines,
+  getPTCompletions,
   getUserSettings,
 } from '../services/storage';
 import { batchFetchHealthData } from '../services/healthKitCache';
@@ -71,14 +73,17 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
 
     try {
       // Fetch all local data from storage (fast)
-      const [freshWorkouts, freshSupplements, freshIntakes, freshSettings] = await Promise.all([
+      const [freshWorkouts, freshSupplements, freshIntakes, freshSettings, freshPTRoutines, freshPTCompletions] = await Promise.all([
         getWorkouts(),
         getSupplements(),
         getSupplementIntakes(),
         getUserSettings(),
+        getPTRoutines(),
+        getPTCompletions(),
       ]);
 
       const activeSupps = freshSupplements.filter(s => s.isActive);
+      const activePT = freshPTRoutines.filter(r => r.isActive);
       const dailyGoals = freshSettings.dailyGoals || DEFAULT_DAILY_GOALS;
 
       // Batch fetch HealthKit data for all dates (parallel, chunked, with timeouts)
@@ -124,6 +129,15 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
             freshSettings.calorieTolerancePercent || 10
           );
           if (caloriesMet) goalsMetCount++;
+        }
+
+        // Physical therapy
+        if (dailyGoals.trackPT && activePT.length > 0) {
+          const dayPTCompletions = freshPTCompletions.filter(c => c.date === dateStr);
+          const allPTDone = activePT.every(r =>
+            dayPTCompletions.some(c => c.ptRoutineId === r.id)
+          );
+          if (allPTDone) goalsMetCount++;
         }
 
         statusMap[dateStr] = goalsMetCount;

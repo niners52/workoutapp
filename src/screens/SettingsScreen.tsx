@@ -78,6 +78,10 @@ export function SettingsScreen() {
     addSupplement,
     updateSupplement,
     deleteSupplement,
+    ptRoutines,
+    addPTRoutine,
+    updatePTRoutine,
+    deletePTRoutine,
     templates,
   } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -92,6 +96,9 @@ export function SettingsScreen() {
   const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
   const [editingSupplement, setEditingSupplement] = useState<Supplement | null>(null);
+  const [showPTRoutines, setShowPTRoutines] = useState(false);
+  const [newPTName, setNewPTName] = useState('');
+  const [editingPTRoutine, setEditingPTRoutine] = useState<any>(null);
 
   // Sync status state
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
@@ -441,6 +448,39 @@ export function SettingsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => deleteSupplement(supplement.id),
+        },
+      ]
+    );
+  };
+
+  const handleAddPTRoutine = async () => {
+    if (!newPTName.trim()) return;
+    const id = `pt-routine-${Date.now()}`;
+    await addPTRoutine({
+      id,
+      name: newPTName.trim(),
+      sortOrder: ptRoutines.length,
+      isActive: true,
+    });
+    setNewPTName('');
+  };
+
+  const handleSavePTEdit = async () => {
+    if (!editingPTRoutine || !editingPTRoutine.name.trim()) return;
+    await updatePTRoutine(editingPTRoutine);
+    setEditingPTRoutine(null);
+  };
+
+  const handleDeletePTRoutine = (routine: any) => {
+    Alert.alert(
+      'Delete PT Routine',
+      `Are you sure you want to delete "${routine.name}"? All tracking history will be removed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deletePTRoutine(routine.id),
         },
       ]
     );
@@ -1491,6 +1531,149 @@ export function SettingsScreen() {
           )}
           <Text style={styles.hint}>
             Track daily supplement intake on the Home screen
+          </Text>
+        </View>
+
+        {/* Physical Therapy Routines */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => setShowPTRoutines(!showPTRoutines)}
+          >
+            <Text style={styles.sectionTitle}>Physical Therapy</Text>
+            <Text style={styles.expandIcon}>{showPTRoutines ? '−' : '+'}</Text>
+          </TouchableOpacity>
+
+          {showPTRoutines && (
+            <>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Track PT</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.toggle,
+                    userSettings.dailyGoals?.trackPT && styles.toggleActive,
+                  ]}
+                  onPress={() => {
+                    const dailyGoals = { ...(userSettings.dailyGoals || {}), trackPT: !userSettings.dailyGoals?.trackPT };
+                    updateUserSettings({ dailyGoals });
+                  }}
+                >
+                  <Text style={[
+                    styles.toggleText,
+                    userSettings.dailyGoals?.trackPT && styles.toggleTextActive,
+                  ]}>
+                    {userSettings.dailyGoals?.trackPT ? 'On' : 'Off'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {userSettings.dailyGoals?.trackPT && (
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>PT Days/Week Goal</Text>
+                  <NumberInput
+                    value={userSettings.weeklyGoals?.ptDays ?? 7}
+                    onChangeValue={(value) => {
+                      const weeklyGoals = { ...(userSettings.weeklyGoals || {}), ptDays: value };
+                      updateUserSettings({ weeklyGoals });
+                    }}
+                    min={1}
+                    max={7}
+                    step={1}
+                  />
+                </View>
+              )}
+              {ptRoutines.length > 0 && (
+                <Card padding="none">
+                  {ptRoutines.map((routine, index) => (
+                    <View
+                      key={routine.id}
+                      style={[
+                        styles.locationRow,
+                        index === ptRoutines.length - 1 && styles.locationRowLast,
+                      ]}
+                    >
+                      {editingPTRoutine?.id === routine.id ? (
+                        <View style={styles.editLocationRow}>
+                          <TextInput
+                            style={styles.locationInput}
+                            value={editingPTRoutine.name}
+                            onChangeText={(text) =>
+                              setEditingPTRoutine({ ...editingPTRoutine, name: text })
+                            }
+                            autoFocus
+                          />
+                          <TouchableOpacity
+                            onPress={handleSavePTEdit}
+                            style={styles.locationAction}
+                          >
+                            <Text style={styles.locationActionText}>Save</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setEditingPTRoutine(null)}
+                            style={styles.locationAction}
+                          >
+                            <Text style={[styles.locationActionText, styles.locationActionCancel]}>
+                              Cancel
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={styles.supplementNameRow}
+                            onPress={() => updatePTRoutine({ ...routine, isActive: !routine.isActive })}
+                          >
+                            <Text style={[
+                              styles.locationName,
+                              !routine.isActive && styles.supplementInactive
+                            ]}>
+                              {routine.name}
+                            </Text>
+                            {!routine.isActive && (
+                              <Text style={styles.inactiveBadge}>Inactive</Text>
+                            )}
+                          </TouchableOpacity>
+                          <View style={styles.locationActions}>
+                            <TouchableOpacity
+                              onPress={() => setEditingPTRoutine(routine)}
+                              style={styles.locationAction}
+                            >
+                              <Text style={styles.locationActionText}>Edit</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleDeletePTRoutine(routine)}
+                              style={styles.locationAction}
+                            >
+                              <Text style={[styles.locationActionText, styles.locationActionDelete]}>
+                                Delete
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  ))}
+                </Card>
+              )}
+              <View style={styles.addLocationRow}>
+                <TextInput
+                  style={styles.addLocationInput}
+                  placeholder="New PT routine (e.g., Shoulder rehab)"
+                  placeholderTextColor={colors.textTertiary}
+                  value={newPTName}
+                  onChangeText={setNewPTName}
+                  onSubmitEditing={handleAddPTRoutine}
+                />
+                <Button
+                  title="Add"
+                  onPress={handleAddPTRoutine}
+                  variant="secondary"
+                  disabled={!newPTName.trim()}
+                />
+              </View>
+            </>
+          )}
+          <Text style={styles.hint}>
+            Track daily physical therapy completion on the Home screen
           </Text>
         </View>
 

@@ -46,6 +46,21 @@ export interface SupplementIntake {
   takenAt: string; // ISO datetime when marked as taken
 }
 
+// Physical therapy tracking
+export interface PTRoutine {
+  id: string;
+  name: string;       // e.g., "Shoulder rehab", "Knee exercises"
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface PTCompletion {
+  id: string;
+  ptRoutineId: string;
+  date: string;        // 'YYYY-MM-DD' format
+  completedAt: string; // ISO datetime when marked as done
+}
+
 export const TEMPLATE_TYPE_DISPLAY_NAMES: Record<TemplateType, string> = {
   push: 'Push',
   pull: 'Pull',
@@ -295,6 +310,7 @@ export interface DailyGoals {
   proteinGrams: number;      // e.g., 150
   trackCreatine: boolean;    // true = track it (just needs to be taken)
   trackTraining: boolean;    // true = track it (any workout counts)
+  trackPT?: boolean;         // true = track physical therapy completion
 }
 
 // Weekly Goals - aggregate targets for the week
@@ -305,6 +321,7 @@ export interface WeeklyGoals {
   trainingDays: number;      // e.g., 5
   yogaMinutes?: number;      // e.g., 60 (weekly target minutes)
   cardioMinutes?: number;    // e.g., 60 (weekly target minutes)
+  ptDays?: number;           // e.g., 7 (days per week PT should be done)
 }
 
 export const DEFAULT_DAILY_GOALS: DailyGoals = {

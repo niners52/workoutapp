@@ -85,6 +85,12 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
     return { type: 'grade', grade: day.training.grade };
   };
 
+  const getPTStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
+    if (isFutureDay) return { type: 'future' };
+    if (day.physicalTherapy.total === 0) return { type: 'na' };
+    return { type: 'grade', grade: day.physicalTherapy.grade };
+  };
+
   return (
     <Card style={styles.card}>
       <Text style={styles.title}>Weekly Progress</Text>
@@ -137,6 +143,14 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
           label="Training"
           days={days}
           getStatus={getTrainingStatus}
+          todayIndex={todayIndex}
+        />
+      )}
+      {dailyGoals.trackPT && (
+        <GridRow
+          label="PT"
+          days={days}
+          getStatus={getPTStatus}
           todayIndex={todayIndex}
         />
       )}

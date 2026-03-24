@@ -102,6 +102,14 @@ export function StreakCounters({ streaks, dailyGoals, calorieGoal, userSettings 
             count={streaks.training}
           />
         )}
+        {dailyGoals.trackPT && (
+          <StreakItem
+            iconType="material"
+            iconName="medical-bag"
+            label="PT"
+            count={streaks.pt}
+          />
+        )}
         {userSettings?.trackYoga && (
           <StreakItem
             iconType="material"

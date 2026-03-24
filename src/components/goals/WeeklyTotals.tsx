@@ -79,6 +79,15 @@ export function WeeklyTotals({ summary, weeklyGoals, dailyGoals, userSettings }:
         />
       )}
 
+      {userSettings?.dailyGoals?.trackPT && (
+        <TotalRow
+          label="PT Days"
+          current={summary.ptDays}
+          target={weeklyGoals.ptDays ?? 7}
+          color={colors.success}
+        />
+      )}
+
       {userSettings?.trackYoga && (
         <TotalRow
           label="Yoga"

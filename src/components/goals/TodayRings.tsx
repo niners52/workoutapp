@@ -52,6 +52,9 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10, u
     if (dailyGoals.trackTraining) {
       list.push({ key: 'training', label: 'Training', grade: status.training.grade, met: gradeIsHit(status.training.grade), color: GRADE_COLORS[status.training.grade] });
     }
+    if (dailyGoals.trackPT && status.physicalTherapy.total > 0) {
+      list.push({ key: 'pt', label: 'PT', grade: status.physicalTherapy.grade, met: gradeIsHit(status.physicalTherapy.grade), color: GRADE_COLORS[status.physicalTherapy.grade] });
+    }
     return list;
   }, [status, dailyGoals]);
 
@@ -71,10 +74,14 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10, u
     ? (status.supplements.taken / status.supplements.total) * 100
     : 0;
   const trainingProgress = status.training.completed ? 100 : 0;
+  const ptProgress = status.physicalTherapy.total > 0
+    ? (status.physicalTherapy.completed / status.physicalTherapy.total) * 100
+    : 0;
 
   const sleepValue = `${status.sleep.hours.toFixed(1)}/${dailyGoals.sleepHours}`;
   const proteinValue = `${Math.round(status.protein.grams)}/${dailyGoals.proteinGrams}`;
   const supplementsValue = `${status.supplements.taken}/${status.supplements.total}`;
+  const ptValue = `${status.physicalTherapy.completed}/${status.physicalTherapy.total}`;
 
   const toggleExpand = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -210,6 +217,15 @@ export function TodayRings({ status, dailyGoals, calorieTolerancePercent = 10, u
                   isBoolean
                   color={colors.chartTraining}
                   grade={status.training.grade}
+                />
+              )}
+              {dailyGoals.trackPT && status.physicalTherapy.total > 0 && (
+                <ProgressRing
+                  progress={ptProgress}
+                  label="PT"
+                  value={ptValue}
+                  color={colors.success}
+                  grade={status.physicalTherapy.grade}
                 />
               )}
             </View>

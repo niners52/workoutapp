@@ -4,12 +4,17 @@ import {
   getWorkouts as fetchWorkouts,
   getSupplementIntakesForDate,
   getSupplements as fetchSupplements,
+  getPTRoutines as fetchPTRoutines,
+  getPTCompletions as fetchPTCompletions,
+  getPTCompletionsForDate,
 } from './storage';
 import {
   UserSettings,
   Workout,
   SupplementIntake,
   Supplement,
+  PTRoutine,
+  PTCompletion,
   Routine,
   NutritionMode,
   DEFAULT_DAILY_GOALS,
@@ -110,6 +115,12 @@ export interface DailyGoalStatus {
     completed: boolean;
     grade: LetterGrade;
   };
+  physicalTherapy: {
+    completed: number;
+    total: number;
+    allCompleted: boolean;
+    grade: LetterGrade;
+  };
   yoga: {
     minutes: number;        // daily minutes
   };
@@ -126,6 +137,7 @@ export interface StreakCounts {
   calories: number;
   creatine: number; // actually supplements - kept for backward compat
   training: number;
+  pt: number;       // consecutive days hitting PT goal
   yoga: number;     // weeks hitting yoga goal
   cardio: number;   // weeks hitting cardio goal
   perfect: number;
@@ -137,6 +149,7 @@ export interface WeeklySummary {
   proteinDays: number;
   creatineDays: number; // actually supplement days - kept for backward compat
   trainingDays: number;
+  ptDays: number;
   yogaMinutes: number;
   cardioMinutes: number;
 }
@@ -173,6 +186,8 @@ function calculateDailyStatus(
   workouts: Workout[],
   supplementIntakes: SupplementIntake[],
   activeSupplements: Supplement[],
+  ptCompletions: PTCompletion[] = [],
+  activePTRoutines: PTRoutine[] = [],
   yogaMinutes: number = 0,
   cardioMinutes: number = 0,
 ): DailyGoalStatus {
@@ -211,12 +226,22 @@ function calculateDailyStatus(
   }
   const trainingGrade = getBooleanGrade(trainingCompleted);
 
+  // Physical therapy
+  const dayPTCompletions = ptCompletions.filter(c => c.date === dateStr);
+  const totalPT = activePTRoutines.length;
+  const completedPT = activePTRoutines.filter(r =>
+    dayPTCompletions.some(c => c.ptRoutineId === r.id)
+  ).length;
+  const allPTCompleted = totalPT > 0 && completedPT === totalPT;
+  const ptGrade = getBooleanGrade(totalPT === 0 || allPTCompleted);
+
   const perfectDay =
     gradeIsHit(sleepGrade) &&
     gradeIsHit(proteinGrade) &&
     (calorieGoal <= 0 || gradeIsHit(calorieGrade)) &&
     (totalSupplements === 0 || gradeIsHit(supplementGrade)) &&
-    (dailyGoals.trackTraining === false || gradeIsHit(trainingGrade));
+    (dailyGoals.trackTraining === false || gradeIsHit(trainingGrade)) &&
+    (!dailyGoals.trackPT || totalPT === 0 || gradeIsHit(ptGrade));
 
   return {
     date: dateStr,
@@ -225,6 +250,7 @@ function calculateDailyStatus(
     calories: { consumed: calories, goal: calorieGoal, met: caloriesMet, mode: nutritionMode, grade: calorieGrade },
     supplements: { taken: takenSupplements, total: totalSupplements, allTaken: allSupplementsTaken, grade: supplementGrade },
     training: { completed: trainingCompleted, grade: trainingGrade },
+    physicalTherapy: { completed: completedPT, total: totalPT, allCompleted: allPTCompleted, grade: ptGrade },
     yoga: { minutes: yogaMinutes },
     cardio: { minutes: cardioMinutes },
     perfectDay,
@@ -252,7 +278,9 @@ export async function getTodayGoalStatus(
   settings: UserSettings,
   workouts: Workout[],
   supplementIntakes: SupplementIntake[],
-  activeSupplements: Supplement[]
+  activeSupplements: Supplement[],
+  ptCompletions: PTCompletion[] = [],
+  activePTRoutines: PTRoutine[] = [],
 ): Promise<DailyGoalStatus> {
   const today = new Date();
   const healthData = await batchFetchHealthData([today]);
@@ -262,6 +290,7 @@ export async function getTodayGoalStatus(
   return calculateDailyStatus(
     today, settings, health.sleepHours, health.proteinGrams, health.calories,
     workouts, supplementIntakes, activeSupplements,
+    ptCompletions, activePTRoutines,
     health.yogaMinutes, health.cardioMinutes
   );
 }
@@ -276,7 +305,9 @@ export async function calculateStreaks(
   workouts: Workout[],
   supplementIntakes: SupplementIntake[],
   activeSupplements: Supplement[],
-  activeRoutine: Routine | undefined
+  activeRoutine: Routine | undefined,
+  ptCompletions: PTCompletion[] = [],
+  activePTRoutines: PTRoutine[] = [],
 ): Promise<StreakCounts> {
   const today = startOfDay(new Date());
   const maxLookback = 30;
@@ -296,10 +327,12 @@ export async function calculateStreaks(
   let calorieStreak = 0, calorieBroken = false;
   let supplementStreak = 0, supplementBroken = false;
   let trainingStreak = 0, trainingBroken = false;
+  let ptStreak = 0, ptBroken = false;
   let perfectStreak = 0, perfectBroken = false;
 
   // Only track calorie streak if goal is set
   const hasCalorieGoal = (settings.calorieGoal || 0) > 0;
+  const trackPT = settings.dailyGoals?.trackPT && activePTRoutines.length > 0;
 
   for (let i = 0; i <= maxLookback; i++) {
     const date = subDays(today, i);
@@ -310,6 +343,7 @@ export async function calculateStreaks(
     const status = calculateDailyStatus(
       date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, supplementIntakes, activeSupplements,
+      ptCompletions, activePTRoutines,
       health.yogaMinutes, health.cardioMinutes
     );
 
@@ -363,6 +397,15 @@ export async function calculateStreaks(
       // Rest day = skip (don't increment, don't break)
     }
 
+    // Physical therapy - today might not be complete yet
+    if (trackPT && !ptBroken) {
+      if (gradeIsHit(status.physicalTherapy.grade)) {
+        ptStreak++;
+      } else if (!isCurrentDay) {
+        ptBroken = true;
+      }
+    }
+
     // Perfect day
     if (!perfectBroken) {
       if (status.perfectDay) {
@@ -374,7 +417,7 @@ export async function calculateStreaks(
 
     // All broken = stop early
     const allBroken = sleepBroken && proteinBroken && supplementBroken && trainingBroken && perfectBroken
-      && (!hasCalorieGoal || calorieBroken);
+      && (!hasCalorieGoal || calorieBroken) && (!trackPT || ptBroken);
     if (allBroken) {
       break;
     }
@@ -416,6 +459,7 @@ export async function calculateStreaks(
     calories: calorieStreak,
     creatine: supplementStreak,
     training: trainingStreak,
+    pt: ptStreak,
     yoga: yogaStreak,
     cardio: cardioStreak,
     perfect: perfectStreak,
@@ -429,7 +473,9 @@ export async function getWeeklyGridData(
   settings: UserSettings,
   workouts: Workout[],
   supplementIntakes: SupplementIntake[],
-  activeSupplements: Supplement[]
+  activeSupplements: Supplement[],
+  ptCompletions: PTCompletion[] = [],
+  activePTRoutines: PTRoutine[] = [],
 ): Promise<{
   days: DailyGoalStatus[];
   todayIndex: number;
@@ -469,6 +515,7 @@ export async function getWeeklyGridData(
         calories: { consumed: 0, goal: settings.calorieGoal || 0, met: false, mode: settings.nutritionMode || 'recomp', grade: 'F' },
         supplements: { taken: 0, total: 0, allTaken: false, grade: 'F' },
         training: { completed: false, grade: 'F' },
+        physicalTherapy: { completed: 0, total: 0, allCompleted: false, grade: 'F' },
         yoga: { minutes: 0 },
         cardio: { minutes: 0 },
         perfectDay: false,
@@ -478,6 +525,7 @@ export async function getWeeklyGridData(
       days.push(calculateDailyStatus(
         date, settings, health.sleepHours, health.proteinGrams, health.calories,
         workouts, supplementIntakes, activeSupplements,
+        ptCompletions, activePTRoutines,
         health.yogaMinutes, health.cardioMinutes
       ));
     }
@@ -496,7 +544,9 @@ export async function getWeeklySummary(
   settings: UserSettings,
   workouts: Workout[],
   supplementIntakes: SupplementIntake[],
-  activeSupplements: Supplement[]
+  activeSupplements: Supplement[],
+  ptCompletions: PTCompletion[] = [],
+  activePTRoutines: PTRoutine[] = [],
 ): Promise<WeeklySummary> {
   const today = startOfDay(new Date());
   const weekStartsOn = settings.weekStartDay === 'sunday' ? 0 : 1;
@@ -516,6 +566,7 @@ export async function getWeeklySummary(
   let proteinDays = 0;
   let creatineDays = 0;
   let trainingDays = 0;
+  let ptDays = 0;
   let yogaMinutes = 0;
   let cardioMinutes = 0;
 
@@ -525,6 +576,7 @@ export async function getWeeklySummary(
     const status = calculateDailyStatus(
       date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, supplementIntakes, activeSupplements,
+      ptCompletions, activePTRoutines,
       health.yogaMinutes, health.cardioMinutes
     );
 
@@ -532,6 +584,7 @@ export async function getWeeklySummary(
     if (status.protein.met) proteinDays++;
     if (status.supplements.allTaken) creatineDays++;
     if (status.training.completed) trainingDays++;
+    if (status.physicalTherapy.allCompleted) ptDays++;
     yogaMinutes += status.yoga.minutes;
     cardioMinutes += status.cardio.minutes;
   }
@@ -541,6 +594,7 @@ export async function getWeeklySummary(
     proteinDays,
     creatineDays,
     trainingDays,
+    ptDays,
     yogaMinutes: Math.round(yogaMinutes),
     cardioMinutes: Math.round(cardioMinutes),
   };
@@ -579,9 +633,15 @@ export async function getDailyGoalStatus(
     supps = allSupps.filter((s: Supplement) => s.isActive);
   }
 
+  // Fetch PT data
+  const allPT = await fetchPTRoutines();
+  const activePT = allPT.filter(r => r.isActive);
+  const ptComps = await fetchPTCompletions();
+
   return calculateDailyStatus(
     date, settings, health.sleepHours, health.proteinGrams, health.calories,
     ws, intakes, supps,
+    ptComps, activePT,
     health.yogaMinutes, health.cardioMinutes
   );
 }
@@ -599,14 +659,17 @@ export async function getDailyGoalStatusRange(
   }
 
   // Pre-fetch all data
-  const [workouts, allSupplements, allIntakes, healthData] = await Promise.all([
+  const [workouts, allSupplements, allIntakes, allPTRoutines, allPTCompletions, healthData] = await Promise.all([
     fetchWorkouts(),
     fetchSupplements(),
     Promise.resolve([]), // We'll fetch per-date below if needed
+    fetchPTRoutines(),
+    fetchPTCompletions(),
     batchFetchHealthData(dates),
   ]);
 
   const activeSupps = allSupplements.filter(s => s.isActive);
+  const activePT = allPTRoutines.filter(r => r.isActive);
 
   // For intakes, we need all of them for the range
   // Fetch all and filter per date in calculateDailyStatus
@@ -620,6 +683,7 @@ export async function getDailyGoalStatusRange(
     return calculateDailyStatus(
       date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, allIntakesCombined, activeSupps,
+      allPTCompletions, activePT,
       health.yogaMinutes, health.cardioMinutes
     );
   });
