@@ -9,6 +9,8 @@ import {
   Modal,
   Platform,
   Animated,
+  Switch,
+  TextInput,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,7 +22,7 @@ import { Button, Card, NumberInput, SearchBar } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
-import { WorkoutSet, Exercise, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem } from '../types';
+import { WorkoutSet, Exercise, Equipment, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
@@ -53,7 +55,7 @@ interface ExerciseHistory {
 
 export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings, locations, workouts, sets, getActiveRoutine } = useData();
+  const { exercises, templates, userSettings, locations, workouts, sets, getActiveRoutine, updateExercise } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -88,6 +90,17 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const prAnimValue = useRef(new Animated.Value(0)).current;
   const [sessionPRs, setSessionPRs] = useState<Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>>(new Map());
   const [fatigueWarnings, setFatigueWarnings] = useState<Map<string, ExerciseFatigueSignal>>(new Map());
+
+  // Edit exercise modal state
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [editUnilateral, setEditUnilateral] = useState(false);
+  const [editNotes, setEditNotes] = useState('');
+  const [editTargetSets, setEditTargetSets] = useState(3);
+  const [editTargetSetsPermanent, setEditTargetSetsPermanent] = useState(false);
+  const [editEquipment, setEditEquipment] = useState<Equipment>('barbell');
+  // Per-exercise target set overrides for this workout only
+  const [targetSetOverrides, setTargetSetOverrides] = useState<Record<string, number>>({});
 
   // Get units from settings
   const units = userSettings?.units || 'imperial';
@@ -217,7 +230,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     // Compute expected set count before async logSet (state may not update immediately)
     const currentExercise = exercises.find(e => e.id === selectedExerciseId);
     const baseTarget = userSettings?.defaultTargetSets ?? 3;
-    const targetSets = currentExercise?.isUnilateral ? baseTarget * 2 : baseTarget;
+    const targetSets = targetSetOverrides[selectedExerciseId] ?? (currentExercise?.isUnilateral ? baseTarget * 2 : baseTarget);
     const currentSetCount = getSetsForExercise(selectedExerciseId).length;
     const willComplete = currentSetCount + 1 >= targetSets;
     const exerciseToMove = selectedExerciseId;
@@ -466,6 +479,78 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     setSwapSearchQuery('');
     setShowAllExercises(false);
     setSwapModalVisible(true);
+  };
+
+  const handleOpenEditModal = (exercise: Exercise) => {
+    const baseTarget = userSettings?.defaultTargetSets ?? 3;
+    const currentOverride = targetSetOverrides[exercise.id];
+    const effectiveTarget = currentOverride ?? (exercise.isUnilateral ? baseTarget * 2 : baseTarget);
+    setEditingExercise(exercise);
+    setEditUnilateral(exercise.isUnilateral ?? false);
+    setEditNotes(exercise.notes ?? '');
+    setEditTargetSets(effectiveTarget);
+    setEditTargetSetsPermanent(false);
+    setEditEquipment(exercise.equipment);
+    setEditModalVisible(true);
+  };
+
+  const handleSaveExerciseEdit = async () => {
+    if (!editingExercise) return;
+    const baseTarget = userSettings?.defaultTargetSets ?? 3;
+
+    // Determine if unilateral changed
+    const unilateralChanged = editUnilateral !== (editingExercise.isUnilateral ?? false);
+    const notesChanged = (editNotes.trim() || undefined) !== (editingExercise.notes || undefined);
+    const equipmentChanged = editEquipment !== editingExercise.equipment;
+
+    // Persist exercise changes (unilateral, notes, equipment are always permanent)
+    if (unilateralChanged || notesChanged || equipmentChanged) {
+      const updatedExercise: Exercise = {
+        ...editingExercise,
+        isUnilateral: editUnilateral || undefined,
+        notes: editNotes.trim() || undefined,
+        equipment: editEquipment,
+      };
+      await updateExercise(updatedExercise);
+    }
+
+    // Handle target sets
+    const defaultForNewUnilateral = editUnilateral ? baseTarget * 2 : baseTarget;
+    if (editTargetSetsPermanent) {
+      // Clear any workout-only override since the user chose permanent
+      setTargetSetOverrides(prev => {
+        const next = { ...prev };
+        delete next[editingExercise.id];
+        return next;
+      });
+      // Note: permanent target set change would require a userSettings update
+      // For now we treat "permanent" target sets as a workout override that persists
+      // since defaultTargetSets is global. We store it as an override instead.
+      if (editTargetSets !== defaultForNewUnilateral) {
+        setTargetSetOverrides(prev => ({
+          ...prev,
+          [editingExercise.id]: editTargetSets,
+        }));
+      }
+    } else {
+      // Workout-only override
+      if (editTargetSets !== defaultForNewUnilateral) {
+        setTargetSetOverrides(prev => ({
+          ...prev,
+          [editingExercise.id]: editTargetSets,
+        }));
+      } else {
+        // Remove override if it matches the default
+        setTargetSetOverrides(prev => {
+          const next = { ...prev };
+          delete next[editingExercise.id];
+          return next;
+        });
+      }
+    }
+
+    setEditModalVisible(false);
+    setEditingExercise(null);
   };
 
   const handleRemoveExercise = (exercise: Exercise) => {
@@ -731,7 +816,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             const completed: string[] = [];
             for (const id of activeWorkout.exerciseIds) {
               const ex = exercises.find(e => e.id === id);
-              const target = ex?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
+              const target = targetSetOverrides[id] ?? (ex?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
               if (getSetsForExercise(id).length >= target) {
                 completed.push(id);
               } else {
@@ -745,7 +830,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
               const currentSets = getSetsForExercise(exerciseId);
               const history = exerciseHistories[exerciseId];
               const isExpanded = selectedExerciseId === exerciseId;
-              const targetSets = exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets;
+              const targetSets = targetSetOverrides[exerciseId] ?? (exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
               const exerciseComplete = currentSets.length >= targetSets;
 
               if (!exercise) return null;
@@ -773,6 +858,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     onRemove={() => handleRemoveExercise(exercise)}
                     onOpenRestTimer={() => setRestTimerModalVisible(true)}
                     onSwap={() => handleOpenSwapModal(exercise)}
+                    onEdit={() => handleOpenEditModal(exercise)}
                     onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
                     hasSwapOptions={hasAnySwapOptions(exercise)}
                     weight={weight}
@@ -1130,6 +1216,143 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* Edit Exercise Modal */}
+        <Modal
+          visible={editModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setEditModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setEditModalVisible(false)}
+          >
+            <View style={[styles.modalContent, styles.editModalContent]} onStartShouldSetResponder={() => true}>
+              <Text style={styles.modalTitle}>
+                {editingExercise?.name ?? 'Edit Exercise'}
+              </Text>
+
+              {/* Unilateral Toggle */}
+              <View style={styles.editRow}>
+                <View style={styles.editRowLeft}>
+                  <Text style={styles.editLabel}>Unilateral (Single Limb)</Text>
+                  <Text style={styles.editHint}>Doubles target sets (e.g., 3 per side = 6 total)</Text>
+                </View>
+                <Switch
+                  value={editUnilateral}
+                  onValueChange={(val) => {
+                    setEditUnilateral(val);
+                    // Auto-adjust target sets when toggling unilateral
+                    const baseTarget = userSettings?.defaultTargetSets ?? 3;
+                    if (val && !editingExercise?.isUnilateral) {
+                      setEditTargetSets(prev => prev * 2);
+                    } else if (!val && editingExercise?.isUnilateral) {
+                      setEditTargetSets(prev => Math.max(1, Math.floor(prev / 2)));
+                    }
+                  }}
+                  trackColor={{ false: colors.backgroundTertiary, true: colors.primary }}
+                />
+              </View>
+
+              {/* Target Sets */}
+              <View style={styles.editRow}>
+                <View style={styles.editRowLeft}>
+                  <Text style={styles.editLabel}>Target Sets</Text>
+                  <Text style={styles.editHint}>
+                    {editTargetSetsPermanent ? 'Applies to future workouts' : 'This workout only'}
+                  </Text>
+                </View>
+                <View style={styles.editTargetSetsControl}>
+                  <TouchableOpacity
+                    style={styles.editTargetSetsButton}
+                    onPress={() => setEditTargetSets(prev => Math.max(1, prev - 1))}
+                  >
+                    <Text style={styles.editTargetSetsButtonText}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.editTargetSetsValue}>{editTargetSets}</Text>
+                  <TouchableOpacity
+                    style={styles.editTargetSetsButton}
+                    onPress={() => setEditTargetSets(prev => prev + 1)}
+                  >
+                    <Text style={styles.editTargetSetsButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Permanent toggle for target sets */}
+              <TouchableOpacity
+                style={styles.editPermanentRow}
+                onPress={() => setEditTargetSetsPermanent(prev => !prev)}
+              >
+                <View style={[
+                  styles.editCheckbox,
+                  editTargetSetsPermanent && styles.editCheckboxChecked,
+                ]}>
+                  {editTargetSetsPermanent && <Text style={styles.editCheckboxCheck}>✓</Text>}
+                </View>
+                <Text style={styles.editPermanentText}>Apply target sets to future workouts</Text>
+              </TouchableOpacity>
+
+              {/* Equipment */}
+              <View style={styles.editRow}>
+                <Text style={styles.editLabel}>Equipment</Text>
+                <Text style={styles.editEquipmentValue}>{EQUIPMENT_DISPLAY_NAMES[editEquipment]}</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editEquipmentScroll}>
+                {(['barbell', 'dumbbell', 'cable', 'machine', 'bodyweight', 'kettlebell', 'other'] as Equipment[]).map(eq => (
+                  <TouchableOpacity
+                    key={eq}
+                    style={[
+                      styles.editEquipmentOption,
+                      editEquipment === eq && styles.editEquipmentOptionSelected,
+                    ]}
+                    onPress={() => setEditEquipment(eq)}
+                  >
+                    <Text style={[
+                      styles.editEquipmentOptionText,
+                      editEquipment === eq && styles.editEquipmentOptionTextSelected,
+                    ]}>
+                      {EQUIPMENT_DISPLAY_NAMES[eq]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Notes */}
+              <View style={styles.editNotesSection}>
+                <Text style={styles.editLabel}>Notes</Text>
+                <TextInput
+                  style={styles.editNotesInput}
+                  value={editNotes}
+                  onChangeText={setEditNotes}
+                  placeholder="Cable height, bench angle, grip width, etc."
+                  placeholderTextColor={colors.textTertiary}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              {/* Save / Cancel */}
+              <View style={styles.editButtonRow}>
+                <TouchableOpacity
+                  style={styles.editCancelButton}
+                  onPress={() => setEditModalVisible(false)}
+                >
+                  <Text style={styles.editCancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.editSaveButton}
+                  onPress={handleSaveExerciseEdit}
+                >
+                  <Text style={styles.editSaveButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -1208,6 +1431,7 @@ interface ExerciseCardProps {
   onRemove: () => void;
   onOpenRestTimer: () => void;
   onSwap: () => void;
+  onEdit: () => void;
   onViewHistory: (exerciseId: string) => void;
   hasSwapOptions: boolean;
   weight: number;
@@ -1237,6 +1461,7 @@ function ExerciseCard({
   onRemove,
   onOpenRestTimer,
   onSwap,
+  onEdit,
   onViewHistory,
   hasSwapOptions,
   weight,
@@ -1294,6 +1519,16 @@ function ExerciseCard({
               <Text style={styles.swapButtonText}>Swap</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              onEdit();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="pencil" size={14} color={colors.textSecondary} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.removeButton}
             onPress={(e) => {
@@ -2060,6 +2295,159 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.sm,
     fontStyle: 'italic',
+  },
+  // Edit button in exercise header
+  editButton: {
+    padding: spacing.xs,
+    marginRight: spacing.xs,
+  },
+  // Edit exercise modal styles
+  editModalContent: {
+    maxHeight: '85%',
+  },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  editRowLeft: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  editLabel: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  editHint: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  editTargetSetsControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  editTargetSetsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editTargetSetsButtonText: {
+    fontSize: typography.size.xl,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  editTargetSetsValue: {
+    fontSize: typography.size.xl,
+    color: colors.text,
+    fontWeight: typography.weight.bold,
+    minWidth: 30,
+    textAlign: 'center',
+  },
+  editPermanentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  editCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: borderRadius.sm,
+    borderWidth: 2,
+    borderColor: colors.textSecondary,
+    marginRight: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editCheckboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  editCheckboxCheck: {
+    color: '#fff',
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+  },
+  editPermanentText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  editEquipmentValue: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  editEquipmentScroll: {
+    marginBottom: spacing.md,
+    marginTop: spacing.xs,
+  },
+  editEquipmentOption: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    marginRight: spacing.sm,
+  },
+  editEquipmentOptionSelected: {
+    backgroundColor: colors.primary,
+  },
+  editEquipmentOptionText: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+  },
+  editEquipmentOptionTextSelected: {
+    color: '#fff',
+    fontWeight: typography.weight.semibold,
+  },
+  editNotesSection: {
+    paddingVertical: spacing.md,
+  },
+  editNotesInput: {
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    color: colors.text,
+    fontSize: typography.size.md,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  editButtonRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+  },
+  editCancelButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+  },
+  editCancelButtonText: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    fontWeight: typography.weight.medium,
+  },
+  editSaveButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  editSaveButtonText: {
+    fontSize: typography.size.md,
+    color: '#fff',
+    fontWeight: typography.weight.semibold,
   },
 });
 
