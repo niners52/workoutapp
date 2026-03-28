@@ -112,6 +112,7 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
   const [manualHeightFeet, setManualHeightFeet] = useState('');
   const [manualHeightInches, setManualHeightInches] = useState('');
   const [caliperModalVisible, setCaliperModalVisible] = useState(false);
+  const [bodyFatOptionsVisible, setBodyFatOptionsVisible] = useState(false);
 
   // Recovery state
   const [recoveryResult, setRecoveryResult] = useState<RecoveryResult | null>(null);
@@ -824,7 +825,7 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
                 style={styles.caliperButton}
                 onPress={() => setCaliperModalVisible(true)}
               >
-                <Text style={styles.caliperButtonText}>Caliper</Text>
+                <Text style={styles.caliperButtonText}>Body Fat %</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.logButton}
@@ -854,22 +855,30 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
                 )}
               </Card>
 
-              {/* Body Fat */}
-              <Card style={styles.bodyMeasurementCard}>
-                <Text style={styles.bodyMeasurementLabel}>Body Fat</Text>
-                <Text style={styles.bodyMeasurementValue}>
-                  {latestMeasurement?.bodyFatPercentage
-                    ? `${latestMeasurement.bodyFatPercentage.toFixed(1)}%`
-                    : healthKitBodyData?.bodyFatPercentage
-                      ? `${healthKitBodyData.bodyFatPercentage.toFixed(1)}%`
-                      : '--'}
-                </Text>
-                {latestMeasurement?.date && latestMeasurement?.bodyFatPercentage && (
-                  <Text style={styles.bodyMeasurementDate}>
-                    {format(new Date(latestMeasurement.date), 'MMM d')}
+              {/* Body Fat - tappable to show update options */}
+              <TouchableOpacity
+                style={styles.bodyMeasurementCard}
+                onPress={() => setBodyFatOptionsVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Card style={styles.bodyMeasurementCardInner}>
+                  <Text style={styles.bodyMeasurementLabel}>Body Fat</Text>
+                  <Text style={styles.bodyMeasurementValue}>
+                    {latestMeasurement?.bodyFatPercentage
+                      ? `${latestMeasurement.bodyFatPercentage.toFixed(1)}%`
+                      : healthKitBodyData?.bodyFatPercentage
+                        ? `${healthKitBodyData.bodyFatPercentage.toFixed(1)}%`
+                        : '--'}
                   </Text>
-                )}
-              </Card>
+                  {latestMeasurement?.date && latestMeasurement?.bodyFatPercentage ? (
+                    <Text style={styles.bodyMeasurementDate}>
+                      {format(new Date(latestMeasurement.date), 'MMM d')}
+                    </Text>
+                  ) : (
+                    <Text style={styles.bodyFatUpdateHint}>Tap to update</Text>
+                  )}
+                </Card>
+              </TouchableOpacity>
 
               {/* Height */}
               <Card style={styles.bodyMeasurementCard}>
@@ -1094,6 +1103,64 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
         onSave={saveCaliperResults}
         currentBodyWeight={latestMeasurement?.weight}
       />
+
+      {/* Body Fat Options Modal */}
+      <Modal
+        visible={bodyFatOptionsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBodyFatOptionsVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.bodyFatOverlay}
+          activeOpacity={1}
+          onPress={() => setBodyFatOptionsVisible(false)}
+        >
+          <View style={styles.bodyFatSheet}>
+            <Text style={styles.bodyFatSheetTitle}>Update Body Fat %</Text>
+
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={styles.bodyFatOption}
+                onPress={() => {
+                  setBodyFatOptionsVisible(false);
+                  syncFromHealthKit();
+                }}
+              >
+                <Text style={styles.bodyFatOptionText}>Sync from Apple Health</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.bodyFatOption}
+              onPress={() => {
+                setBodyFatOptionsVisible(false);
+                setLogModalVisible(true);
+              }}
+            >
+              <Text style={styles.bodyFatOptionText}>Enter Manually</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.bodyFatOption}
+              onPress={() => {
+                setBodyFatOptionsVisible(false);
+                setCaliperModalVisible(true);
+              }}
+            >
+              <Text style={styles.bodyFatOptionText}>Calculate from Calipers</Text>
+              <Text style={styles.bodyFatOptionHint}>Skinfold measurement</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.bodyFatCancel}
+              onPress={() => setBodyFatOptionsVisible(false)}
+            >
+              <Text style={styles.bodyFatCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Manual Calorie Entry Modal */}
       <Modal
@@ -1431,6 +1498,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.base,
   },
+  bodyMeasurementCardInner: {
+    alignItems: 'center',
+    padding: spacing.base,
+  },
   bodyMeasurementLabel: {
     fontSize: typography.size.xs,
     color: colors.textSecondary,
@@ -1446,6 +1517,55 @@ const styles = StyleSheet.create({
   bodyMeasurementDate: {
     fontSize: typography.size.xs,
     color: colors.textTertiary,
+  },
+  bodyFatUpdateHint: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+  },
+  bodyFatOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  bodyFatSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  bodyFatSheetTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  bodyFatOption: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    marginBottom: spacing.sm,
+  },
+  bodyFatOptionText: {
+    fontSize: typography.size.base,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
+  },
+  bodyFatOptionHint: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  bodyFatCancel: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  bodyFatCancelText: {
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
   },
   emptyBodyCard: {
     alignItems: 'center',

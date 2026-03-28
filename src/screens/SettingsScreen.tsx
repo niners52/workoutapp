@@ -1329,7 +1329,7 @@ export function SettingsScreen() {
             </Card>
           )}
           <Text style={styles.hint}>
-            Used for caliper body fat testing on the Analytics screen
+            Used for skinfold body fat calculation on the Analytics screen
           </Text>
         </View>
 
