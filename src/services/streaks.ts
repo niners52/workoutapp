@@ -190,6 +190,7 @@ function calculateDailyStatus(
   activePTRoutines: PTRoutine[] = [],
   yogaMinutes: number = 0,
   cardioMinutes: number = 0,
+  isScheduledCardioDay: boolean = false,
 ): DailyGoalStatus {
   const dateStr = format(date, 'yyyy-MM-dd');
   const dailyGoals = settings.dailyGoals || DEFAULT_DAILY_GOALS;
@@ -223,6 +224,10 @@ function calculateDailyStatus(
       if (!w.completedAt) return false;
       return format(new Date(w.completedAt), 'yyyy-MM-dd') === dateStr;
     });
+    // HealthKit cardio/yoga counts as training on scheduled cardio days
+    if (!trainingCompleted && isScheduledCardioDay && (cardioMinutes > 0 || yogaMinutes > 0)) {
+      trainingCompleted = true;
+    }
   }
   const trainingGrade = getBooleanGrade(trainingCompleted);
 
@@ -342,11 +347,18 @@ export async function calculateStreaks(
     const isCurrentDay = i === 0;
     const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0, yogaMinutes: 0, cardioMinutes: 0 };
 
+    // Check if this day is a scheduled cardio/active_recovery day in the routine
+    const streakDayOfWeek = date.getDay();
+    const streakDaySchedule = activeRoutine?.daySchedule.find(d => d.day === streakDayOfWeek);
+    const streakDayType = streakDaySchedule?.dayType || (streakDaySchedule?.templateIds?.length ? 'workout' : 'rest');
+    const isCardioDay = streakDayType === 'cardio' || streakDayType === 'active_recovery';
+
     const status = calculateDailyStatus(
       date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, supplementIntakes, activeSupplements,
       ptCompletions, activePTRoutines,
-      health.yogaMinutes, health.cardioMinutes
+      health.yogaMinutes, health.cardioMinutes,
+      isCardioDay
     );
 
     // Sleep - last night's data is final, so today counts as met or broken
@@ -549,6 +561,7 @@ export async function getWeeklySummary(
   activeSupplements: Supplement[],
   ptCompletions: PTCompletion[] = [],
   activePTRoutines: PTRoutine[] = [],
+  activeRoutine?: Routine,
 ): Promise<WeeklySummary> {
   const today = startOfDay(new Date());
   const weekStartsOn = settings.weekStartDay === 'sunday' ? 0 : 1;
@@ -575,11 +588,18 @@ export async function getWeeklySummary(
   for (const date of datesToFetch) {
     const dateStr = format(date, 'yyyy-MM-dd');
     const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0, yogaMinutes: 0, cardioMinutes: 0 };
+
+    const summaryDayOfWeek = date.getDay();
+    const summaryDaySchedule = activeRoutine?.daySchedule.find(d => d.day === summaryDayOfWeek);
+    const summaryDayType = summaryDaySchedule?.dayType || (summaryDaySchedule?.templateIds?.length ? 'workout' : 'rest');
+    const isCardioDay = summaryDayType === 'cardio' || summaryDayType === 'active_recovery';
+
     const status = calculateDailyStatus(
       date, settings, health.sleepHours, health.proteinGrams, health.calories,
       workouts, supplementIntakes, activeSupplements,
       ptCompletions, activePTRoutines,
-      health.yogaMinutes, health.cardioMinutes
+      health.yogaMinutes, health.cardioMinutes,
+      isCardioDay
     );
 
     sleepHours += status.sleep.hours;

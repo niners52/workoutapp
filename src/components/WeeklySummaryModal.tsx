@@ -6,6 +6,7 @@ import {
   Modal,
   ScrollView,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,6 +18,8 @@ import { formatVolume } from '../services/units';
 import { PersonalRecord, getExercisePRsInDateRange } from '../services/personalRecords';
 import { getWeeklyGridData, DailyGoalStatus } from '../services/streaks';
 import { getCachedInsights, Insight } from '../services/insights';
+import { getHealthKitWorkoutsForRange } from '../services/healthKitCache';
+import { HealthKitWorkout } from '../services/healthKit';
 import { WeekStartDay } from '../types';
 
 interface WeeklySummaryData {
@@ -51,6 +54,7 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
   const [data, setData] = useState<WeeklySummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [weekInsights, setWeekInsights] = useState<Insight[]>([]);
+  const [hkWorkouts, setHkWorkouts] = useState<HealthKitWorkout[]>([]);
 
   const units = userSettings?.units || 'imperial';
   const weekStartDay: WeekStartDay = userSettings?.weekStartDay || 'sunday';
@@ -186,6 +190,20 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
         setWeekInsights(insights.slice(0, 3));
       } catch {
         setWeekInsights([]);
+      }
+
+      // Load HealthKit cardio workouts for the week
+      if (Platform.OS === 'ios') {
+        try {
+          const weekWorkouts = await getHealthKitWorkoutsForRange(weekStart, weekEnd);
+          const cardioYoga = weekWorkouts.filter(w =>
+            w.activityName !== 'TraditionalStrengthTraining' &&
+            w.activityName !== 'FunctionalStrengthTraining'
+          );
+          setHkWorkouts(cardioYoga);
+        } catch {
+          setHkWorkouts([]);
+        }
       }
     } catch (error) {
       console.error('[WeeklySummary] Error loading data:', error);
@@ -408,6 +426,51 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
                     </Text>
                   )}
                 </View>
+              </Card>
+            )}
+
+            {/* Cardio Activities from HealthKit */}
+            {hkWorkouts.length > 0 && (
+              <Card style={styles.insightsCard}>
+                <View style={styles.insightsHeader}>
+                  <MaterialCommunityIcons name="run" size={20} color={colors.chartCardio} />
+                  <Text style={styles.sectionTitle}>Cardio Activities</Text>
+                </View>
+                {hkWorkouts.slice(0, 10).map((hk) => {
+                  const durationMin = Math.round(hk.duration);
+                  const durationStr = durationMin >= 60
+                    ? `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`
+                    : `${durationMin}m`;
+                  const displayName: Record<string, string> = {
+                    'Running': 'Run', 'Cycling': 'Cycling', 'Walking': 'Walk',
+                    'Hiking': 'Hike', 'Swimming': 'Swim', 'Yoga': 'Yoga',
+                    'HighIntensityIntervalTraining': 'HIIT', 'CrossTraining': 'Cross Training',
+                    'Elliptical': 'Elliptical', 'Rowing': 'Rowing',
+                  };
+                  return (
+                    <View key={hk.id} style={styles.hkActivityRow}>
+                      <Text style={styles.hkActivityDay}>
+                        {format(new Date(hk.start), 'EEE')}
+                      </Text>
+                      <Text style={styles.hkActivityName} numberOfLines={1}>
+                        {displayName[hk.activityName] || hk.activityName}
+                      </Text>
+                      <Text style={styles.hkActivityDuration}>{durationStr}</Text>
+                    </View>
+                  );
+                })}
+                {(() => {
+                  const totalMin = Math.round(hkWorkouts.reduce((sum, w) => sum + w.duration, 0));
+                  const totalCal = Math.round(hkWorkouts.reduce((sum, w) => sum + w.calories, 0));
+                  const totalStr = totalMin >= 60
+                    ? `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`
+                    : `${totalMin}m`;
+                  return (
+                    <Text style={styles.hkActivityTotal}>
+                      Total: {totalStr}{totalCal > 0 ? `  ·  ${totalCal.toLocaleString()} cal` : ''}
+                    </Text>
+                  );
+                })()}
               </Card>
             )}
 
@@ -670,6 +733,34 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
     lineHeight: typography.size.xs * 1.5,
+  },
+  hkActivityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  hkActivityDay: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    width: 36,
+  },
+  hkActivityName: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+    flex: 1,
+  },
+  hkActivityDuration: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    color: colors.textSecondary,
+  },
+  hkActivityTotal: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
   },
   deloadNotice: {
     flexDirection: 'row',

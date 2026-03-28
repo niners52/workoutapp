@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { format } from 'date-fns';
-import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition, getLatestWeight as getHealthKitLatestWeight, getDailyYogaCardioMinutes, YogaCardioMinutes } from './healthKit';
+import { format, startOfDay, endOfDay } from 'date-fns';
+import { getSleepData as getHealthKitSleep, getNutritionData as getHealthKitNutrition, getLatestWeight as getHealthKitLatestWeight, getDailyYogaCardioMinutes, YogaCardioMinutes, getWorkoutsFromHealthKit, HealthKitWorkout } from './healthKit';
 import { SleepData, NutritionData } from '../types';
 import { getManualSleepEntry } from './storage';
 
@@ -28,6 +28,7 @@ const CACHE_KEYS = {
   SLEEP: (date: string) => `healthkit_sleep_${date}`,
   NUTRITION: (date: string) => `healthkit_nutrition_${date}`,
   YOGA_CARDIO: (date: string) => `healthkit_yoga_cardio_${date}`,
+  WORKOUTS: (date: string) => `healthkit_workouts_${date}`,
   BODY_WEIGHT: 'healthkit_body_weight',
 };
 
@@ -211,6 +212,60 @@ export async function batchFetchHealthData(
   return result;
 }
 
+/**
+ * Get HealthKit workouts (cardio, yoga, etc.) for a single date. Cached.
+ */
+export async function getHealthKitWorkoutsForDate(date: Date): Promise<HealthKitWorkout[]> {
+  const dateStr = format(date, 'yyyy-MM-dd');
+  const cacheKey = CACHE_KEYS.WORKOUTS(dateStr);
+  const cacheDuration = getCacheDuration(date);
+
+  try {
+    const cached = await AsyncStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached) as CachedData<HealthKitWorkout[]>;
+      if (Date.now() - parsed.timestamp < cacheDuration) {
+        return parsed.data || [];
+      }
+    }
+
+    const fresh = await withTimeout(
+      getWorkoutsFromHealthKit(startOfDay(date), endOfDay(date)),
+      5000
+    );
+
+    const data = fresh || [];
+    await AsyncStorage.setItem(
+      cacheKey,
+      JSON.stringify({ data, timestamp: Date.now() })
+    ).catch(() => {});
+
+    return data;
+  } catch (error) {
+    console.error('Error getting cached HealthKit workouts:', error);
+    return [];
+  }
+}
+
+/**
+ * Get HealthKit workouts for a date range (e.g., a week). Uses per-day cache.
+ */
+export async function getHealthKitWorkoutsForRange(
+  startDate: Date,
+  endDate: Date
+): Promise<HealthKitWorkout[]> {
+  const allWorkouts: HealthKitWorkout[] = [];
+  const current = new Date(startDate);
+
+  while (current <= endDate) {
+    const dayWorkouts = await getHealthKitWorkoutsForDate(new Date(current));
+    allWorkouts.push(...dayWorkouts);
+    current.setDate(current.getDate() + 1);
+  }
+
+  return allWorkouts;
+}
+
 export async function clearHealthKitCache(): Promise<void> {
   try {
     const keys = await AsyncStorage.getAllKeys();
@@ -229,6 +284,7 @@ export async function clearCacheForDate(date: Date): Promise<void> {
       CACHE_KEYS.SLEEP(dateStr),
       CACHE_KEYS.NUTRITION(dateStr),
       CACHE_KEYS.YOGA_CARDIO(dateStr),
+      CACHE_KEYS.WORKOUTS(dateStr),
     ]);
     console.log(`Cleared cache for ${dateStr}`);
   } catch (error) {

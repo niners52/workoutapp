@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,7 +33,8 @@ import {
   getPTCompletions,
   getUserSettings,
 } from '../services/storage';
-import { batchFetchHealthData } from '../services/healthKitCache';
+import { batchFetchHealthData, getHealthKitWorkoutsForDate } from '../services/healthKitCache';
+import { HealthKitWorkout } from '../services/healthKit';
 import { checkCalorieGoalMet } from '../services/streaks';
 import { Workout, DEFAULT_DAILY_GOALS } from '../types';
 import { RootStackParamList } from '../navigation/types';
@@ -51,6 +53,27 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
   const [yogaDates, setYogaDates] = useState<Set<string>>(new Set());
   const [cardioDates, setCardioDates] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
+  const [healthKitWorkouts, setHealthKitWorkouts] = useState<HealthKitWorkout[]>([]);
+
+  // Load HealthKit workouts when a date is selected
+  useEffect(() => {
+    if (!selectedDate || Platform.OS !== 'ios') {
+      setHealthKitWorkouts([]);
+      return;
+    }
+    let cancelled = false;
+    getHealthKitWorkoutsForDate(selectedDate).then(workouts => {
+      if (!cancelled) {
+        // Filter out strength training (already shown from local workouts)
+        const cardioYoga = workouts.filter(w =>
+          w.activityName !== 'TraditionalStrengthTraining' &&
+          w.activityName !== 'FunctionalStrengthTraining'
+        );
+        setHealthKitWorkouts(cardioYoga);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [selectedDate]);
 
   /**
    * Load goal status for the current month.
@@ -210,6 +233,43 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
     return template?.name || 'Custom Workout';
   };
 
+  const formatHKDuration = (minutes: number): string => {
+    if (minutes < 60) return `${Math.round(minutes)}m`;
+    const hrs = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+  };
+
+  const formatHKDistance = (miles: number): string => {
+    if (userSettings.units === 'metric') {
+      return `${(miles * 1.60934).toFixed(1)} km`;
+    }
+    return `${miles.toFixed(1)} mi`;
+  };
+
+  const getActivityDisplayName = (name: string): string => {
+    const map: Record<string, string> = {
+      'Running': 'Outdoor Run',
+      'Cycling': 'Cycling',
+      'Walking': 'Walk',
+      'Hiking': 'Hike',
+      'Swimming': 'Swim',
+      'Yoga': 'Yoga',
+      'Elliptical': 'Elliptical',
+      'Rowing': 'Rowing',
+      'StairClimbing': 'Stair Climbing',
+      'Dance': 'Dance',
+      'HighIntensityIntervalTraining': 'HIIT',
+      'CrossTraining': 'Cross Training',
+      'JumpRope': 'Jump Rope',
+      'Kickboxing': 'Kickboxing',
+      'StepTraining': 'Step Training',
+    };
+    return map[name] || name;
+  };
+
+  const hasAnyWorkouts = selectedDateWorkouts.length > 0 || healthKitWorkouts.length > 0;
+
   const content = (
     <ScrollView
       style={styles.container}
@@ -242,20 +302,21 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
             <Text style={styles.sectionTitle}>
               {format(selectedDate, 'EEEE, MMMM d, yyyy')}
             </Text>
-            {selectedDateWorkouts.length === 0 ? (
+            {!hasAnyWorkouts ? (
               <Card>
                 <Text style={styles.emptyText}>No workouts on this day</Text>
               </Card>
             ) : (
               <Card padding="none">
+                {/* Strength workouts (local) */}
                 {selectedDateWorkouts.map((workout, index) => (
                   <TouchableOpacity
                     key={workout.id}
                     style={[
                       styles.workoutItem,
                       index === 0 && styles.workoutItemFirst,
-                      index === selectedDateWorkouts.length - 1 && styles.workoutItemLast,
-                      index < selectedDateWorkouts.length - 1 && styles.workoutItemBorder,
+                      index === selectedDateWorkouts.length - 1 && healthKitWorkouts.length === 0 && styles.workoutItemLast,
+                      (index < selectedDateWorkouts.length - 1 || healthKitWorkouts.length > 0) && styles.workoutItemBorder,
                     ]}
                     onPress={() => handleWorkoutPress(workout.id)}
                     activeOpacity={0.7}
@@ -278,6 +339,47 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
                     <Text style={styles.chevron}>›</Text>
                   </TouchableOpacity>
                 ))}
+
+                {/* HealthKit cardio/yoga workouts */}
+                {healthKitWorkouts.map((hkWorkout, index) => {
+                  const isLast = index === healthKitWorkouts.length - 1;
+                  const details: string[] = [];
+                  if (hkWorkout.calories > 0) details.push(`${Math.round(hkWorkout.calories)} cal`);
+                  if (hkWorkout.distance > 0) details.push(formatHKDistance(hkWorkout.distance));
+
+                  return (
+                    <View
+                      key={hkWorkout.id}
+                      style={[
+                        styles.workoutItem,
+                        selectedDateWorkouts.length === 0 && index === 0 && styles.workoutItemFirst,
+                        isLast && styles.workoutItemLast,
+                        !isLast && styles.workoutItemBorder,
+                      ]}
+                    >
+                      <View style={styles.hkWorkoutIcon}>
+                        <Text style={styles.hkWorkoutEmoji}>
+                          {hkWorkout.activityName === 'Yoga' ? '🧘' : '🏃'}
+                        </Text>
+                      </View>
+                      <View style={styles.workoutInfo}>
+                        <View style={styles.workoutTitleRow}>
+                          <Text style={styles.workoutTitle}>
+                            {getActivityDisplayName(hkWorkout.activityName)}
+                          </Text>
+                          <Text style={styles.hkDuration}>
+                            {formatHKDuration(hkWorkout.duration)}
+                          </Text>
+                        </View>
+                        <Text style={styles.workoutTime}>
+                          {details.length > 0 ? details.join(' · ') : ''}
+                          {details.length > 0 && hkWorkout.sourceName ? '  ·  ' : ''}
+                          {hkWorkout.sourceName || ''}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </Card>
             )}
           </View>
@@ -410,6 +512,19 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xl,
     color: colors.textTertiary,
     marginLeft: spacing.sm,
+  },
+  hkWorkoutIcon: {
+    width: 28,
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  hkWorkoutEmoji: {
+    fontSize: 18,
+  },
+  hkDuration: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    color: colors.textSecondary,
   },
   statsRow: {
     flexDirection: 'row',

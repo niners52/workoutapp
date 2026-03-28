@@ -353,7 +353,7 @@ export function HomeScreen() {
           .catch(e => { console.error('[HomeScreen] Streaks error:', e); return null; }),
         getWeeklyGridData(freshSettings, freshWorkouts, freshIntakes, activeSupps, freshPTCompletions, activePT)
           .catch(e => { console.error('[HomeScreen] Grid error:', e); return null; }),
-        getWeeklySummary(freshSettings, freshWorkouts, freshIntakes, activeSupps, freshPTCompletions, activePT)
+        getWeeklySummary(freshSettings, freshWorkouts, freshIntakes, activeSupps, freshPTCompletions, activePT, currentRoutine)
           .catch(e => { console.error('[HomeScreen] Summary error:', e); return null; }),
       ]);
 
