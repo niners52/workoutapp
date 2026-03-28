@@ -112,29 +112,41 @@ export async function getWorkoutsFromHealthKit(
   const options = {
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
-    type: 'Workout',
   };
 
   return new Promise((resolve) => {
-    AppleHealthKit.getSamples(options, (error: string, results: any[]) => {
+    // Use getAnchoredWorkouts — getSamples does NOT support Workout type
+    // getAnchoredWorkouts returns { data: HKWorkoutQueriedSampleType[], anchor: string }
+    if (typeof AppleHealthKit.getAnchoredWorkouts !== 'function') {
+      console.log('[HealthKit] getAnchoredWorkouts not available');
+      resolve([]);
+      return;
+    }
+
+    AppleHealthKit.getAnchoredWorkouts(options, (error: any, results: any) => {
       if (error) {
-        console.log('Error getting workouts from HealthKit:', error);
+        console.log('[HealthKit] Error getting workouts:', error);
         resolve([]);
         return;
       }
 
-      const workouts: HealthKitWorkout[] = (results || []).map((sample: any) => ({
-        id: sample.id || `hk-${sample.startDate}`,
+      // Results is { data: [...], anchor: "..." }
+      const samples = results?.data || results || [];
+      const workoutArray = Array.isArray(samples) ? samples : [];
+
+      const workouts: HealthKitWorkout[] = workoutArray.map((sample: any) => ({
+        id: sample.id || `hk-${sample.start || sample.startDate}`,
         activityName: sample.activityName || 'Workout',
         calories: sample.calories || 0,
         distance: sample.distance || 0,
-        start: sample.startDate,
-        end: sample.endDate,
-        duration: sample.duration ? sample.duration / 60 : 0,
+        start: sample.start || sample.startDate || '',
+        end: sample.end || sample.endDate || '',
+        duration: sample.duration ? sample.duration / 60 : 0, // convert seconds to minutes
         sourceName: sample.sourceName || 'Unknown',
         sourceId: sample.sourceId || '',
       }));
 
+      console.log(`[HealthKit] Fetched ${workouts.length} workouts for ${format(startDate, 'yyyy-MM-dd')}`);
       resolve(workouts);
     });
   });
