@@ -1,16 +1,19 @@
 // Core data types for the workout tracking app
 
-export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'smith_machine' | 'kettlebell' | 'bodyweight' | 'medicine_ball' | 'other';
+export type Equipment = 'barbell' | 'dumbbell' | 'cable' | 'machine' | 'smith_machine' | 'kettlebell' | 'bodyweight' | 'medicine_ball' | 'resistance_band' | 'landmine' | 'trap_bar' | 'other';
 
 export const EQUIPMENT_DISPLAY_NAMES: Record<Equipment, string> = {
   barbell: 'Barbell',
-  dumbbell: 'Dumbbells',
+  dumbbell: 'Dumbbell',
   cable: 'Cable',
   machine: 'Machine',
   smith_machine: 'Smith Machine',
   kettlebell: 'Kettlebell',
   bodyweight: 'Bodyweight',
   medicine_ball: 'Medicine Ball',
+  resistance_band: 'Resistance Band',
+  landmine: 'Landmine',
+  trap_bar: 'Trap Bar',
   other: 'Other',
 };
 
@@ -218,8 +221,11 @@ export type CableAccessory =
   | 'rope'
   | 'v_bar'
   | 'd_handle'
+  | 'single_handle'
+  | 'double_handle'
   | 'ankle_strap'
   | 'lat_bar'
+  | 'close_grip_handle'
   | 'other';
 
 export const CABLE_ACCESSORY_DISPLAY_NAMES: Record<CableAccessory, string> = {
@@ -228,8 +234,11 @@ export const CABLE_ACCESSORY_DISPLAY_NAMES: Record<CableAccessory, string> = {
   rope: 'Rope',
   v_bar: 'V-Bar',
   d_handle: 'D-Handle',
+  single_handle: 'Single Handle',
+  double_handle: 'Double Handle',
   ankle_strap: 'Ankle Strap',
   lat_bar: 'Lat Bar',
+  close_grip_handle: 'Close Grip Handle',
   other: 'Other',
 };
 
@@ -239,8 +248,11 @@ export const ALL_CABLE_ACCESSORIES: CableAccessory[] = [
   'rope',
   'v_bar',
   'd_handle',
+  'single_handle',
+  'double_handle',
   'ankle_strap',
   'lat_bar',
+  'close_grip_handle',
   'other',
 ];
 
@@ -257,6 +269,7 @@ export const ALL_MACHINE_WEIGHT_TYPES: MachineWeightType[] = ['plate_loaded', 's
 export interface Exercise {
   id: string;
   name: string;
+  baseName?: string; // Exercise name without equipment prefix (e.g., "Bicep Curl")
   primaryMuscleGroup?: PrimaryMuscleGroup; // Deprecated: use primaryMuscleGroups
   primaryMuscleGroups?: PrimaryMuscleGroup[]; // Can have multiple primary muscles (optional for backward compat)
   secondaryMuscleGroups?: PrimaryMuscleGroup[];
@@ -268,6 +281,22 @@ export interface Exercise {
   isCustom?: boolean;
   isUnilateral?: boolean; // Single-limb exercise — doubles target sets, halves volume credit
   notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
+}
+
+/**
+ * Get the structured display name for an exercise.
+ * If baseName is set: [Equipment] [baseName] or Cable ([Attachment]) [baseName]
+ * Otherwise falls back to exercise.name for backward compatibility.
+ */
+export function getExerciseDisplayName(exercise: Exercise): string {
+  if (!exercise.baseName) return exercise.name;
+
+  const equipName = EQUIPMENT_DISPLAY_NAMES[exercise.equipment];
+  if (exercise.equipment === 'cable' && exercise.cableAccessory) {
+    const accessory = CABLE_ACCESSORY_DISPLAY_NAMES[exercise.cableAccessory];
+    return `Cable (${accessory}) ${exercise.baseName}`;
+  }
+  return `${equipName} ${exercise.baseName}`;
 }
 
 // Template

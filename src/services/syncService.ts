@@ -102,6 +102,7 @@ export async function syncExercise(exercise: Exercise): Promise<void> {
       id: exercise.id,
       user_id: userId,
       name: exercise.name,
+      base_name: exercise.baseName || null,
       primary_muscle_groups: exercise.primaryMuscleGroups || [],
       secondary_muscle_groups: exercise.secondaryMuscleGroups || [],
       equipment: exercise.equipment,
@@ -938,6 +939,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
     const exercises: Exercise[] = (exercisesResult.data || []).map(row => ({
       id: row.id,
       name: row.name,
+      baseName: row.base_name || undefined,
       primaryMuscleGroups: row.primary_muscle_groups || [],
       secondaryMuscleGroups: row.secondary_muscle_groups || [],
       equipment: row.equipment,

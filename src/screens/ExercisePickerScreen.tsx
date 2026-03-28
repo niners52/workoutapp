@@ -42,6 +42,7 @@ export function ExercisePickerScreen() {
     return exercises.filter(
       e =>
         e.name.toLowerCase().includes(query) ||
+        (e.baseName && e.baseName.toLowerCase().includes(query)) ||
         getPrimaryMusclesText(e).toLowerCase().includes(query)
     );
   }, [exercises, searchQuery]);

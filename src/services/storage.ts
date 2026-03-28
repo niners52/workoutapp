@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Exercise,
+  Equipment,
   Template,
   Workout,
   WorkoutSet,
@@ -15,6 +16,7 @@ import {
   BodyMeasurementTypeKey,
   ProgressPhoto,
   ManualSleepEntry,
+  getExerciseDisplayName,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
@@ -51,7 +53,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 7;
+const CURRENT_MIGRATION_VERSION = 8;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -133,6 +135,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 7) {
     await migrateToV7();
+  }
+
+  if (currentVersion < 8) {
+    await migrateToV8();
   }
 
   // Update migration version
@@ -356,6 +362,50 @@ async function migrateToV7(): Promise<void> {
 
   await setItem(STORAGE_KEYS.USER_SETTINGS, updatedSettings);
   console.log('Migration to V7 complete - added daily and weekly goals');
+}
+
+// Migration V8: Add baseName to exercises and standardize naming
+async function migrateToV8(): Promise<void> {
+  console.log('Running migration to V8 - standardizing exercise names...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  if (exercises.length === 0) return;
+
+  // Infer equipment type from name keywords
+  function inferEquipment(name: string, currentEquipment: Equipment): Equipment {
+    const n = name.toLowerCase();
+    if (n.includes('cable')) return 'cable';
+    if (n.includes('dumbbell') || n.startsWith('db ') || n.includes(' db ')) return 'dumbbell';
+    if (n.includes('barbell') || n.startsWith('bb ') || n.includes(' bb ')) return 'barbell';
+    if (n.includes('smith')) return 'smith_machine';
+    if (n.includes('kettlebell') || n.startsWith('kb ') || n.includes(' kb ')) return 'kettlebell';
+    if (n.includes('bodyweight') || n.startsWith('bw ') || n.includes(' bw ')) return 'bodyweight';
+    if (n.includes('band')) return 'resistance_band';
+    if (n.includes('landmine')) return 'landmine';
+    if (n.includes('trap bar')) return 'trap_bar';
+    return currentEquipment;
+  }
+
+  const updated = exercises.map(e => {
+    if (e.baseName) return e; // Already migrated
+
+    const inferredEquipment = inferEquipment(e.name, e.equipment);
+    // Set baseName to the full existing name (user will manually clean up duplicate prefixes)
+    const baseName = e.name;
+    // Build the new structured display name
+    const updatedExercise = {
+      ...e,
+      baseName,
+      equipment: inferredEquipment,
+    };
+    // Update name to the structured format
+    updatedExercise.name = getExerciseDisplayName(updatedExercise);
+
+    return updatedExercise;
+  });
+
+  await setItem(STORAGE_KEYS.EXERCISES, updated);
+  console.log(`Migration to V8 complete - standardized ${updated.length} exercise names`);
 }
 
 // Reset storage (for debugging/testing)

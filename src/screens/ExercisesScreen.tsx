@@ -17,6 +17,7 @@ import { useWorkoutBarPadding } from '../components/workout';
 import { useData } from '../contexts/DataContext';
 import {
   Exercise,
+  Equipment,
   MUSCLE_GROUP_DISPLAY_NAMES,
   PrimaryMuscleGroup,
   ALL_TRACKABLE_MUSCLE_GROUPS,
@@ -42,6 +43,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   const workoutBarPadding = useWorkoutBarPadding();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
+  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
   const [prSummaries, setPrSummaries] = useState<Map<string, ExercisePRs>>(new Map());
 
   // Build workoutDates map for PR calculation
@@ -123,19 +125,25 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
       });
     }
 
+    // Filter by selected equipment
+    if (selectedEquipment) {
+      result = result.filter(e => e.equipment === selectedEquipment);
+    }
+
     // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
         e =>
           e.name.toLowerCase().includes(query) ||
+          (e.baseName && e.baseName.toLowerCase().includes(query)) ||
           getPrimaryMusclesText(e).toLowerCase().includes(query) ||
           getEquipmentText(e).toLowerCase().includes(query)
       );
     }
 
     return result;
-  }, [exercises, searchQuery, selectedMuscle]);
+  }, [exercises, searchQuery, selectedMuscle, selectedEquipment]);
 
   // Group by first primary muscle group
   const sections: ExerciseSection[] = useMemo(() => {
@@ -291,6 +299,34 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
           >
             <Text style={[styles.filterChipText, selectedMuscle === muscle && styles.filterChipTextSelected]}>
               {MUSCLE_GROUP_DISPLAY_NAMES[muscle]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Equipment Filter */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterContainer}
+        contentContainerStyle={styles.filterContent}
+      >
+        <TouchableOpacity
+          style={[styles.filterChip, !selectedEquipment && styles.filterChipSelected]}
+          onPress={() => setSelectedEquipment(null)}
+        >
+          <Text style={[styles.filterChipText, !selectedEquipment && styles.filterChipTextSelected]}>
+            All Equipment
+          </Text>
+        </TouchableOpacity>
+        {(Object.keys(EQUIPMENT_DISPLAY_NAMES) as Equipment[]).map(eq => (
+          <TouchableOpacity
+            key={eq}
+            style={[styles.filterChip, selectedEquipment === eq && styles.filterChipSelected]}
+            onPress={() => setSelectedEquipment(selectedEquipment === eq ? null : eq)}
+          >
+            <Text style={[styles.filterChipText, selectedEquipment === eq && styles.filterChipTextSelected]}>
+              {EQUIPMENT_DISPLAY_NAMES[eq]}
             </Text>
           </TouchableOpacity>
         ))}

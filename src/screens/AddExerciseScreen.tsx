@@ -30,6 +30,8 @@ import {
   MachineWeightType,
   ALL_MACHINE_WEIGHT_TYPES,
   MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
+  EQUIPMENT_DISPLAY_NAMES,
+  getExerciseDisplayName,
 } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
@@ -40,8 +42,13 @@ const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
   { value: 'dumbbell', label: 'Dumbbell' },
   { value: 'cable', label: 'Cable' },
   { value: 'machine', label: 'Machine' },
+  { value: 'smith_machine', label: 'Smith Machine' },
   { value: 'bodyweight', label: 'Bodyweight' },
-  { value: 'medicine_ball', label: 'Medicine Ball' },
+  { value: 'kettlebell', label: 'Kettlebell' },
+  { value: 'resistance_band', label: 'Band' },
+  { value: 'landmine', label: 'Landmine' },
+  { value: 'trap_bar', label: 'Trap Bar' },
+  { value: 'medicine_ball', label: 'Med Ball' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -69,7 +76,7 @@ export function AddExerciseScreen() {
   // Load existing exercise data in edit mode
   useEffect(() => {
     if (existingExercise) {
-      setName(existingExercise.name);
+      setName(existingExercise.baseName || existingExercise.name);
       setEquipment(existingExercise.equipment);
       setCableAccessory(existingExercise.cableAccessory);
       setMachineWeightType(existingExercise.machineWeightType);
@@ -122,41 +129,32 @@ export function AddExerciseScreen() {
       return;
     }
 
-    if (isEditMode && existingExercise) {
-      // Update existing exercise
-      const updatedExercise: Exercise = {
-        ...existingExercise,
-        name: name.trim(),
-        equipment,
-        cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
-        machineWeightType: equipment === 'machine' ? machineWeightType : undefined,
-        locationIds: selectedLocationIds,
-        primaryMuscleGroups: primaryMuscles,
-        secondaryMuscleGroups: secondaryMuscles,
-        isUnilateral: isUnilateral || undefined,
-        notes: notes.trim() || undefined,
-      };
+    // Build exercise with structured naming
+    const trimmedName = name.trim();
+    const baseName = trimmedName;
+    const tempExercise: Exercise = {
+      id: isEditMode && existingExercise ? existingExercise.id : generateId(),
+      name: trimmedName, // Will be overwritten below
+      baseName,
+      equipment,
+      cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
+      machineWeightType: equipment === 'machine' ? machineWeightType : undefined,
+      locationIds: selectedLocationIds,
+      primaryMuscleGroups: primaryMuscles,
+      secondaryMuscleGroups: secondaryMuscles,
+      isCustom: isEditMode ? existingExercise?.isCustom : true,
+      isUnilateral: isUnilateral || undefined,
+      notes: notes.trim() || undefined,
+    };
+    // Set display name from structured fields
+    tempExercise.name = getExerciseDisplayName(tempExercise);
 
-      updateExercise(updatedExercise).then(() => {
+    if (isEditMode && existingExercise) {
+      updateExercise(tempExercise).then(() => {
         navigation.goBack();
       });
     } else {
-      // Create new exercise
-      const exercise: Exercise = {
-        id: generateId(),
-        name: name.trim(),
-        equipment,
-        cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
-        machineWeightType: equipment === 'machine' ? machineWeightType : undefined,
-        locationIds: selectedLocationIds,
-        primaryMuscleGroups: primaryMuscles,
-        secondaryMuscleGroups: secondaryMuscles,
-        isCustom: true,
-        isUnilateral: isUnilateral || undefined,
-        notes: notes.trim() || undefined,
-      };
-
-      addExercise(exercise).then(() => {
+      addExercise(tempExercise).then(() => {
         navigation.goBack();
       });
     }
@@ -206,10 +204,18 @@ export function AddExerciseScreen() {
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="e.g., Dumbbell Bench Press"
+            placeholder="e.g., Bench Press"
             placeholderTextColor={colors.textTertiary}
             autoFocus={!isEditMode}
           />
+          {name.trim().length > 0 && (
+            <Text style={styles.namePreview}>
+              {getExerciseDisplayName({
+                id: '', name: name.trim(), baseName: name.trim(),
+                equipment, cableAccessory: equipment === 'cable' ? cableAccessory : undefined,
+              } as Exercise)}
+            </Text>
+          )}
         </Card>
 
         {/* Equipment */}
@@ -461,6 +467,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: typography.size.md,
     color: colors.text,
+  },
+  namePreview: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
   },
   notesInput: {
     minHeight: 80,
