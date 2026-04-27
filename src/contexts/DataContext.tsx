@@ -14,6 +14,7 @@ import {
   PTCompletion,
   Routine,
   BodyMeasurement,
+  ExerciseSwap,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
 } from '../types';
@@ -29,6 +30,7 @@ import {
   getSupplementIntakes,
   getRoutines,
   getBodyMeasurements,
+  getExerciseSwaps,
   restoreFromBackup,
   getActiveWorkoutState,
 } from '../services/storage';
@@ -160,6 +162,10 @@ interface DataContextType {
   getActiveRoutine: () => Routine | undefined;
   getRoutineById: (id: string) => Routine | undefined;
 
+  // Exercise swap history (for "This Week's Swaps" on Home)
+  exerciseSwaps: ExerciseSwap[];
+  refreshExerciseSwaps: () => Promise<void>;
+
   // Body measurements data and CRUD
   bodyMeasurements: BodyMeasurement[];
   refreshBodyMeasurements: () => Promise<void>;
@@ -195,6 +201,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [ptCompletions, setPTCompletions] = useState<PTCompletion[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [bodyMeasurements, setBodyMeasurements] = useState<BodyMeasurement[]>([]);
+  const [exerciseSwaps, setExerciseSwaps] = useState<ExerciseSwap[]>([]);
 
   // One-time migration: backfill completedAt for imported workouts
   const backfillCompletedAt = async () => {
@@ -411,6 +418,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setBodyMeasurements(data);
   }, []);
 
+  const refreshExerciseSwaps = useCallback(async () => {
+    const data = await getExerciseSwaps();
+    setExerciseSwaps(data);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([
       refreshExercises(),
@@ -425,8 +437,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshPTCompletions(),
       refreshRoutines(),
       refreshBodyMeasurements(),
+      refreshExerciseSwaps(),
     ]);
-  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshPTRoutines, refreshPTCompletions, refreshRoutines, refreshBodyMeasurements]);
+  }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshPTRoutines, refreshPTCompletions, refreshRoutines, refreshBodyMeasurements, refreshExerciseSwaps]);
 
   // Exercise CRUD
   const addExercise = useCallback(async (exercise: Exercise) => {
@@ -800,6 +813,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     updateBodyMeasurement,
     deleteBodyMeasurement,
     getLatestBodyMeasurement,
+    exerciseSwaps,
+    refreshExerciseSwaps,
     updateUserSettings: updateUserSettingsHandler,
     getExerciseById,
     getTemplateById,

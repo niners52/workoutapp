@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -258,7 +260,10 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   ), []);
 
   const content = (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Exercises</Text>
@@ -344,8 +349,10 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         maxToRenderPerBatch={20}
         windowSize={10}
         removeClippedSubviews={true}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 
   if (embedded) return content;

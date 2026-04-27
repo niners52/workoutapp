@@ -125,15 +125,13 @@ export function WorkoutSummaryScreen() {
         </View>
 
         {/* Volume */}
-        {totalVolume > 0 && (
-          <Card style={styles.volumeCard}>
-            <Ionicons name="barbell-outline" size={24} color={colors.primary} />
-            <View style={styles.volumeInfo}>
-              <Text style={styles.volumeValue}>{formatVolume(totalVolume, units)}</Text>
-              <Text style={styles.volumeLabel}>Total Volume</Text>
-            </View>
-          </Card>
-        )}
+        <Card style={styles.volumeCard}>
+          <Ionicons name="barbell-outline" size={24} color={colors.primary} />
+          <View style={styles.volumeInfo}>
+            <Text style={styles.volumeValue}>{formatVolume(totalVolume, units)}</Text>
+            <Text style={styles.volumeLabel}>Total Volume</Text>
+          </View>
+        </Card>
 
         {/* PRs Section */}
         {sessionPRs && sessionPRs.length > 0 && (

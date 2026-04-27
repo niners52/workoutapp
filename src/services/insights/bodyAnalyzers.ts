@@ -204,7 +204,7 @@ const MEASUREMENT_TO_MUSCLE: Partial<Record<BodyMeasurementTypeKey, {
   right_arm: { muscles: ['biceps', 'triceps'], label: 'Arms' },
   left_thigh: { muscles: ['quads', 'hamstrings'], label: 'Thighs' },
   right_thigh: { muscles: ['quads', 'hamstrings'], label: 'Thighs' },
-  shoulders: { muscles: ['front_delts', 'side_delts', 'rear_delts'], label: 'Shoulders' },
+  shoulders: { muscles: ['front_delts', 'side_delts'], label: 'Shoulders' },
 };
 
 function getCircumferenceChange(

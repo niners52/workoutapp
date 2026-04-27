@@ -16,6 +16,7 @@ import {
   BodyMeasurementTypeKey,
   ProgressPhoto,
   ManualSleepEntry,
+  ExerciseSwap,
   getExerciseDisplayName,
   DEFAULT_USER_SETTINGS,
   DEFAULT_LOCATIONS,
@@ -50,10 +51,11 @@ const STORAGE_KEYS = {
   ACTIVE_WORKOUT: '@workout_tracker/active_workout',
   MANUAL_SLEEP_ENTRIES: '@workout_tracker/manual_sleep_entries',
   SLEEP_FALLBACK_DISMISSED: '@workout_tracker/sleep_fallback_dismissed',
+  EXERCISE_SWAPS: '@workout_tracker/exercise_swaps',
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 8;
+const CURRENT_MIGRATION_VERSION = 10;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -139,6 +141,14 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 8) {
     await migrateToV8();
+  }
+
+  if (currentVersion < 9) {
+    await migrateToV9();
+  }
+
+  if (currentVersion < 10) {
+    await migrateToV10();
   }
 
   // Update migration version
@@ -406,6 +416,82 @@ async function migrateToV8(): Promise<void> {
 
   await setItem(STORAGE_KEYS.EXERCISES, updated);
   console.log(`Migration to V8 complete - standardized ${updated.length} exercise names`);
+}
+
+// Migration V9: Strip isUnilateral from side-delt exercises.
+// Lateral raises and similar are bilateral (both arms at once); the flag halved their volume.
+async function migrateToV9(): Promise<void> {
+  console.log('Running migration to V9 - clearing isUnilateral on side_delts exercises...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  let cleared = 0;
+
+  const updated = exercises.map(e => {
+    if (!e.isUnilateral) return e;
+    const isSideDelts =
+      e.primaryMuscleGroups?.includes('side_delts') ||
+      (e as any).primaryMuscleGroup === 'side_delts';
+    if (!isSideDelts) return e;
+    cleared += 1;
+    const { isUnilateral: _drop, ...rest } = e;
+    return rest as Exercise;
+  });
+
+  if (cleared > 0) {
+    await setItem(STORAGE_KEYS.EXERCISES, updated);
+  }
+  console.log(`Migration to V9 complete - cleared isUnilateral on ${cleared} side_delts exercises`);
+}
+
+// Migration V10: Merge "rear_delts" into "upper_back" (same shape as the prior lats merger).
+// - Rewrites every exercise's primaryMuscleGroup(s) and secondaryMuscleGroups
+// - Sums and removes the rear_delts weekly target from user settings
+async function migrateToV10(): Promise<void> {
+  console.log('Running migration to V10 - merging rear_delts into upper_back...');
+
+  const REAR = 'rear_delts';
+  const TARGET = 'upper_back';
+
+  // Exercises ─────────────────────────────────────────────────────────────
+  const exercises = await getItem<any[]>(STORAGE_KEYS.EXERCISES, []);
+  let migratedExercises = 0;
+
+  const remap = (groups: string[] | undefined): string[] | undefined => {
+    if (!groups) return groups;
+    const mapped = groups.map(g => (g === REAR ? TARGET : g));
+    // Dedupe while preserving order
+    return Array.from(new Set(mapped));
+  };
+
+  const updatedExercises = exercises.map(e => {
+    const before = JSON.stringify(e);
+    const next = { ...e };
+    if (next.primaryMuscleGroup === REAR) next.primaryMuscleGroup = TARGET;
+    if (next.primaryMuscleGroups) next.primaryMuscleGroups = remap(next.primaryMuscleGroups);
+    if (next.secondaryMuscleGroups) next.secondaryMuscleGroups = remap(next.secondaryMuscleGroups);
+    if (JSON.stringify(next) !== before) migratedExercises += 1;
+    return next;
+  });
+
+  if (migratedExercises > 0) {
+    await setItem(STORAGE_KEYS.EXERCISES, updatedExercises);
+  }
+
+  // User settings ─────────────────────────────────────────────────────────
+  const settings = await getItem<any>(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
+  const targets = settings?.muscleGroupTargets;
+  if (targets && (REAR in targets || targets[REAR] !== undefined)) {
+    const rearTarget = targets[REAR] ?? 0;
+    const upperTarget = targets[TARGET] ?? 0;
+    const merged = { ...targets, [TARGET]: upperTarget + rearTarget };
+    delete merged[REAR];
+    await setItem(STORAGE_KEYS.USER_SETTINGS, {
+      ...settings,
+      muscleGroupTargets: merged,
+    });
+  }
+
+  console.log(`Migration to V10 complete - rewrote ${migratedExercises} exercises`);
 }
 
 // Reset storage (for debugging/testing)
@@ -693,6 +779,9 @@ export interface PersistedWorkoutState {
   exerciseIds: string[];
   currentExerciseId: string | null;
   currentExerciseIndex: number;
+  // Snapshot of the template's exerciseIds when the workout started, used to compute net swaps.
+  // Optional for backward compatibility with workouts started before this field existed.
+  originalExerciseIds?: string[];
 }
 
 export async function saveActiveWorkoutState(state: PersistedWorkoutState): Promise<void> {
@@ -1591,6 +1680,33 @@ export async function saveManualSleepEntry(entry: ManualSleepEntry): Promise<voi
 export async function deleteManualSleepEntry(date: string): Promise<void> {
   const entries = await getManualSleepEntries();
   await setItem(STORAGE_KEYS.MANUAL_SLEEP_ENTRIES, entries.filter(e => e.date !== date));
+}
+
+// ==================== EXERCISE SWAPS ====================
+
+export async function getExerciseSwaps(): Promise<ExerciseSwap[]> {
+  return getItem(STORAGE_KEYS.EXERCISE_SWAPS, []);
+}
+
+export async function getExerciseSwapsForWorkout(workoutId: string): Promise<ExerciseSwap[]> {
+  const swaps = await getExerciseSwaps();
+  return swaps.filter(s => s.workoutId === workoutId);
+}
+
+export async function deleteExerciseSwap(id: string): Promise<void> {
+  const swaps = await getExerciseSwaps();
+  await setItem(STORAGE_KEYS.EXERCISE_SWAPS, swaps.filter(s => s.id !== id));
+}
+
+// Upsert keyed by (workoutId, originalExerciseId). If currentExerciseId === originalExerciseId,
+// the row is removed instead — a swap that lands back on the original is a no-op net.
+export async function upsertExerciseSwap(swap: ExerciseSwap): Promise<void> {
+  const swaps = await getExerciseSwaps();
+  const others = swaps.filter(
+    s => !(s.workoutId === swap.workoutId && s.originalExerciseId === swap.originalExerciseId)
+  );
+  const next = swap.currentExerciseId === swap.originalExerciseId ? others : [...others, swap];
+  await setItem(STORAGE_KEYS.EXERCISE_SWAPS, next);
 }
 
 // ==================== SLEEP FALLBACK DISMISSAL ====================

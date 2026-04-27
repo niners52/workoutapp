@@ -93,7 +93,7 @@ function displayName(mg: string): string {
 const PUSH_PULL_PAIRS: [PrimaryMuscleGroup, PrimaryMuscleGroup][] = [
   ['chest', 'lats'],
   ['chest', 'upper_back'],
-  ['front_delts', 'rear_delts'],
+  ['front_delts', 'upper_back'],
   ['triceps', 'biceps'],
   ['quads', 'hamstrings'],
 ];

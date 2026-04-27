@@ -11,6 +11,7 @@ import {
   Animated,
   Switch,
   TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -94,6 +95,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   // Edit exercise modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [editName, setEditName] = useState('');
   const [editUnilateral, setEditUnilateral] = useState(false);
   const [editNotes, setEditNotes] = useState('');
   const [editTargetSets, setEditTargetSets] = useState(3);
@@ -219,10 +221,17 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const handleLogSet = async () => {
     if (!selectedExerciseId) return;
 
-    // Check for milestone/PR before logging (compare against all previous sets)
+    // Check for milestone/PR before logging (compare against all previous sets,
+    // including sets already logged in the current active workout — DataContext's
+    // `sets` is only refreshed on app load, so it doesn't include the in-progress workout)
+    const currentWorkoutSets = activeWorkout.sets ?? [];
+    const previousSetsForPRCheck = [
+      ...sets.filter(s => s.workoutId !== activeWorkout.workout.id && s.exerciseId === selectedExerciseId),
+      ...currentWorkoutSets.filter(s => s.exerciseId === selectedExerciseId),
+    ];
     const milestoneResult = checkForMilestone(
       { exerciseId: selectedExerciseId, weight, reps, workoutId: activeWorkout.workout.id },
-      sets.filter(s => s.exerciseId === selectedExerciseId),
+      previousSetsForPRCheck,
       workoutDates,
       units
     );
@@ -486,6 +495,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     const currentOverride = targetSetOverrides[exercise.id];
     const effectiveTarget = currentOverride ?? (exercise.isUnilateral ? baseTarget * 2 : baseTarget);
     setEditingExercise(exercise);
+    setEditName(exercise.name);
     setEditUnilateral(exercise.isUnilateral ?? false);
     setEditNotes(exercise.notes ?? '');
     setEditTargetSets(effectiveTarget);
@@ -498,15 +508,18 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     if (!editingExercise) return;
     const baseTarget = userSettings?.defaultTargetSets ?? 3;
 
-    // Determine if unilateral changed
+    // Determine if any field changed
+    const trimmedName = editName.trim();
+    const nameChanged = trimmedName.length > 0 && trimmedName !== editingExercise.name;
     const unilateralChanged = editUnilateral !== (editingExercise.isUnilateral ?? false);
     const notesChanged = (editNotes.trim() || undefined) !== (editingExercise.notes || undefined);
     const equipmentChanged = editEquipment !== editingExercise.equipment;
 
-    // Persist exercise changes (unilateral, notes, equipment are always permanent)
-    if (unilateralChanged || notesChanged || equipmentChanged) {
+    // Persist exercise changes (name, unilateral, notes, equipment are always permanent)
+    if (nameChanged || unilateralChanged || notesChanged || equipmentChanged) {
       const updatedExercise: Exercise = {
         ...editingExercise,
+        name: nameChanged ? trimmedName : editingExercise.name,
         isUnilateral: editUnilateral || undefined,
         notes: editNotes.trim() || undefined,
         equipment: editEquipment,
@@ -1014,6 +1027,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           animationType="slide"
           onRequestClose={() => setSwapModalVisible(false)}
         >
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
           <TouchableOpacity
             style={styles.modalOverlay}
             activeOpacity={1}
@@ -1041,7 +1058,11 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                 />
               </View>
 
-              <ScrollView style={styles.swapList}>
+              <ScrollView
+                style={styles.swapList}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              >
                 {exerciseToSwap && (() => {
                   const sections = getSwapSections(exerciseToSwap);
 
@@ -1107,6 +1128,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
               />
             </View>
           </TouchableOpacity>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* Suggested Exercises Modal */}
@@ -1230,9 +1252,19 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             onPress={() => setEditModalVisible(false)}
           >
             <View style={[styles.modalContent, styles.editModalContent]} onStartShouldSetResponder={() => true}>
-              <Text style={styles.modalTitle}>
-                {editingExercise?.name ?? 'Edit Exercise'}
-              </Text>
+              <Text style={styles.modalTitle}>Edit Exercise</Text>
+
+              {/* Name */}
+              <View style={styles.editNameSection}>
+                <Text style={styles.editLabel}>Name</Text>
+                <TextInput
+                  style={styles.editNameInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Exercise name"
+                  placeholderTextColor={colors.textTertiary}
+                />
+              </View>
 
               {/* Unilateral Toggle */}
               <View style={styles.editRow}>
@@ -2406,6 +2438,18 @@ const styles = StyleSheet.create({
   editEquipmentOptionTextSelected: {
     color: '#fff',
     fontWeight: typography.weight.semibold,
+  },
+  editNameSection: {
+    paddingVertical: spacing.md,
+  },
+  editNameInput: {
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+    color: colors.text,
+    fontSize: typography.size.md,
   },
   editNotesSection: {
     paddingVertical: spacing.md,

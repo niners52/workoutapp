@@ -50,6 +50,7 @@ import {
   saveActiveWorkoutState,
   getActiveWorkoutState,
   clearActiveWorkoutState,
+  upsertExerciseSwap,
 } from '../services/storage';
 import { saveWorkoutToHealthKit } from '../services/healthKit';
 import {
@@ -64,7 +65,8 @@ interface ActiveWorkoutState {
   sets: WorkoutSet[];
   currentExerciseId: string | null;
   currentExerciseIndex: number;
-  exerciseIds: string[]; // Ordered list of exercises for this workout
+  exerciseIds: string[]; // Ordered list of exercises for this workout (mutates on swap)
+  originalExerciseIds: string[]; // Snapshot from template at workout start, used for net-swap detection
 }
 
 interface RestTimerState {
@@ -175,6 +177,10 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
           workout,
           sets,
           exerciseIds: saved.exerciseIds,
+          // Fall back to the (possibly already-swapped) exerciseIds for legacy persisted
+          // states that pre-date this field. Net-swap detection won't work for those,
+          // but no swap will be falsely recorded either.
+          originalExerciseIds: saved.originalExerciseIds ?? saved.exerciseIds,
           currentExerciseId: saved.currentExerciseId,
           currentExerciseIndex: saved.currentExerciseIndex,
         });
@@ -198,6 +204,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       saveActiveWorkoutState({
         workout: activeWorkout.workout,
         exerciseIds: activeWorkout.exerciseIds,
+        originalExerciseIds: activeWorkout.originalExerciseIds,
         currentExerciseId: activeWorkout.currentExerciseId,
         currentExerciseIndex: activeWorkout.currentExerciseIndex,
       }).catch(e => console.log('Failed to persist active workout:', e));
@@ -205,6 +212,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   }, [
     activeWorkout?.workout.id,
     activeWorkout?.exerciseIds,
+    activeWorkout?.originalExerciseIds,
     activeWorkout?.currentExerciseId,
     activeWorkout?.currentExerciseIndex,
   ]);
@@ -428,6 +436,9 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       currentExerciseId: exerciseIds[0] || null,
       currentExerciseIndex: 0,
       exerciseIds,
+      // Snapshot the starting lineup so swap chains (A→B→C) can collapse to net (A→C)
+      // and round-trips (A→B→A) can be removed entirely.
+      originalExerciseIds: [...exerciseIds],
     });
 
     if (initialLastSessionData) {
@@ -600,6 +611,24 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
   const swapExercise = useCallback((oldExerciseId: string, newExerciseId: string) => {
     if (!activeWorkout) return;
+
+    // Persist a net-swap record so the home screen can show "Original → Current" for the week.
+    // The slot's "original" comes from the snapshot taken at workout start, so a chain like
+    // A→B→C collapses to (original=A, current=C) and a round trip A→B→A removes the row entirely.
+    const slotIndex = activeWorkout.exerciseIds.indexOf(oldExerciseId);
+    const originalExerciseId =
+      slotIndex >= 0 ? activeWorkout.originalExerciseIds[slotIndex] : oldExerciseId;
+    if (originalExerciseId) {
+      // Stable ID per (workout, slot original) — keeps the upsert idempotent across edits.
+      const swapId = `swap-${activeWorkout.workout.id}-${originalExerciseId}`;
+      upsertExerciseSwap({
+        id: swapId,
+        workoutId: activeWorkout.workout.id,
+        originalExerciseId,
+        currentExerciseId: newExerciseId,
+        swappedAt: new Date().toISOString(),
+      }).catch(e => console.log('Failed to persist exercise swap:', e));
+    }
 
     // Swap the exercise in the exerciseIds array (one-time swap for this session)
     setActiveWorkout(prev => {

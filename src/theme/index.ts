@@ -32,7 +32,7 @@ export const colors = {
   chartTraining: '#FFC52F', // Yellow for training
   chartProtein: '#FFD65A', // Lighter yellow for protein
   chartSleep: '#D9A825', // Muted yellow for sleep
-  chartYoga: '#7C3AED', // Purple for yoga
+  chartYoga: '#FFC52F', // Yellow for yoga (matches other weekly volume bars)
   chartCardio: '#EF4444', // Red for cardio
 
   // Muscle group colors (Yellow/Navy variations with complementary colors)
@@ -42,7 +42,6 @@ export const colors = {
     upper_back: '#5B8BA8', // Light steel blue
     front_delts: '#FFD65A', // Light yellow
     side_delts: '#FFE082', // Bright yellow
-    rear_delts: '#D9A825', // Muted yellow
     triceps: '#6B9AB8', // Soft blue
     biceps: '#E6B422', // Medium yellow
     quads: '#3D6B8C', // Navy blue

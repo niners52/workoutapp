@@ -6,7 +6,10 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -55,7 +58,7 @@ import {
   setSleepFallbackDismissed,
 } from '../services/storage';
 import { getSleepData as getCachedSleepData, clearCacheForDate, getSleepAverage } from '../services/healthKitCache';
-import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES } from '../types';
+import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES, Supplement } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
@@ -82,6 +85,9 @@ export function HomeScreen() {
     templates,
     exercises,
     getActiveRoutine,
+    getExerciseById,
+    exerciseSwaps,
+    refreshExerciseSwaps,
   } = useData();
   const { isWorkoutActive, recoveredWorkout, dismissRecovery } = useWorkout();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -119,6 +125,9 @@ export function HomeScreen() {
   const [syncPending, setSyncPending] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Past-day supplement marker: long-press a supplement to open a date picker for a previous day
+  const [supplementDatePickerFor, setSupplementDatePickerFor] = useState<Supplement | null>(null);
+
   useEffect(() => {
     return syncManager.subscribe(status => {
       setSyncPending(status.pendingCount);
@@ -142,6 +151,26 @@ export function HomeScreen() {
   // Fallbacks for settings that might not have been migrated
   const dailyGoals = userSettings.dailyGoals || DEFAULT_DAILY_GOALS;
   const weeklyGoals = userSettings.weeklyGoals || DEFAULT_WEEKLY_GOALS;
+
+  // Net swaps this week. Storage already collapses chains and removes round-trips at write time,
+  // so we just filter the current week and look up display names.
+  const weekSwaps = useMemo(() => {
+    const weekStartsOn = userSettings?.weekStartDay === 'monday' ? 1 : 0;
+    const weekStart = startOfWeek(new Date(), { weekStartsOn });
+    const weekEnd = endOfWeek(new Date(), { weekStartsOn });
+    return exerciseSwaps
+      .filter(s => {
+        const t = new Date(s.swappedAt);
+        return t >= weekStart && t <= weekEnd;
+      })
+      .sort((a, b) => b.swappedAt.localeCompare(a.swappedAt))
+      .map(s => ({
+        id: s.id,
+        swappedAt: s.swappedAt,
+        originalName: getExerciseById(s.originalExerciseId)?.name ?? 'Unknown',
+        currentName: getExerciseById(s.currentExerciseId)?.name ?? 'Unknown',
+      }));
+  }, [exerciseSwaps, userSettings?.weekStartDay, getExerciseById]);
 
   // Check if we should show weekly summary (once per app session)
   useEffect(() => {
@@ -413,8 +442,12 @@ export function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       refreshWorkouts();
+      // Pull fresh swap rows so changes made inside the active workout appear immediately
+      // when the user comes back to Home (WorkoutContext writes to storage but doesn't
+      // touch DataContext state directly).
+      refreshExerciseSwaps();
       loadData();
-    }, [refreshWorkouts, loadData])
+    }, [refreshWorkouts, refreshExerciseSwaps, loadData])
   );
 
   const onRefresh = useCallback(async () => {
@@ -650,9 +683,28 @@ export function HomeScreen() {
           ) : (
             <Card padding="none">
               {shortfalls.slice(0, 5).map((item, index) => {
-                const progress = item.targetSets > 0
-                  ? (item.currentSets / item.targetSets) * 100
-                  : 0;
+                // "planned" = what the user expects to do this week (already done + scheduled).
+                // "target" = the user's actual weekly goal. The bar visualizes both: gold for
+                // completed, lighter gold for scheduled-but-not-done, and the bar's gray
+                // background fills in the gap to target.
+                const planned = item.currentSets + item.projectedSets;
+                const targetHit = item.currentSets >= item.targetSets;
+                const routineDone = !targetHit && item.projectedSets === 0;
+                const barMax = Math.max(item.targetSets, item.currentSets);
+                const completedPct = barMax > 0 ? (item.currentSets / barMax) * 100 : 0;
+                const pendingPct = barMax > 0 ? (item.projectedSets / barMax) * 100 : 0;
+
+                let statsText: string;
+                if (targetHit) {
+                  statsText = `${item.currentSets}/${item.targetSets} sets ✓`;
+                } else if (routineDone) {
+                  statsText = `${item.currentSets}/${item.currentSets} ✓ (+${item.shortfall} to target)`;
+                } else {
+                  statsText = `${item.currentSets}/${planned} sets`;
+                }
+
+                const completedColor = targetHit ? colors.success : colors.primary;
+
                 return (
                   <TouchableOpacity
                     key={item.muscleGroup}
@@ -668,20 +720,26 @@ export function HomeScreen() {
                     <View style={styles.shortfallInfo}>
                       <View style={styles.shortfallHeader}>
                         <Text style={styles.shortfallName}>{item.displayName}</Text>
-                        <Text style={styles.shortfallStats}>
-                          {item.currentSets}/{item.targetSets} sets
-                        </Text>
+                        <Text style={styles.shortfallStats}>{statsText}</Text>
                       </View>
-                      <ProgressBar
-                        progress={progress}
-                        height={6}
-                        color={colors.warning}
-                        style={styles.shortfallProgress}
-                      />
-                      <Text style={styles.shortfallNote}>
-                        Need {item.shortfall} more sets
-                        {item.projectedSets > 0 && ` (${item.projectedSets} scheduled)`}
-                      </Text>
+                      <View style={styles.volumeBarTrack}>
+                        {completedPct > 0 && (
+                          <View
+                            style={[
+                              styles.volumeBarSegment,
+                              { width: `${completedPct}%`, backgroundColor: completedColor },
+                            ]}
+                          />
+                        )}
+                        {pendingPct > 0 && (
+                          <View
+                            style={[
+                              styles.volumeBarSegment,
+                              { width: `${pendingPct}%`, backgroundColor: colors.primaryMuted },
+                            ]}
+                          />
+                        )}
+                      </View>
                     </View>
                     <Text style={styles.chevron}>›</Text>
                   </TouchableOpacity>
@@ -690,6 +748,43 @@ export function HomeScreen() {
             </Card>
           )}
         </View>
+
+        {/* This Week's Swaps */}
+        {weekSwaps.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>This Week's Swaps</Text>
+            <Card padding="none">
+              {weekSwaps.map((swap, index) => (
+                <View
+                  key={swap.id}
+                  style={[
+                    styles.swapRow,
+                    index === 0 && styles.swapRowFirst,
+                    index === weekSwaps.length - 1 && styles.swapRowLast,
+                    index < weekSwaps.length - 1 && styles.swapRowBorder,
+                  ]}
+                >
+                  <Ionicons
+                    name="swap-horizontal-outline"
+                    size={20}
+                    color={colors.primary}
+                    style={styles.swapIcon}
+                  />
+                  <View style={styles.swapInfo}>
+                    <Text style={styles.swapText}>
+                      {swap.originalName}{' '}
+                      <Text style={styles.swapArrow}>→</Text>{' '}
+                      {swap.currentName}
+                    </Text>
+                    <Text style={styles.swapDate}>
+                      {format(new Date(swap.swappedAt), 'yyyy-MM-dd')}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </Card>
+          </View>
+        )}
 
         {/* Coach Suggestions */}
         {coachSuggestions.length > 0 && (
@@ -762,6 +857,7 @@ export function HomeScreen() {
                     supplement={supplement}
                     isTaken={isTaken}
                     onToggle={() => toggleSupplementIntake(supplement.id, todayStr)}
+                    onLongPress={() => setSupplementDatePickerFor(supplement)}
                     isFirst={index === 0}
                     isLast={index === activeSupplements.length - 1}
                   />
@@ -825,9 +921,182 @@ export function HomeScreen() {
         onSave={handleSaveMissingSleep}
         averageSleepHours={averageSleepHours}
       />
+
+      {/* Past-day supplement marker */}
+      <PastDateSupplementPicker
+        supplement={supplementDatePickerFor}
+        supplementIntakes={supplementIntakes}
+        onClose={() => setSupplementDatePickerFor(null)}
+        onConfirm={async (dateStr) => {
+          if (supplementDatePickerFor) {
+            await toggleSupplementIntake(supplementDatePickerFor.id, dateStr);
+          }
+          setSupplementDatePickerFor(null);
+        }}
+      />
     </SafeAreaView>
   );
 }
+
+interface PastDateSupplementPickerProps {
+  supplement: Supplement | null;
+  supplementIntakes: { supplementId: string; date: string }[];
+  onClose: () => void;
+  onConfirm: (dateStr: string) => void;
+}
+
+function PastDateSupplementPicker({
+  supplement,
+  supplementIntakes,
+  onClose,
+  onConfirm,
+}: PastDateSupplementPickerProps) {
+  const yesterday = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d;
+  }, []);
+  const [pickedDate, setPickedDate] = useState(yesterday);
+
+  // Reset to yesterday each time the picker opens for a new supplement
+  useEffect(() => {
+    if (supplement) setPickedDate(yesterday);
+  }, [supplement, yesterday]);
+
+  if (!supplement) return null;
+
+  const handleDone = () => {
+    const dateStr = format(pickedDate, 'yyyy-MM-dd');
+    const alreadyTaken = supplementIntakes.some(
+      i => i.supplementId === supplement.id && i.date === dateStr
+    );
+    const action = alreadyTaken ? 'unmark' : 'mark';
+    const verb = alreadyTaken ? 'remove' : 'mark taken';
+    Alert.alert(
+      alreadyTaken ? 'Remove?' : 'Mark Taken?',
+      `${alreadyTaken ? 'Remove' : 'Mark'} ${supplement.name} ${alreadyTaken ? 'from' : 'for'} ${format(pickedDate, 'EEE, MMM d')}?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: onClose },
+        { text: action === 'unmark' ? 'Remove' : 'Mark', onPress: () => onConfirm(dateStr) },
+      ]
+    );
+  };
+
+  return (
+    <View style={pastPickerStyles.overlay} pointerEvents="box-none">
+      <TouchableOpacity style={pastPickerStyles.backdrop} activeOpacity={1} onPress={onClose} />
+      <View style={pastPickerStyles.sheet}>
+        <Text style={pastPickerStyles.title}>{supplement.name}</Text>
+        <Text style={pastPickerStyles.subtitle}>Pick a past date</Text>
+        <DateTimePicker
+          value={pickedDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          maximumDate={new Date()}
+          themeVariant="dark"
+          onChange={(event, date) => {
+            if (Platform.OS === 'android') {
+              // Android: native dialog dismisses itself; act on the result here.
+              if (event.type === 'set' && date) {
+                setPickedDate(date);
+                // Defer so the picker UI fully tears down before the Alert shows
+                setTimeout(() => {
+                  const dateStr = format(date, 'yyyy-MM-dd');
+                  const alreadyTaken = supplementIntakes.some(
+                    i => i.supplementId === supplement.id && i.date === dateStr
+                  );
+                  Alert.alert(
+                    alreadyTaken ? 'Remove?' : 'Mark Taken?',
+                    `${alreadyTaken ? 'Remove' : 'Mark'} ${supplement.name} ${alreadyTaken ? 'from' : 'for'} ${format(date, 'EEE, MMM d')}?`,
+                    [
+                      { text: 'Cancel', style: 'cancel', onPress: onClose },
+                      { text: alreadyTaken ? 'Remove' : 'Mark', onPress: () => onConfirm(dateStr) },
+                    ]
+                  );
+                }, 0);
+              } else {
+                onClose();
+              }
+            } else if (date) {
+              setPickedDate(date);
+            }
+          }}
+        />
+        {Platform.OS === 'ios' && (
+          <View style={pastPickerStyles.buttonRow}>
+            <TouchableOpacity style={pastPickerStyles.cancelButton} onPress={onClose}>
+              <Text style={pastPickerStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={pastPickerStyles.doneButton} onPress={handleDone}>
+              <Text style={pastPickerStyles.doneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const pastPickerStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  sheet: {
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.lg,
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+  },
+  title: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: colors.text,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+  },
+  doneButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  doneText: {
+    color: colors.textOnPrimary,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -964,6 +1233,45 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     textAlign: 'center',
   },
+  swapRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+  },
+  swapRowFirst: {
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+  },
+  swapRowLast: {
+    borderBottomLeftRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
+  },
+  swapRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  swapIcon: {
+    marginRight: spacing.sm,
+    marginTop: 2,
+  },
+  swapInfo: {
+    flex: 1,
+  },
+  swapText: {
+    fontSize: typography.size.md,
+    color: colors.text,
+    lineHeight: typography.size.md * 1.35,
+  },
+  swapArrow: {
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  swapDate: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
   shortfallRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1000,12 +1308,18 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
   },
-  shortfallProgress: {
-    marginVertical: spacing.xs,
+  // Segmented bar: gold completed + muted-gold pending sit on a gray background.
+  // The unfilled tail of the track is the implicit "gap to target" gray section.
+  volumeBarTrack: {
+    flexDirection: 'row',
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: colors.backgroundTertiary,
+    marginTop: spacing.xs,
   },
-  shortfallNote: {
-    fontSize: typography.size.xs,
-    color: colors.warning,
+  volumeBarSegment: {
+    height: '100%',
   },
   loadingCard: {
     marginTop: spacing.md,

@@ -277,8 +277,10 @@ interface MuscleRegion {
 const MUSCLE_REGIONS: MuscleRegion[] = [
   { group: 'traps', path: TRAP_LEFT },
   { group: 'traps', path: TRAP_RIGHT },
-  { group: 'rear_delts', path: REAR_DELT_LEFT },
-  { group: 'rear_delts', path: REAR_DELT_RIGHT },
+  // Rear delts merged into upper_back (V10 migration); paths kept so the silhouette
+  // still shows the visual shape but they share upper_back's color/volume.
+  { group: 'upper_back', path: REAR_DELT_LEFT },
+  { group: 'upper_back', path: REAR_DELT_RIGHT },
   { group: 'upper_back', path: UPPER_BACK_LEFT },
   { group: 'upper_back', path: UPPER_BACK_RIGHT },
   { group: 'lats', path: LAT_LEFT },

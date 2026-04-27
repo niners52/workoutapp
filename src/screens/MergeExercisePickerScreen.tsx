@@ -6,6 +6,8 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -99,7 +101,10 @@ export function MergeExercisePickerScreen() {
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -132,8 +137,10 @@ export function MergeExercisePickerScreen() {
           renderItem={renderExercise}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
         />
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

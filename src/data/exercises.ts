@@ -80,8 +80,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'face-pull',
     name: 'Face Pull',
-    primaryMuscleGroup: 'rear_delts',
-    secondaryMuscleGroups: ['upper_back'],
+    primaryMuscleGroup: 'upper_back',
     equipment: 'cable',
     location: 'gym',
   },
@@ -230,8 +229,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'rear-delt-fly-machine',
     name: 'Rear-Delt Fly Machine',
-    primaryMuscleGroup: 'rear_delts',
-    secondaryMuscleGroups: ['upper_back'],
+    primaryMuscleGroup: 'upper_back',
     equipment: 'machine',
     location: 'gym',
   },
@@ -340,8 +338,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'incline-bench-rear-delt-db-fly',
     name: 'Incline Bench Rear-Delt DB Fly',
-    primaryMuscleGroup: 'rear_delts',
-    secondaryMuscleGroups: ['upper_back'],
+    primaryMuscleGroup: 'upper_back',
     equipment: 'dumbbell',
     location: 'home',
   },

@@ -83,7 +83,6 @@ export type PrimaryMuscleGroup =
   | 'traps'
   | 'front_delts'
   | 'side_delts'
-  | 'rear_delts'
   | 'chest'
   | 'triceps'
   | 'biceps'
@@ -98,7 +97,7 @@ export type PrimaryMuscleGroup =
 
 // Legacy types kept for backward compatibility
 export type ParentMuscleGroup = 'back' | 'shoulders';
-export type ChildMuscleGroup = 'lats' | 'upper_back' | 'front_delts' | 'side_delts' | 'rear_delts';
+export type ChildMuscleGroup = 'lats' | 'upper_back' | 'front_delts' | 'side_delts';
 export type StandaloneMuscleGroup =
   | 'chest'
   | 'triceps'
@@ -124,7 +123,7 @@ export interface AnalyticsCategoryConfig {
 // 6 main categories for analytics display
 export const ANALYTICS_CATEGORIES: AnalyticsCategoryConfig[] = [
   { category: 'back', name: 'Back', muscleGroups: ['lats', 'upper_back', 'lower_back'] },
-  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'rear_delts', 'traps'] },
+  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps'] },
   { category: 'chest', name: 'Chest', muscleGroups: ['chest'] },
   { category: 'arms', name: 'Arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
   { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'calves'] },
@@ -139,7 +138,7 @@ export interface MuscleGroupHierarchy {
 
 export const MUSCLE_GROUP_HIERARCHY: MuscleGroupHierarchy[] = [
   { parent: 'back', children: ['lats', 'upper_back'] },
-  { parent: 'shoulders', children: ['front_delts', 'side_delts', 'rear_delts'] },
+  { parent: 'shoulders', children: ['front_delts', 'side_delts'] },
 ];
 
 export const STANDALONE_MUSCLE_GROUPS: StandaloneMuscleGroup[] = [
@@ -163,7 +162,6 @@ export const ALL_TRACKABLE_MUSCLE_GROUPS: (PrimaryMuscleGroup)[] = [
   'upper_back',
   'front_delts',
   'side_delts',
-  'rear_delts',
   'triceps',
   'biceps',
   'quads',
@@ -191,7 +189,6 @@ export const MUSCLE_GROUP_DISPLAY_NAMES: Record<MuscleGroup, string> = {
   traps: 'Traps',
   front_delts: 'Front Delts',
   side_delts: 'Side Delts',
-  rear_delts: 'Rear Delts',
   triceps: 'Triceps',
   biceps: 'Biceps',
   forearms: 'Forearms',
@@ -328,6 +325,14 @@ export interface WorkoutSet {
   loggedAt: string; // ISO date string
 }
 
+export interface ExerciseSwap {
+  id: string;
+  workoutId: string;
+  originalExerciseId: string; // exercise that was originally in this slot (from template)
+  currentExerciseId: string;  // latest exercise after any swap chain
+  swappedAt: string;          // ISO of most recent swap
+}
+
 // User Settings
 export interface MuscleGroupTargets {
   [key: string]: number; // muscle group id -> target sets per week
@@ -430,10 +435,9 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   muscleGroupTargets: {
     chest: 10,
     lats: 10,
-    upper_back: 6,
+    upper_back: 12, // formerly 6 + 6 from rear_delts (merged in V10)
     front_delts: 6,
     side_delts: 10,
-    rear_delts: 6,
     triceps: 6,
     biceps: 6,
     quads: 10,

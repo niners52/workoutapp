@@ -8,6 +8,7 @@ interface SupplementCheckboxProps {
   supplement: Supplement;
   isTaken: boolean;
   onToggle: () => void;
+  onLongPress?: () => void;
   isFirst: boolean;
   isLast: boolean;
 }
@@ -16,6 +17,7 @@ export function SupplementCheckbox({
   supplement,
   isTaken,
   onToggle,
+  onLongPress,
   isFirst,
   isLast,
 }: SupplementCheckboxProps) {
@@ -28,6 +30,8 @@ export function SupplementCheckbox({
         !isLast && styles.containerBorder,
       ]}
       onPress={onToggle}
+      onLongPress={onLongPress}
+      delayLongPress={400}
       activeOpacity={0.7}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >

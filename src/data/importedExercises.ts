@@ -125,7 +125,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-external-rotation-band",
     "name": "External Rotation (Band)",
-    "primaryMuscleGroup": "rear_delts",
+    "primaryMuscleGroup": "upper_back",
     "secondaryMuscleGroups": [],
     "equipment": "other",
     "location": "both"
@@ -141,7 +141,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-passive-external",
     "name": "Passive External Rotation",
-    "primaryMuscleGroup": "rear_delts",
+    "primaryMuscleGroup": "upper_back",
     "secondaryMuscleGroups": [],
     "equipment": "other",
     "location": "both"
@@ -165,7 +165,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-y-raise",
     "name": "Y Raise",
-    "primaryMuscleGroup": "rear_delts",
+    "primaryMuscleGroup": "upper_back",
     "secondaryMuscleGroups": [],
     "equipment": "dumbbell",
     "location": "both"
