@@ -35,6 +35,7 @@ import {
   getActiveWorkoutState,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
+import { syncWeeklyPlannerReminder } from '../services/weeklyPlannerReminder';
 import { supabase } from '../services/supabase';
 import {
   syncExercise,
@@ -325,6 +326,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             console.log('HealthKit not available or permission denied');
           }
         });
+
+        // Re-apply the weekly planner reminder so it survives app restarts.
+        // (Scheduled notifications normally persist, but this reconciles state if
+        // the user uninstalled-and-reinstalled or wiped notifications.)
+        getUserSettings()
+          .then(s => syncWeeklyPlannerReminder(s))
+          .catch(e => console.log('Weekly planner reminder init failed:', e));
 
         setIsInitialized(true);
       } catch (error) {
@@ -737,6 +745,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // Fire-and-forget sync to cloud - need full settings object
     const fullSettings = await getUserSettings();
     syncUserSettings(fullSettings).catch(e => console.log('Sync error:', e));
+    // Re-apply the weekly planner reminder if those fields changed (cheap to call always)
+    const touchedReminder =
+      'weeklyPlannerReminderEnabled' in settings ||
+      'weeklyPlannerReminderDay' in settings ||
+      'weeklyPlannerReminderHour' in settings ||
+      'weeklyPlannerReminderMinute' in settings;
+    if (touchedReminder) {
+      syncWeeklyPlannerReminder(fullSettings).catch(e => console.log('Reminder sync error:', e));
+    }
   }, [refreshUserSettings]);
 
   // Utility

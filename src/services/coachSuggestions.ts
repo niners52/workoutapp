@@ -436,6 +436,164 @@ function generateFatigueSuggestions(
   return suggestions;
 }
 
+// ─── 6. Positive Insights ───────────────────────────────────────────────────
+// Mix wins and progress into the feed so users don't only see warnings.
+
+function generatePositiveInsights(
+  workouts: Workout[],
+  sets: WorkoutSet[],
+  exercises: Exercise[],
+): CoachSuggestion[] {
+  const suggestions: CoachSuggestion[] = [];
+  if (workouts.length === 0 || sets.length === 0) return suggestions;
+
+  const now = new Date();
+  const oneWeekAgo = subDays(now, 7);
+  const twoWeeksAgo = subDays(now, 14);
+  const fourWeeksAgo = subDays(now, 28);
+  const eightWeeksAgo = subDays(now, 56);
+
+  const completedWorkouts = workouts.filter(w => w.completedAt && !w.isDeload);
+  const workoutDateById = new Map<string, Date>();
+  for (const w of completedWorkouts) {
+    workoutDateById.set(w.id, new Date(w.completedAt || w.startedAt));
+  }
+  const workingSets = sets.filter(s => workoutDateById.has(s.workoutId));
+
+  // ── A. Volume up week-over-week ───────────────────────────────────────────
+  const volumeInRange = (start: Date, end: Date): number => {
+    let sum = 0;
+    for (const s of workingSets) {
+      const d = workoutDateById.get(s.workoutId);
+      if (d && d >= start && d < end) sum += (s.weight || 0) * (s.reps || 0);
+    }
+    return sum;
+  };
+  const thisWeekVol = volumeInRange(oneWeekAgo, now);
+  const lastWeekVol = volumeInRange(twoWeeksAgo, oneWeekAgo);
+  if (lastWeekVol > 0 && thisWeekVol > lastWeekVol * 1.05) {
+    const pct = Math.round(((thisWeekVol - lastWeekVol) / lastWeekVol) * 100);
+    suggestions.push({
+      id: 'positive:volume_up',
+      type: 'insight',
+      priority: 70,
+      icon: 'trending-up',
+      message: `Volume up ${pct}% from last week`,
+      detail: 'Solid progress — keep the momentum going.',
+    });
+  }
+
+  // ── B. New PR in the last week (vs. all prior history) ────────────────────
+  // Pick the most impressive single PR (largest % gain over previous best).
+  const recentSetsByExercise = new Map<string, WorkoutSet[]>();
+  const olderSetsByExercise = new Map<string, WorkoutSet[]>();
+  for (const s of workingSets) {
+    const d = workoutDateById.get(s.workoutId)!;
+    const map = d >= oneWeekAgo ? recentSetsByExercise : olderSetsByExercise;
+    const arr = map.get(s.exerciseId) ?? [];
+    arr.push(s);
+    map.set(s.exerciseId, arr);
+  }
+  let bestPR: { name: string; gain: number } | null = null;
+  recentSetsByExercise.forEach((recent, exerciseId) => {
+    const ex = exercises.find(e => e.id === exerciseId);
+    if (!ex) return;
+    const recentMax = Math.max(...recent.map(s => s.weight || 0), 0);
+    if (recentMax <= 0) return;
+    const older = olderSetsByExercise.get(exerciseId) ?? [];
+    if (older.length === 0) return; // No prior baseline — not a PR worth flagging
+    const olderMax = Math.max(...older.map(s => s.weight || 0), 0);
+    if (recentMax > olderMax && olderMax > 0) {
+      const gain = (recentMax - olderMax) / olderMax;
+      if (!bestPR || gain > bestPR.gain) {
+        bestPR = { name: ex.name, gain };
+      }
+    }
+  });
+  if (bestPR !== null) {
+    const pr = bestPR as { name: string; gain: number };
+    suggestions.push({
+      id: 'positive:pr_this_week',
+      type: 'insight',
+      priority: 75,
+      icon: 'trophy-outline',
+      message: `New PR on ${pr.name} this week!`,
+      detail: 'Heaviest set yet — note the conditions so you can repeat it.',
+    });
+  }
+
+  // ── C. Consistency: count consecutive recent weeks with >=1 workout ───────
+  const weekKey = (d: Date) => format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const weeksWithWorkouts = new Set<string>();
+  for (const w of completedWorkouts) {
+    weeksWithWorkouts.add(weekKey(new Date(w.completedAt || w.startedAt)));
+  }
+  let streak = 0;
+  for (let i = 0; i < 12; i++) {
+    const weekDate = subDays(now, i * 7);
+    if (weeksWithWorkouts.has(weekKey(weekDate))) streak += 1;
+    else break;
+  }
+  if (streak >= 3) {
+    suggestions.push({
+      id: 'positive:consistency',
+      type: 'insight',
+      priority: 65,
+      icon: 'flame-outline',
+      message: `${streak} weeks straight with workouts — great consistency`,
+      detail: 'Showing up is the hardest part. Keep the streak alive this week.',
+    });
+  }
+
+  // ── D. Top exercise progression over the last ~month ──────────────────────
+  // For the most-trained exercise, compare best weight in last 28 days vs. 28-56 days ago.
+  const setCount = new Map<string, number>();
+  for (const s of workingSets) {
+    setCount.set(s.exerciseId, (setCount.get(s.exerciseId) ?? 0) + 1);
+  }
+  let topExerciseId: string | null = null;
+  let topCount = 0;
+  setCount.forEach((c, id) => {
+    if (c > topCount) {
+      topCount = c;
+      topExerciseId = id;
+    }
+  });
+  if (topExerciseId && topCount >= 6) {
+    const ex = exercises.find(e => e.id === topExerciseId);
+    const exId = topExerciseId;
+    if (ex) {
+      const recent = workingSets.filter(s => {
+        if (s.exerciseId !== exId) return false;
+        const d = workoutDateById.get(s.workoutId)!;
+        return d >= fourWeeksAgo;
+      });
+      const prior = workingSets.filter(s => {
+        if (s.exerciseId !== exId) return false;
+        const d = workoutDateById.get(s.workoutId)!;
+        return d >= eightWeeksAgo && d < fourWeeksAgo;
+      });
+      if (recent.length > 0 && prior.length > 0) {
+        const recentMax = Math.max(...recent.map(s => s.weight || 0));
+        const priorMax = Math.max(...prior.map(s => s.weight || 0));
+        if (priorMax > 0 && recentMax > priorMax * 1.05) {
+          const pct = Math.round(((recentMax - priorMax) / priorMax) * 100);
+          suggestions.push({
+            id: `positive:exercise_progress:${exId}`,
+            type: 'insight',
+            priority: 68,
+            icon: 'arrow-up-circle-outline',
+            message: `${ex.name} up ${pct}% over the last month`,
+            detail: 'Strength is trending up — your programming is working.',
+          });
+        }
+      }
+    }
+  }
+
+  return suggestions;
+}
+
 // ─── Main Entry Point ───────────────────────────────────────────────────────
 
 export interface CoachSuggestionsInput {
@@ -456,29 +614,50 @@ export async function getTopSuggestions(
 
   // Generate all suggestions
   // During deload, skip volume/imbalance/missed suggestions — they aren't actionable
-  const all: CoachSuggestion[] = [
+  const negative: CoachSuggestion[] = [
     ...generateRecoverySuggestions(workouts, sets, exercises, routine, templates),
     ...generateFatigueSuggestions(workouts, sets, exercises, settings),
     ...(settings.isOnDeload ? [] : generateVolumeGapSuggestions(shortfalls)),
     ...(settings.isOnDeload ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),
     ...(settings.isOnDeload ? [] : generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings)),
   ];
+  const positive: CoachSuggestion[] = generatePositiveInsights(workouts, sets, exercises);
 
-  // Sort by priority descending
-  all.sort((a, b) => b.priority - a.priority);
+  // Sort each pool by priority descending
+  negative.sort((a, b) => b.priority - a.priority);
+  positive.sort((a, b) => b.priority - a.priority);
 
-  // Deduplicate by id (keep highest priority)
-  const seen = new Set<string>();
-  const unique = all.filter(s => {
-    if (seen.has(s.id)) return false;
-    seen.add(s.id);
-    return true;
-  });
-
-  // Filter dismissed
+  // Filter dismissed (apply to each pool)
   const dismissed = await getDismissedSuggestions();
   const dismissedIds = new Set(dismissed.map(d => d.id));
-  const filtered = unique.filter(s => !dismissedIds.has(s.id));
+  const dedup = (list: CoachSuggestion[]) => {
+    const seen = new Set<string>();
+    return list.filter(s => {
+      if (seen.has(s.id) || dismissedIds.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  };
+  const negFiltered = dedup(negative);
+  const posFiltered = dedup(positive);
 
-  return filtered.slice(0, maxCount);
+  // Interleave so the feed mixes wins and warnings instead of being all-warnings.
+  // If maxCount is 2 we get 1 of each when both exist; for higher counts we round-robin.
+  const result: CoachSuggestion[] = [];
+  let nIdx = 0, pIdx = 0;
+  while (result.length < maxCount && (nIdx < negFiltered.length || pIdx < posFiltered.length)) {
+    // Alternate starting with the higher-priority pool head
+    const negNext = negFiltered[nIdx];
+    const posNext = posFiltered[pIdx];
+    const takePositiveFirst = result.length % 2 === 1; // every other slot prefers positive
+    if (takePositiveFirst && posNext) {
+      result.push(posNext); pIdx += 1;
+    } else if (negNext) {
+      result.push(negNext); nIdx += 1;
+    } else if (posNext) {
+      result.push(posNext); pIdx += 1;
+    }
+  }
+
+  return result;
 }

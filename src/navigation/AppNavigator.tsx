@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
+import { WEEKLY_PLANNER_NOTIFICATION_DATA } from '../services/weeklyPlannerReminder';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
@@ -230,6 +232,8 @@ function MainTabs() {
   );
 }
 
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
 export function AppNavigator() {
   const { isLoading, isAuthenticated } = useAuth();
   const [authSkipped, setAuthSkipped] = useState(false);
@@ -241,6 +245,26 @@ export function AppNavigator() {
     AsyncStorage.getItem('auth_skipped').then(value => {
       setAuthSkipped(value === 'true');
     });
+  }, []);
+
+  // Tap-to-open: weekly planner reminder notifications navigate to the Routines screen.
+  // Handles both warm-app taps and cold launches via getLastNotificationResponseAsync.
+  useEffect(() => {
+    const goToRoutines = () => {
+      if (navigationRef.isReady()) navigationRef.navigate('Routines');
+    };
+    const handleResponse = (resp: Notifications.NotificationResponse) => {
+      const data = resp.notification.request.content.data as { kind?: string } | undefined;
+      if (data?.kind === WEEKLY_PLANNER_NOTIFICATION_DATA.kind) {
+        // Defer one tick so navigation is mounted on cold launch
+        setTimeout(goToRoutines, 0);
+      }
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    Notifications.getLastNotificationResponseAsync().then(resp => {
+      if (resp) handleResponse(resp);
+    });
+    return () => sub.remove();
   }, []);
 
   // Check migration status when authenticated
@@ -290,7 +314,7 @@ export function AppNavigator() {
 
   // Show main app
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerStyle: {

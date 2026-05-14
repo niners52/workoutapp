@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,8 @@ import {
 import { RootStackParamList } from '../navigation/types';
 import { formatVolume, formatWeight } from '../services/units';
 import { formatPRLabel } from '../services/personalRecords';
+import { getSetsByWorkoutId } from '../services/storage';
+import { WorkoutSet } from '../types';
 
 type WorkoutSummaryRouteProp = RouteProp<RootStackParamList, 'WorkoutSummary'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -58,13 +60,24 @@ export function WorkoutSummaryScreen() {
   const route = useRoute<WorkoutSummaryRouteProp>();
   const navigation = useNavigation<NavigationProp>();
   const { workoutId, startedAt, completedAt, totalSets, muscleGroupSets, sessionPRs } = route.params;
-  const { workouts, templates, sets: allSets, exercises, userSettings } = useData();
+  const { workouts, templates, exercises, userSettings } = useData();
+
+  // Load sets directly from storage. DataContext's `sets` state isn't refreshed when
+  // logSet writes during a workout, so the just-finished workout's sets aren't there yet
+  // and total volume would render as 0.
+  const [workoutSets, setWorkoutSets] = useState<WorkoutSet[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getSetsByWorkoutId(workoutId).then(s => {
+      if (!cancelled) setWorkoutSets(s);
+    });
+    return () => { cancelled = true; };
+  }, [workoutId]);
 
   // Get workout details
   const workout = workouts.find(w => w.id === workoutId);
   const template = workout?.templateId ? templates.find(t => t.id === workout.templateId) : null;
   const workoutName = template?.name || 'Custom Workout';
-  const workoutSets = allSets.filter(s => s.workoutId === workoutId);
   const units = userSettings?.units || 'imperial';
 
   const startTime = parseISO(startedAt);

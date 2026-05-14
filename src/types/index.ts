@@ -421,6 +421,11 @@ export interface UserSettings {
   // Yoga & Cardio tracking from HealthKit
   trackYoga?: boolean;                    // default false
   trackCardio?: boolean;                  // default false
+  // Weekly routine planning reminder (recurring weekly notification)
+  weeklyPlannerReminderEnabled?: boolean; // default false
+  weeklyPlannerReminderDay?: number;      // 0=Sunday … 6=Saturday, default 0 (Sunday)
+  weeklyPlannerReminderHour?: number;     // 0-23, default 19 (7pm)
+  weeklyPlannerReminderMinute?: number;   // 0-59, default 0
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {

@@ -10,12 +10,14 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { CalendarScreen } from './CalendarScreen';
 import { AnalyticsScreen } from './AnalyticsScreen';
 import { ProgressPhotosScreen } from './ProgressPhotosScreen';
+import { WeeklyHistoryScreen } from './WeeklyHistoryScreen';
 
-type ProgressTab = 'calendar' | 'analytics' | 'photos';
+type ProgressTab = 'calendar' | 'analytics' | 'weeks' | 'photos';
 
 const TABS: { key: ProgressTab; label: string }[] = [
   { key: 'calendar', label: 'Calendar' },
   { key: 'analytics', label: 'Analytics' },
+  { key: 'weeks', label: 'Weeks' },
   { key: 'photos', label: 'Photos' },
 ];
 
@@ -45,6 +47,7 @@ export function ProgressScreen() {
       <View style={styles.content}>
         {activeTab === 'calendar' && <CalendarScreen embedded />}
         {activeTab === 'analytics' && <AnalyticsScreen embedded />}
+        {activeTab === 'weeks' && <WeeklyHistoryScreen embedded />}
         {activeTab === 'photos' && <ProgressPhotosScreen embedded />}
       </View>
     </SafeAreaView>

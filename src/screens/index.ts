@@ -32,4 +32,5 @@ export { ProgressPhotoViewScreen } from './ProgressPhotoViewScreen';
 export { ProgressPhotoCompareScreen } from './ProgressPhotoCompareScreen';
 export { TrainScreen } from './TrainScreen';
 export { ProgressScreen } from './ProgressScreen';
+export { WeeklyHistoryScreen } from './WeeklyHistoryScreen';
 export { SocialScreen } from './SocialScreen';

@@ -15,7 +15,6 @@ import { format, subDays } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { Card } from '../common';
-import { BodyOutline } from './BodyOutline';
 import { useData } from '../../contexts/DataContext';
 import {
   BODY_MEASUREMENT_TYPES,
@@ -262,64 +261,42 @@ export function BodyMeasurementsSection({ onNavigateToHistory }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Body Outline Visualization */}
-      <Card style={styles.outlineCard}>
-        <BodyOutline
-          measurements={data.latest}
-          units={userSettings.units}
-          onMeasurementPress={(key) => {
-            const type = BODY_MEASUREMENT_TYPES.find(t => t.key === key);
-            if (type) {
-              const hasData = data.latest[key]?.value !== undefined;
-              if (hasData) {
-                onNavigateToHistory(key);
-              } else {
-                openQuickLog(type);
-              }
-            }
-          }}
-          trends={data.trends}
-          sex={userSettings.biologicalSex}
-        />
-      </Card>
-
-      {/* Measurement Groups */}
+      {/* Measurement Groups (table rows) */}
       {groups.map((group) => (
         <View key={group.label} style={styles.group}>
           <Text style={styles.groupLabel}>{group.label}</Text>
-          <View style={styles.measurementGrid}>
-            {group.measurements.map((type) => {
+          <Card padding="none" style={styles.tableCard}>
+            {group.measurements.map((type, idx) => {
               const measurement = data.latest[type.key as BodyMeasurementTypeKey];
               const hasData = measurement?.value !== undefined;
+              const isLast = idx === group.measurements.length - 1;
 
               return (
                 <TouchableOpacity
                   key={type.key}
-                  style={styles.measurementCard}
+                  style={[styles.measurementRow, !isLast && styles.measurementRowBorder]}
                   onPress={() => (hasData ? onNavigateToHistory(type.key as BodyMeasurementTypeKey) : openQuickLog(type))}
                   onLongPress={() => openQuickLog(type)}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.measurementHeader}>
-                    <Text style={styles.measurementIcon}>{type.icon}</Text>
-                    {hasData && getTrendIcon(type.key)}
+                  <Text style={styles.rowIcon}>{type.icon}</Text>
+                  <Text style={styles.rowLabel}>{type.label}</Text>
+                  <View style={styles.rowRight}>
+                    {hasData ? (
+                      <>
+                        <Text style={styles.rowValue}>
+                          {formatMeasurement(measurement.value!, userSettings.units)}
+                        </Text>
+                        {getTrendIcon(type.key)}
+                      </>
+                    ) : (
+                      <Text style={styles.rowEmpty}>Tap to log</Text>
+                    )}
                   </View>
-                  <Text style={styles.measurementLabel}>{type.label}</Text>
-                  {hasData ? (
-                    <>
-                      <Text style={styles.measurementValue}>
-                        {formatMeasurement(measurement.value!, userSettings.units)}
-                      </Text>
-                      <Text style={styles.measurementDate}>
-                        {format(new Date(measurement.date), 'MMM d')}
-                      </Text>
-                    </>
-                  ) : (
-                    <Text style={styles.measurementEmpty}>Tap to log</Text>
-                  )}
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </Card>
         </View>
       ))}
 
@@ -567,10 +544,6 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontWeight: typography.weight.medium,
   },
-  outlineCard: {
-    marginBottom: spacing.lg,
-    padding: spacing.sm,
-  },
   group: {
     marginBottom: spacing.md,
   },
@@ -581,50 +554,49 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  measurementGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
+  tableCard: {
+    overflow: 'hidden',
   },
-  measurementCard: {
-    width: '48%',
-    backgroundColor: colors.backgroundSecondary,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  measurementHeader: {
+  measurementRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
   },
-  measurementIcon: {
-    fontSize: 16,
+  measurementRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
   },
-  trendIcon: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.bold,
+  rowIcon: {
+    fontSize: 18,
+    width: 28,
   },
-  measurementLabel: {
-    fontSize: typography.size.sm,
+  rowLabel: {
+    flex: 1,
+    fontSize: typography.size.md,
     color: colors.text,
     fontWeight: typography.weight.medium,
-    marginBottom: spacing.xs,
   },
-  measurementValue: {
-    fontSize: typography.size.lg,
-    fontWeight: typography.weight.bold,
+  rowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  rowValue: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
     color: colors.text,
   },
-  measurementDate: {
-    fontSize: typography.size.xs,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  measurementEmpty: {
+  rowEmpty: {
     fontSize: typography.size.sm,
     color: colors.textTertiary,
     fontStyle: 'italic',
+  },
+  trendIcon: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.bold,
+    minWidth: 16,
+    textAlign: 'center',
   },
   // Modal styles
   modalContainer: {

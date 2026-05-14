@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -92,6 +93,7 @@ export function SettingsScreen() {
   const [showBodyFatSettings, setShowBodyFatSettings] = useState(false);
   const [showNutritionGoal, setShowNutritionGoal] = useState(false);
   const [showFatigueSettings, setShowFatigueSettings] = useState(false);
+  const [showPlannerTimePicker, setShowPlannerTimePicker] = useState(false);
   const [newLocationName, setNewLocationName] = useState('');
   const [newSupplementName, setNewSupplementName] = useState('');
   const [editingLocation, setEditingLocation] = useState<WorkoutLocation | null>(null);
@@ -1012,6 +1014,111 @@ export function SettingsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+          </Card>
+        </View>
+
+        {/* Reminders */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reminders</Text>
+          <Card padding="none">
+            <View style={styles.settingRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.settingLabel}>Plan Your Week</Text>
+                <Text style={styles.settingHint}>Weekly notification to set or review your routine</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.toggle,
+                  userSettings.weeklyPlannerReminderEnabled && styles.toggleActive,
+                ]}
+                onPress={() =>
+                  updateUserSettings({
+                    weeklyPlannerReminderEnabled: !userSettings.weeklyPlannerReminderEnabled,
+                  })
+                }
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userSettings.weeklyPlannerReminderEnabled && styles.toggleTextActive,
+                ]}>
+                  {userSettings.weeklyPlannerReminderEnabled ? 'On' : 'Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {userSettings.weeklyPlannerReminderEnabled && (
+              <>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Day</Text>
+                  <View style={plannerStyles.dayRow}>
+                    {(['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const).map((label, idx) => {
+                      const selected = (userSettings.weeklyPlannerReminderDay ?? 0) === idx;
+                      return (
+                        <TouchableOpacity
+                          key={idx}
+                          style={[plannerStyles.dayButton, selected && plannerStyles.dayButtonSelected]}
+                          onPress={() => updateUserSettings({ weeklyPlannerReminderDay: idx })}
+                        >
+                          <Text style={[plannerStyles.dayButtonText, selected && plannerStyles.dayButtonTextSelected]}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+                <View style={[styles.settingRow, styles.settingRowLast]}>
+                  <Text style={styles.settingLabel}>Time</Text>
+                  <TouchableOpacity
+                    style={plannerStyles.timeButton}
+                    onPress={() => setShowPlannerTimePicker(true)}
+                  >
+                    <Text style={plannerStyles.timeButtonText}>
+                      {(() => {
+                        const h = userSettings.weeklyPlannerReminderHour ?? 19;
+                        const m = userSettings.weeklyPlannerReminderMinute ?? 0;
+                        const date = new Date();
+                        date.setHours(h, m, 0, 0);
+                        return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {showPlannerTimePicker && (() => {
+                  const date = new Date();
+                  date.setHours(
+                    userSettings.weeklyPlannerReminderHour ?? 19,
+                    userSettings.weeklyPlannerReminderMinute ?? 0,
+                    0,
+                    0,
+                  );
+                  return (
+                    <DateTimePicker
+                      value={date}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      themeVariant="dark"
+                      onChange={(event, picked) => {
+                        if (Platform.OS === 'android') setShowPlannerTimePicker(false);
+                        if (picked && (Platform.OS !== 'android' || event.type === 'set')) {
+                          updateUserSettings({
+                            weeklyPlannerReminderHour: picked.getHours(),
+                            weeklyPlannerReminderMinute: picked.getMinutes(),
+                          });
+                        }
+                      }}
+                    />
+                  );
+                })()}
+                {Platform.OS === 'ios' && showPlannerTimePicker && (
+                  <TouchableOpacity
+                    style={plannerStyles.doneButton}
+                    onPress={() => setShowPlannerTimePicker(false)}
+                  >
+                    <Text style={plannerStyles.doneButtonText}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
           </Card>
         </View>
 
@@ -2273,6 +2380,55 @@ const styles = StyleSheet.create({
   incompleteAction: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
+  },
+});
+
+const plannerStyles = StyleSheet.create({
+  dayRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  dayButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayButtonSelected: {
+    backgroundColor: colors.primary,
+  },
+  dayButtonText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.weight.medium,
+  },
+  dayButtonTextSelected: {
+    color: colors.textOnPrimary,
+    fontWeight: typography.weight.semibold,
+  },
+  timeButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundTertiary,
+  },
+  timeButtonText: {
+    color: colors.text,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+  },
+  doneButton: {
+    margin: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  doneButtonText: {
+    color: colors.textOnPrimary,
+    fontWeight: typography.weight.semibold,
   },
 });
 
