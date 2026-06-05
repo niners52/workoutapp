@@ -94,7 +94,7 @@ interface WorkoutContextType {
   lastSessionData: LastSessionData | null;
 
   // Workout actions
-  startWorkout: (templateId?: string) => Promise<string>;
+  startWorkout: (templateId?: string, exerciseIdsOverride?: string[]) => Promise<string>;
   finishWorkout: (skippedExerciseIds?: string[]) => Promise<void>;
   cancelWorkout: () => Promise<void>;
 
@@ -401,7 +401,10 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const startWorkout = useCallback(async (templateId?: string): Promise<string> => {
+  const startWorkout = useCallback(async (
+    templateId?: string,
+    exerciseIdsOverride?: string[],
+  ): Promise<string> => {
     const workout: Workout = {
       id: generateId(),
       startedAt: new Date().toISOString(),
@@ -414,8 +417,12 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     // Fire-and-forget sync to cloud
     syncWorkout(workout).catch(e => console.log('Sync error:', e));
 
+    // Resolve the starting exercise lineup. Explicit overrides win (used by
+    // "Create as Workout" from a past session), otherwise pull from the template.
     let exerciseIds: string[] = [];
-    if (templateId) {
+    if (exerciseIdsOverride?.length) {
+      exerciseIds = [...exerciseIdsOverride];
+    } else if (templateId) {
       const template = await getTemplateById(templateId);
       if (template) {
         exerciseIds = [...template.exerciseIds];
