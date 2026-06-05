@@ -239,7 +239,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     // Compute expected set count before async logSet (state may not update immediately)
     const currentExercise = exercises.find(e => e.id === selectedExerciseId);
     const baseTarget = userSettings?.defaultTargetSets ?? 3;
-    const targetSets = targetSetOverrides[selectedExerciseId] ?? (currentExercise?.isUnilateral ? baseTarget * 2 : baseTarget);
+    const targetSets =
+      targetSetOverrides[selectedExerciseId]
+      ?? currentExercise?.targetSets
+      ?? (currentExercise?.isUnilateral ? baseTarget * 2 : baseTarget);
     const currentSetCount = getSetsForExercise(selectedExerciseId).length;
     const willComplete = currentSetCount + 1 >= targetSets;
     const exerciseToMove = selectedExerciseId;
@@ -278,7 +281,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         // The exercise we just logged won't have the new set yet, so adjust
         const adjusted = id === exerciseToMove ? setCount + 1 : setCount;
         const ex = exercises.find(e => e.id === id);
-        const exTarget = ex?.isUnilateral ? baseTarget * 2 : baseTarget;
+        const exTarget =
+          targetSetOverrides[id]
+          ?? ex?.targetSets
+          ?? (ex?.isUnilateral ? baseTarget * 2 : baseTarget);
         return adjusted < exTarget;
       });
       if (nextIncomplete) {
@@ -493,7 +499,11 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const handleOpenEditModal = (exercise: Exercise) => {
     const baseTarget = userSettings?.defaultTargetSets ?? 3;
     const currentOverride = targetSetOverrides[exercise.id];
-    const effectiveTarget = currentOverride ?? (exercise.isUnilateral ? baseTarget * 2 : baseTarget);
+    const persistentTarget = exercise.targetSets;
+    const effectiveTarget =
+      currentOverride
+      ?? persistentTarget
+      ?? (exercise.isUnilateral ? baseTarget * 2 : baseTarget);
     setEditingExercise(exercise);
     setEditName(exercise.name);
     setEditUnilateral(exercise.isUnilateral ?? false);
@@ -515,46 +525,54 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     const notesChanged = (editNotes.trim() || undefined) !== (editingExercise.notes || undefined);
     const equipmentChanged = editEquipment !== editingExercise.equipment;
 
-    // Persist exercise changes (name, unilateral, notes, equipment are always permanent)
-    if (nameChanged || unilateralChanged || notesChanged || equipmentChanged) {
+    // The "natural" default for this exercise given its (possibly just-toggled) unilateral state.
+    // When the chosen target equals this, we store `undefined` so the exercise falls back to the
+    // global default and tracks any future change to UserSettings.defaultTargetSets.
+    const defaultForNewUnilateral = editUnilateral ? baseTarget * 2 : baseTarget;
+
+    // If the user picked "permanent", roll the target-sets change into the same updateExercise call.
+    const newTargetSets = editTargetSetsPermanent
+      ? (editTargetSets === defaultForNewUnilateral ? undefined : editTargetSets)
+      : editingExercise.targetSets;
+    const targetSetsChanged =
+      editTargetSetsPermanent && newTargetSets !== editingExercise.targetSets;
+
+    // Persist exercise changes (name, unilateral, notes, equipment are always permanent;
+    // targetSets only when the user opted into "permanent").
+    if (nameChanged || unilateralChanged || notesChanged || equipmentChanged || targetSetsChanged) {
       const updatedExercise: Exercise = {
         ...editingExercise,
         name: nameChanged ? trimmedName : editingExercise.name,
         isUnilateral: editUnilateral || undefined,
         notes: editNotes.trim() || undefined,
         equipment: editEquipment,
+        targetSets: newTargetSets,
       };
       await updateExercise(updatedExercise);
     }
 
-    // Handle target sets
-    const defaultForNewUnilateral = editUnilateral ? baseTarget * 2 : baseTarget;
+    // Handle session-only override behavior.
     if (editTargetSetsPermanent) {
-      // Clear any workout-only override since the user chose permanent
+      // Permanent write-through wins — drop any session override so the persistent value applies.
       setTargetSetOverrides(prev => {
+        if (!(editingExercise.id in prev)) return prev;
         const next = { ...prev };
         delete next[editingExercise.id];
         return next;
       });
-      // Note: permanent target set change would require a userSettings update
-      // For now we treat "permanent" target sets as a workout override that persists
-      // since defaultTargetSets is global. We store it as an override instead.
-      if (editTargetSets !== defaultForNewUnilateral) {
-        setTargetSetOverrides(prev => ({
-          ...prev,
-          [editingExercise.id]: editTargetSets,
-        }));
-      }
     } else {
-      // Workout-only override
-      if (editTargetSets !== defaultForNewUnilateral) {
+      // Workout-only override. Compare against the effective persistent default
+      // (exercise.targetSets if set, else the unilateral-aware global default) so we
+      // don't keep a redundant override that just mirrors the persistent value.
+      const effectiveDefault = editingExercise.targetSets ?? defaultForNewUnilateral;
+      if (editTargetSets !== effectiveDefault) {
         setTargetSetOverrides(prev => ({
           ...prev,
           [editingExercise.id]: editTargetSets,
         }));
       } else {
-        // Remove override if it matches the default
         setTargetSetOverrides(prev => {
+          if (!(editingExercise.id in prev)) return prev;
           const next = { ...prev };
           delete next[editingExercise.id];
           return next;
@@ -829,7 +847,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             const completed: string[] = [];
             for (const id of activeWorkout.exerciseIds) {
               const ex = exercises.find(e => e.id === id);
-              const target = targetSetOverrides[id] ?? (ex?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
+              const target =
+                targetSetOverrides[id]
+                ?? ex?.targetSets
+                ?? (ex?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
               if (getSetsForExercise(id).length >= target) {
                 completed.push(id);
               } else {
@@ -843,7 +864,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
               const currentSets = getSetsForExercise(exerciseId);
               const history = exerciseHistories[exerciseId];
               const isExpanded = selectedExerciseId === exerciseId;
-              const targetSets = targetSetOverrides[exerciseId] ?? (exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
+              const targetSets =
+                targetSetOverrides[exerciseId]
+                ?? exercise?.targetSets
+                ?? (exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
               const exerciseComplete = currentSets.length >= targetSets;
 
               if (!exercise) return null;

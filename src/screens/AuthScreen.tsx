@@ -17,7 +17,7 @@ import { colors, typography, spacing, borderRadius } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 
 export function AuthScreen() {
-  const { signIn, signUp, signInWithApple } = useAuth();
+  const { signIn, signUp, signInWithApple, enableOfflineMode } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -211,33 +211,36 @@ export function AuthScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Skip for now - allows using app without account */}
+          {/* Continue Offline — prominent, always available so users locked out
+              of cloud sign-in (e.g., Apple Sign In errors) can still reach their
+              local data. */}
           <TouchableOpacity
-            style={styles.skipButton}
+            style={styles.offlineButton}
             onPress={() => {
               Alert.alert(
-                'Continue Without Account',
-                'Your data will only be stored on this device. You can create an account later in Settings to back up your data.',
+                'Continue Offline',
+                'Use your local workout history without signing in. You can sign in later from Settings to enable cloud sync.',
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {
-                    text: 'Continue',
+                    text: 'Continue Offline',
                     onPress: () => {
-                      // Set a flag in AsyncStorage to skip auth
-                      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-                      AsyncStorage.setItem('auth_skipped', 'true').then(() => {
-                        // Force a re-render - the navigation should check this flag
-                        // This will be handled by the root navigator
-                      });
+                      enableOfflineMode().catch(e =>
+                        Alert.alert('Error', e?.message || 'Failed to enter offline mode')
+                      );
                     },
                   },
                 ]
               );
             }}
             disabled={loading}
+            activeOpacity={0.8}
           >
-            <Text style={styles.skipText}>Continue without an account</Text>
+            <Text style={styles.offlineButtonText}>Continue Offline</Text>
           </TouchableOpacity>
+          <Text style={styles.offlineHint}>
+            Access your local data without signing in. Cloud sync stays off until you log in.
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -325,14 +328,26 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.primary,
   },
-  skipButton: {
-    marginTop: spacing.xl,
+  offlineButton: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.surfaceLight,
   },
-  skipText: {
-    fontSize: typography.size.sm,
+  offlineButtonText: {
+    fontSize: typography.size.base,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  offlineHint: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.size.xs,
     color: colors.textTertiary,
-    textDecorationLine: 'underline',
+    textAlign: 'center',
   },
   appleButton: {
     backgroundColor: '#000000',

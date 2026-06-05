@@ -1,12 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase, signInWithApple as signInWithAppleService } from '../services/supabase';
+
+const AUTH_SKIPPED_KEY = 'auth_skipped';
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  // True when the user chose "Continue without an account" — lets them use local data
+  // without signing in. Cloud sync features should be gated on `isAuthenticated`, not this.
+  isOfflineMode: boolean;
+  enableOfflineMode: () => Promise<void>;
+  exitOfflineMode: () => Promise<void>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithApple: () => Promise<void>;
@@ -18,11 +26,18 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
 
   useEffect(() => {
-    // Check for existing session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Load the offline-mode flag from storage in parallel with the session check so the
+    // navigator only un-blocks once we know both. Without this, the user could see the
+    // auth screen flash even when they previously chose "Continue Offline".
+    Promise.all([
+      supabase.auth.getSession(),
+      AsyncStorage.getItem(AUTH_SKIPPED_KEY),
+    ]).then(([{ data: { session } }, skipped]) => {
       setSession(session);
+      setIsOfflineMode(skipped === 'true');
       setIsLoading(false);
     });
 
@@ -34,6 +49,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  const enableOfflineMode = useCallback(async () => {
+    await AsyncStorage.setItem(AUTH_SKIPPED_KEY, 'true');
+    setIsOfflineMode(true);
+  }, []);
+
+  const exitOfflineMode = useCallback(async () => {
+    await AsyncStorage.removeItem(AUTH_SKIPPED_KEY);
+    setIsOfflineMode(false);
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
@@ -82,6 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user: session?.user ?? null,
     isLoading,
     isAuthenticated: !!session,
+    isOfflineMode,
+    enableOfflineMode,
+    exitOfflineMode,
     signUp,
     signIn,
     signInWithApple,

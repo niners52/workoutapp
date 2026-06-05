@@ -278,6 +278,7 @@ export interface Exercise {
   isCustom?: boolean;
   isUnilateral?: boolean; // Single-limb exercise — doubles target sets, halves volume credit
   notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
+  targetSets?: number; // Per-exercise default target set count; falls back to UserSettings.defaultTargetSets (doubled if unilateral) when undefined
 }
 
 /**
@@ -406,6 +407,9 @@ export interface UserSettings {
   progressPhotosLocked?: boolean;
   // Coach suggestions
   coachSuggestionsEnabled?: boolean;
+  // 'balanced' (default) shows mix of wins + at most one constructive nudge.
+  // 'encouragement_only' hides decline/comparison warnings entirely.
+  coachMode?: 'balanced' | 'encouragement_only';
   // Fatigue detection
   fatigueDetectionEnabled?: boolean;
   fatigueSensitivity?: number;

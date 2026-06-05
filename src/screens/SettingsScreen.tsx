@@ -66,7 +66,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { user, signOut } = useAuth();
+  const { user, signOut, isOfflineMode, exitOfflineMode } = useAuth();
   const {
     userSettings,
     updateUserSettings,
@@ -509,6 +509,32 @@ export function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             )}
+            {!user && isOfflineMode && (
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      'Sign In to Sync',
+                      'Return to the sign-in screen? Your local data stays on this device until sync completes.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Sign In',
+                          onPress: () => {
+                            exitOfflineMode().catch(e =>
+                              Alert.alert('Error', e?.message || 'Failed to exit offline mode')
+                            );
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                  style={styles.signInToSyncButton}
+                >
+                  <Text style={styles.signInToSyncText}>Sign In to Sync</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </Card>
         </View>
 
@@ -744,6 +770,34 @@ export function SettingsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+            {userSettings.coachSuggestionsEnabled !== false && (
+              <View style={styles.settingRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.settingLabel}>Coach Mode</Text>
+                  <Text style={styles.settingHint}>
+                    {userSettings.coachMode === 'encouragement_only'
+                      ? 'Wins and encouragement only — no decline warnings'
+                      : 'Mix of wins and at most one constructive nudge'}
+                  </Text>
+                </View>
+                <View style={coachModeStyles.segment}>
+                  {(['balanced', 'encouragement_only'] as const).map(mode => {
+                    const selected = (userSettings.coachMode ?? 'balanced') === mode;
+                    return (
+                      <TouchableOpacity
+                        key={mode}
+                        style={[coachModeStyles.segmentButton, selected && coachModeStyles.segmentButtonSelected]}
+                        onPress={() => updateUserSettings({ coachMode: mode })}
+                      >
+                        <Text style={[coachModeStyles.segmentText, selected && coachModeStyles.segmentTextSelected]}>
+                          {mode === 'balanced' ? 'Balanced' : 'Encourage'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
             <View style={[styles.settingRow, styles.settingRowLast]}>
               <Text style={styles.settingLabel}>Milestone Celebrations</Text>
               <TouchableOpacity
@@ -2275,6 +2329,14 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontWeight: typography.weight.medium,
   },
+  signInToSyncButton: {
+    paddingVertical: spacing.sm,
+  },
+  signInToSyncText: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
   offlineModeText: {
     fontSize: typography.size.md,
     color: colors.textTertiary,
@@ -2380,6 +2442,32 @@ const styles = StyleSheet.create({
   incompleteAction: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
+  },
+});
+
+const coachModeStyles = StyleSheet.create({
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: borderRadius.md,
+    padding: 2,
+  },
+  segmentButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md - 2,
+  },
+  segmentButtonSelected: {
+    backgroundColor: colors.primary,
+  },
+  segmentText: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.weight.medium,
+  },
+  segmentTextSelected: {
+    color: colors.textOnPrimary,
+    fontWeight: typography.weight.semibold,
   },
 });
 

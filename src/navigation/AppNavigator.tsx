@@ -5,7 +5,6 @@ import { WEEKLY_PLANNER_NOTIFICATION_DATA } from '../services/weeklyPlannerRemin
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography } from '../theme';
 import { RootStackParamList, MainTabParamList } from './types';
@@ -235,17 +234,11 @@ function MainTabs() {
 const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 export function AppNavigator() {
-  const { isLoading, isAuthenticated } = useAuth();
-  const [authSkipped, setAuthSkipped] = useState(false);
+  const { isLoading, isAuthenticated, isOfflineMode } = useAuth();
+  // Local alias for readability — `authSkipped` is the same as offline mode.
+  const authSkipped = isOfflineMode;
   const [needsMigration, setNeedsMigration] = useState(false);
   const [checkingMigration, setCheckingMigration] = useState(true);
-
-  // Check if user skipped auth
-  useEffect(() => {
-    AsyncStorage.getItem('auth_skipped').then(value => {
-      setAuthSkipped(value === 'true');
-    });
-  }, []);
 
   // Tap-to-open: weekly planner reminder notifications navigate to the Routines screen.
   // Handles both warm-app taps and cold launches via getLastNotificationResponseAsync.

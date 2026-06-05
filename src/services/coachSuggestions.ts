@@ -436,6 +436,75 @@ function generateFatigueSuggestions(
   return suggestions;
 }
 
+// ─── Coach Context ──────────────────────────────────────────────────────────
+// Detects life events that should soften the coach's tone: returning from a
+// long break (illness, vacation), wrapping up a deload, etc. We compute this
+// once and pass it to every generator so they can adjust their messaging.
+
+interface CoachContext {
+  // Days since the most recent completed (non-deload) workout, or null when there is none.
+  daysSinceLastWorkout: number | null;
+  // True if the user has just returned after a 7+ day gap — the most recent workout
+  // happened within the last 3 days AND the workout before it was 7+ days earlier.
+  justReturnedFromBreak: boolean;
+  // The size of that gap in days, if any.
+  priorGapDays: number | null;
+  // True if the user is currently inside a 14-day grace window after a long break.
+  // During this window, week-over-week comparisons are suppressed so the user
+  // isn't told they "declined" relative to pre-break performance.
+  inReturnGracePeriod: boolean;
+}
+
+function computeCoachContext(workouts: Workout[]): CoachContext {
+  const now = new Date();
+  const completed = workouts
+    .filter(w => w.completedAt && !w.isDeload)
+    .map(w => new Date(w.completedAt || w.startedAt))
+    .sort((a, b) => b.getTime() - a.getTime());
+
+  if (completed.length === 0) {
+    return {
+      daysSinceLastWorkout: null,
+      justReturnedFromBreak: false,
+      priorGapDays: null,
+      inReturnGracePeriod: false,
+    };
+  }
+
+  const last = completed[0];
+  const daysSinceLastWorkout = Math.floor(
+    (now.getTime() - last.getTime()) / (24 * 60 * 60 * 1000)
+  );
+
+  const prior = completed[1];
+  const priorGapDays = prior
+    ? Math.floor((last.getTime() - prior.getTime()) / (24 * 60 * 60 * 1000))
+    : null;
+
+  // Just returned: latest workout is recent AND there was a 7+ day gap before it.
+  const justReturnedFromBreak =
+    daysSinceLastWorkout <= 3 && (priorGapDays ?? 0) >= 7;
+
+  // Grace window: if the last 14 days contain a 7+ day gap, soften comparisons.
+  let inReturnGracePeriod = false;
+  for (let i = 0; i < completed.length - 1; i++) {
+    const cur = completed[i];
+    const next = completed[i + 1];
+    const gap = Math.floor((cur.getTime() - next.getTime()) / (24 * 60 * 60 * 1000));
+    if (gap >= 7) {
+      const daysSinceGapEnded = Math.floor(
+        (now.getTime() - cur.getTime()) / (24 * 60 * 60 * 1000)
+      );
+      if (daysSinceGapEnded <= 14) {
+        inReturnGracePeriod = true;
+      }
+      break;
+    }
+  }
+
+  return { daysSinceLastWorkout, justReturnedFromBreak, priorGapDays, inReturnGracePeriod };
+}
+
 // ─── 6. Positive Insights ───────────────────────────────────────────────────
 // Mix wins and progress into the feed so users don't only see warnings.
 
@@ -443,9 +512,9 @@ function generatePositiveInsights(
   workouts: Workout[],
   sets: WorkoutSet[],
   exercises: Exercise[],
+  context: CoachContext,
 ): CoachSuggestion[] {
   const suggestions: CoachSuggestion[] = [];
-  if (workouts.length === 0 || sets.length === 0) return suggestions;
 
   const now = new Date();
   const oneWeekAgo = subDays(now, 7);
@@ -460,6 +529,41 @@ function generatePositiveInsights(
   }
   const workingSets = sets.filter(s => workoutDateById.has(s.workoutId));
 
+  // ── 0. Welcome back ───────────────────────────────────────────────────────
+  // Highest-priority encouragement when someone just returned after a long break,
+  // even if the rest of the data looks sparse.
+  if (context.justReturnedFromBreak) {
+    const gap = context.priorGapDays ?? 0;
+    suggestions.push({
+      id: 'positive:welcome_back',
+      type: 'insight',
+      priority: 98,
+      icon: 'sunny-outline',
+      message: gap >= 7
+        ? `First workout in ${gap} days — nice job showing up`
+        : 'Welcome back! Great to see you training again',
+      detail: 'No need to compare to before. Build from where you are today.',
+    });
+  }
+
+  // Sets this week (always a positive snapshot when the user has any activity)
+  const setsThisWeekCount = workingSets.filter(s => {
+    const d = workoutDateById.get(s.workoutId);
+    return d && d >= oneWeekAgo;
+  }).length;
+  if (setsThisWeekCount > 0) {
+    suggestions.push({
+      id: 'positive:sets_this_week',
+      type: 'insight',
+      priority: 60,
+      icon: 'list-outline',
+      message: `${setsThisWeekCount} set${setsThisWeekCount === 1 ? '' : 's'} logged this week — keep it going`,
+    });
+  }
+
+  // No history yet → only the welcome-back / sets-this-week messages above apply
+  if (workouts.length === 0 || sets.length === 0) return suggestions;
+
   // ── A. Volume up week-over-week ───────────────────────────────────────────
   const volumeInRange = (start: Date, end: Date): number => {
     let sum = 0;
@@ -471,7 +575,9 @@ function generatePositiveInsights(
   };
   const thisWeekVol = volumeInRange(oneWeekAgo, now);
   const lastWeekVol = volumeInRange(twoWeeksAgo, oneWeekAgo);
-  if (lastWeekVol > 0 && thisWeekVol > lastWeekVol * 1.05) {
+  // Skip comparisons while returning from a break — a week with one workout vs.
+  // a week of zero would otherwise generate a misleading "+1000%" insight.
+  if (!context.inReturnGracePeriod && lastWeekVol > 0 && thisWeekVol > lastWeekVol * 1.05) {
     const pct = Math.round(((thisWeekVol - lastWeekVol) / lastWeekVol) * 100);
     suggestions.push({
       id: 'positive:volume_up',
@@ -559,7 +665,7 @@ function generatePositiveInsights(
       topExerciseId = id;
     }
   });
-  if (topExerciseId && topCount >= 6) {
+  if (!context.inReturnGracePeriod && topExerciseId && topCount >= 6) {
     const ex = exercises.find(e => e.id === topExerciseId);
     const exId = topExerciseId;
     if (ex) {
@@ -611,17 +717,26 @@ export async function getTopSuggestions(
   maxCount: number = 2
 ): Promise<CoachSuggestion[]> {
   const { workouts, sets, exercises, templates, routine, settings, shortfalls } = input;
+  const context = computeCoachContext(workouts);
+  const encouragementOnly = settings.coachMode === 'encouragement_only';
 
-  // Generate all suggestions
-  // During deload, skip volume/imbalance/missed suggestions — they aren't actionable
-  const negative: CoachSuggestion[] = [
-    ...generateRecoverySuggestions(workouts, sets, exercises, routine, templates),
-    ...generateFatigueSuggestions(workouts, sets, exercises, settings),
-    ...(settings.isOnDeload ? [] : generateVolumeGapSuggestions(shortfalls)),
-    ...(settings.isOnDeload ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),
-    ...(settings.isOnDeload ? [] : generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings)),
-  ];
-  const positive: CoachSuggestion[] = generatePositiveInsights(workouts, sets, exercises);
+  // Generators that lean negative/constructive.
+  // - During deload: skip volume/imbalance/missed (not actionable mid-deload).
+  // - During the 14-day return-from-break grace window: skip decline/comparison-based
+  //   warnings entirely so we don't kick the user when they're rebuilding.
+  // - In encouragement_only mode: skip them all.
+  const suppressDeclines = encouragementOnly || context.inReturnGracePeriod;
+  const negative: CoachSuggestion[] = encouragementOnly
+    ? []
+    : [
+        // Recovery suggestions stay — they're protective/helpful, not criticism.
+        ...generateRecoverySuggestions(workouts, sets, exercises, routine, templates),
+        ...(suppressDeclines ? [] : generateFatigueSuggestions(workouts, sets, exercises, settings)),
+        ...(settings.isOnDeload || suppressDeclines ? [] : generateVolumeGapSuggestions(shortfalls)),
+        ...(settings.isOnDeload || suppressDeclines ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),
+        ...(settings.isOnDeload || suppressDeclines ? [] : generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings)),
+      ];
+  const positive: CoachSuggestion[] = generatePositiveInsights(workouts, sets, exercises, context);
 
   // Sort each pool by priority descending
   negative.sort((a, b) => b.priority - a.priority);
@@ -641,21 +756,26 @@ export async function getTopSuggestions(
   const negFiltered = dedup(negative);
   const posFiltered = dedup(positive);
 
-  // Interleave so the feed mixes wins and warnings instead of being all-warnings.
-  // If maxCount is 2 we get 1 of each when both exist; for higher counts we round-robin.
+  // Build the result with tone constraints:
+  //   - At most one negative, ever — never pile on.
+  //   - Lead with positive when both exist, so criticism is paired with a win.
+  //   - In encouragement_only mode, return positives only (no negative cap needed).
   const result: CoachSuggestion[] = [];
   let nIdx = 0, pIdx = 0;
+  let negativeUsed = 0;
   while (result.length < maxCount && (nIdx < negFiltered.length || pIdx < posFiltered.length)) {
-    // Alternate starting with the higher-priority pool head
     const negNext = negFiltered[nIdx];
     const posNext = posFiltered[pIdx];
-    const takePositiveFirst = result.length % 2 === 1; // every other slot prefers positive
-    if (takePositiveFirst && posNext) {
+    // Lead positive when available, then allow at most one negative.
+    if (posNext && (result.length === 0 || negativeUsed >= 1 || !negNext)) {
       result.push(posNext); pIdx += 1;
-    } else if (negNext) {
+    } else if (negNext && negativeUsed < 1) {
       result.push(negNext); nIdx += 1;
+      negativeUsed += 1;
     } else if (posNext) {
       result.push(posNext); pIdx += 1;
+    } else {
+      break;
     }
   }
 
