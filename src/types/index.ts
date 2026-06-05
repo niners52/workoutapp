@@ -407,9 +407,13 @@ export interface UserSettings {
   progressPhotosLocked?: boolean;
   // Coach suggestions
   coachSuggestionsEnabled?: boolean;
-  // 'balanced' (default) shows mix of wins + at most one constructive nudge.
   // 'encouragement_only' hides decline/comparison warnings entirely.
-  coachMode?: 'balanced' | 'encouragement_only';
+  // 'balanced' (default) shows mix of wins + at most one constructive nudge.
+  // 'data_focused' shows the full set of constructive/analytical insights without
+  // the lead-positive bias — for users who want the unvarnished signal.
+  // Note: during the 14-day return-from-break grace window, the coach auto-switches
+  // to encouragement-only behavior regardless of this setting.
+  coachMode?: 'encouragement_only' | 'balanced' | 'data_focused';
   // Fatigue detection
   fatigueDetectionEnabled?: boolean;
   fatigueSensitivity?: number;

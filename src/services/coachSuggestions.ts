@@ -540,9 +540,19 @@ function generatePositiveInsights(
       priority: 98,
       icon: 'sunny-outline',
       message: gap >= 7
-        ? `First workout in ${gap} days — nice job showing up`
-        : 'Welcome back! Great to see you training again',
-      detail: 'No need to compare to before. Build from where you are today.',
+        ? `Welcome back 💪 — first workout in ${gap} days`
+        : 'Welcome back 💪 — great to see you training again',
+      detail: 'Just focus on showing up. We won\'t compare you to before — fresh start.',
+    });
+  } else if (context.inReturnGracePeriod) {
+    // Still rebuilding inside the 14-day window but not the very first workout back.
+    suggestions.push({
+      id: 'positive:rebuilding',
+      type: 'insight',
+      priority: 88,
+      icon: 'sunny-outline',
+      message: 'You showed up today — that\'s what matters',
+      detail: 'No comparisons to pre-break performance. Stack consistent sessions.',
     });
   }
 
@@ -718,14 +728,20 @@ export async function getTopSuggestions(
 ): Promise<CoachSuggestion[]> {
   const { workouts, sets, exercises, templates, routine, settings, shortfalls } = input;
   const context = computeCoachContext(workouts);
-  const encouragementOnly = settings.coachMode === 'encouragement_only';
+  // Auto-encourage: regardless of the user's setting, a 7+ day break flips us into
+  // encouragement-only mode for 14 days. The user can still see the wins; we just
+  // don't pile on with comparisons to pre-break performance.
+  const effectiveMode = context.inReturnGracePeriod
+    ? 'encouragement_only'
+    : (settings.coachMode ?? 'balanced');
+  const encouragementOnly = effectiveMode === 'encouragement_only';
+  const dataFocused = effectiveMode === 'data_focused';
 
   // Generators that lean negative/constructive.
-  // - During deload: skip volume/imbalance/missed (not actionable mid-deload).
-  // - During the 14-day return-from-break grace window: skip decline/comparison-based
-  //   warnings entirely so we don't kick the user when they're rebuilding.
-  // - In encouragement_only mode: skip them all.
-  const suppressDeclines = encouragementOnly || context.inReturnGracePeriod;
+  // - encouragement_only: skip all negative generators entirely.
+  // - balanced: keep recovery, drop comparison-based warnings during return grace.
+  // - data_focused: keep everything (deload exceptions still apply).
+  const suppressDeclines = encouragementOnly;
   const negative: CoachSuggestion[] = encouragementOnly
     ? []
     : [
@@ -756,10 +772,16 @@ export async function getTopSuggestions(
   const negFiltered = dedup(negative);
   const posFiltered = dedup(positive);
 
-  // Build the result with tone constraints:
+  // Build the result with tone constraints.
+  // data_focused: just take from a combined priority-sorted pool, no tone shaping.
+  if (dataFocused) {
+    const merged = [...negFiltered, ...posFiltered].sort((a, b) => b.priority - a.priority);
+    return merged.slice(0, maxCount);
+  }
+  // Balanced/encouragement:
   //   - At most one negative, ever — never pile on.
   //   - Lead with positive when both exist, so criticism is paired with a win.
-  //   - In encouragement_only mode, return positives only (no negative cap needed).
+  //   - In encouragement_only mode, the negative pool is empty so we'll just emit positives.
   const result: CoachSuggestion[] = [];
   let nIdx = 0, pIdx = 0;
   let negativeUsed = 0;

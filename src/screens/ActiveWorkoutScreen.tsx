@@ -100,6 +100,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [editNotes, setEditNotes] = useState('');
   const [editTargetSets, setEditTargetSets] = useState(3);
   const [editTargetSetsPermanent, setEditTargetSetsPermanent] = useState(false);
+  // Brief "Saved" toast shown after a successful exercise edit so the user knows
+  // the write went through (the modal closes immediately, otherwise no feedback).
+  const [editSavedToast, setEditSavedToast] = useState(false);
   const [editEquipment, setEditEquipment] = useState<Equipment>('barbell');
   // Per-exercise target set overrides for this workout only
   const [targetSetOverrides, setTargetSetOverrides] = useState<Record<string, number>>({});
@@ -509,7 +512,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     setEditUnilateral(exercise.isUnilateral ?? false);
     setEditNotes(exercise.notes ?? '');
     setEditTargetSets(effectiveTarget);
-    setEditTargetSetsPermanent(false);
+    // Default to PERSISTENT save — when a user edits an exercise they almost always
+    // want the change to stick across future workouts. Session-only is the opt-out.
+    setEditTargetSetsPermanent(true);
     setEditEquipment(exercise.equipment);
     setEditModalVisible(true);
   };
@@ -539,6 +544,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
     // Persist exercise changes (name, unilateral, notes, equipment are always permanent;
     // targetSets only when the user opted into "permanent").
+    let persisted = false;
     if (nameChanged || unilateralChanged || notesChanged || equipmentChanged || targetSetsChanged) {
       const updatedExercise: Exercise = {
         ...editingExercise,
@@ -548,7 +554,18 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         equipment: editEquipment,
         targetSets: newTargetSets,
       };
-      await updateExercise(updatedExercise);
+      try {
+        await updateExercise(updatedExercise);
+        persisted = true;
+        console.log('[ActiveWorkout] Exercise saved:', updatedExercise.id, {
+          targetSets: updatedExercise.targetSets,
+          isUnilateral: updatedExercise.isUnilateral,
+        });
+      } catch (err) {
+        console.log('[ActiveWorkout] Exercise save failed:', err);
+        Alert.alert('Save Failed', 'Could not save the exercise. Please try again.');
+        return;
+      }
     }
 
     // Handle session-only override behavior.
@@ -582,6 +599,11 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
     setEditModalVisible(false);
     setEditingExercise(null);
+    // Confirm the write to the user — modal closed too fast to be visible otherwise.
+    if (persisted) {
+      setEditSavedToast(true);
+      setTimeout(() => setEditSavedToast(false), 1500);
+    }
   };
 
   const handleRemoveExercise = (exercise: Exercise) => {
@@ -1409,6 +1431,13 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* Brief save confirmation — appears at the top for ~1.5s after an edit persists */}
+        {editSavedToast && (
+          <View style={styles.editSavedToast} pointerEvents="none">
+            <Text style={styles.editSavedToastText}>Exercise updated ✓</Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -2515,6 +2544,25 @@ const styles = StyleSheet.create({
   editSaveButtonText: {
     fontSize: typography.size.md,
     color: '#fff',
+    fontWeight: typography.weight.semibold,
+  },
+  editSavedToast: {
+    position: 'absolute',
+    top: spacing.lg,
+    alignSelf: 'center',
+    backgroundColor: colors.success,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  editSavedToastText: {
+    color: colors.textOnPrimary,
+    fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
   },
 });

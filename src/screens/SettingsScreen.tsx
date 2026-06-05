@@ -771,32 +771,44 @@ export function SettingsScreen() {
               </TouchableOpacity>
             </View>
             {userSettings.coachSuggestionsEnabled !== false && (
-              <View style={styles.settingRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.settingLabel}>Coach Mode</Text>
-                  <Text style={styles.settingHint}>
-                    {userSettings.coachMode === 'encouragement_only'
-                      ? 'Wins and encouragement only — no decline warnings'
-                      : 'Mix of wins and at most one constructive nudge'}
-                  </Text>
+              <>
+                <View style={styles.settingRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingLabel}>Coach Tone</Text>
+                    <Text style={styles.settingHint}>
+                      {(() => {
+                        const mode = userSettings.coachMode ?? 'balanced';
+                        if (mode === 'encouragement_only') return 'Wins only — no decline warnings';
+                        if (mode === 'data_focused') return 'Full analytics, no positive bias';
+                        return 'Wins + at most one constructive nudge';
+                      })()}
+                    </Text>
+                  </View>
                 </View>
-                <View style={coachModeStyles.segment}>
-                  {(['balanced', 'encouragement_only'] as const).map(mode => {
-                    const selected = (userSettings.coachMode ?? 'balanced') === mode;
-                    return (
-                      <TouchableOpacity
-                        key={mode}
-                        style={[coachModeStyles.segmentButton, selected && coachModeStyles.segmentButtonSelected]}
-                        onPress={() => updateUserSettings({ coachMode: mode })}
-                      >
-                        <Text style={[coachModeStyles.segmentText, selected && coachModeStyles.segmentTextSelected]}>
-                          {mode === 'balanced' ? 'Balanced' : 'Encourage'}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View style={[styles.settingRow, coachModeStyles.modeRow]}>
+                  <View style={coachModeStyles.segment}>
+                    {(['encouragement_only', 'balanced', 'data_focused'] as const).map(mode => {
+                      const selected = (userSettings.coachMode ?? 'balanced') === mode;
+                      const label = mode === 'encouragement_only'
+                        ? 'Encouraging'
+                        : mode === 'data_focused'
+                        ? 'Data'
+                        : 'Balanced';
+                      return (
+                        <TouchableOpacity
+                          key={mode}
+                          style={[coachModeStyles.segmentButton, selected && coachModeStyles.segmentButtonSelected]}
+                          onPress={() => updateUserSettings({ coachMode: mode })}
+                        >
+                          <Text style={[coachModeStyles.segmentText, selected && coachModeStyles.segmentTextSelected]}>
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
-              </View>
+              </>
             )}
             <View style={[styles.settingRow, styles.settingRowLast]}>
               <Text style={styles.settingLabel}>Milestone Celebrations</Text>
@@ -2446,6 +2458,9 @@ const styles = StyleSheet.create({
 });
 
 const coachModeStyles = StyleSheet.create({
+  modeRow: {
+    justifyContent: 'center',
+  },
   segment: {
     flexDirection: 'row',
     backgroundColor: colors.backgroundTertiary,
@@ -2453,9 +2468,11 @@ const coachModeStyles = StyleSheet.create({
     padding: 2,
   },
   segmentButton: {
+    flex: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.md - 2,
+    alignItems: 'center',
   },
   segmentButtonSelected: {
     backgroundColor: colors.primary,
