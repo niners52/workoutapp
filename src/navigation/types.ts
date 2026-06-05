@@ -26,6 +26,7 @@ export type RootStackParamList = {
   RoutineDetail: { routineId: string };
   CreateRoutine: undefined;
   EditRoutine: { routineId: string };
+  ImportRoutine: undefined;
   HealthKitData: undefined;
   WorkoutSummary: {
     workoutId: string;

@@ -39,6 +39,7 @@ import {
   RoutinesScreen,
   CreateRoutineScreen,
   RoutineDetailScreen,
+  ImportRoutineScreen,
   HealthKitDataScreen,
   WorkoutSummaryScreen,
   MeasurementHistoryScreen,
@@ -471,6 +472,15 @@ export function AppNavigator() {
           component={CreateRoutineScreen}
           options={{
             title: 'Create Routine',
+            presentation: 'modal',
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="ImportRoutine"
+          component={ImportRoutineScreen}
+          options={{
+            title: 'Import Routine',
             presentation: 'modal',
             headerShown: false,
           }}

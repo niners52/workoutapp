@@ -75,13 +75,20 @@ export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
         </View>
       )}
 
-        {/* Create Button */}
+        {/* Create / Import Buttons */}
         <Button
           title="Create New Routine"
           onPress={() => navigation.navigate('CreateRoutine')}
           fullWidth
           size="large"
         />
+        <TouchableOpacity
+          style={styles.importLink}
+          onPress={() => navigation.navigate('ImportRoutine')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.importLinkText}>Import from JSON…</Text>
+        </TouchableOpacity>
 
         {/* Active Routine */}
         {activeRoutine && (
@@ -182,6 +189,16 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.lg,
+  },
+  importLink: {
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  importLinkText: {
+    color: colors.primary,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
   },
   backButton: {
     fontSize: typography.size.md,
