@@ -55,7 +55,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 10;
+const CURRENT_MIGRATION_VERSION = 11;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -149,6 +149,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 10) {
     await migrateToV10();
+  }
+
+  if (currentVersion < 11) {
+    await migrateToV11();
   }
 
   // Update migration version
@@ -492,6 +496,15 @@ async function migrateToV10(): Promise<void> {
   }
 
   console.log(`Migration to V10 complete - rewrote ${migratedExercises} exercises`);
+}
+
+// Migration V11: introduce Workout.locationId for per-location weight history.
+// Historical workouts have no recoverable location, so we intentionally do NOT
+// backfill — they remain "unknown location" and fall back to location-agnostic
+// "last time" lookups. This is a no-op version bump that exists so the field is
+// understood as deliberately optional going forward.
+async function migrateToV11(): Promise<void> {
+  console.log('Running migration to V11 - Workout.locationId introduced (no backfill)');
 }
 
 // Reset storage (for debugging/testing)
@@ -847,8 +860,15 @@ export async function getSetsInDateRange(start: Date, end: Date): Promise<Workou
 }
 
 // Get last sets for an exercise (for showing "last time" info)
-// Automatically skips deload workouts so suggestions always reference normal sessions
-export async function getLastSetsForExercise(exerciseId: string, limit: number = 5): Promise<WorkoutSet[]> {
+// Automatically skips deload workouts so suggestions always reference normal sessions.
+// When preferLocationId is provided, the most recent session AT THAT LOCATION wins;
+// if the exercise has never been done there, we fall back to the most recent session
+// anywhere (so callers can still pre-fill something sensible).
+export async function getLastSetsForExercise(
+  exerciseId: string,
+  limit: number = 5,
+  preferLocationId?: string,
+): Promise<WorkoutSet[]> {
   const [sets, workouts] = await Promise.all([
     getSetsByExerciseId(exerciseId),
     getWorkouts(),
@@ -856,19 +876,42 @@ export async function getLastSetsForExercise(exerciseId: string, limit: number =
 
   // Build set of deload workout IDs to exclude
   const deloadIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
+  const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
 
   // Filter out deload sets, then sort by loggedAt descending
   const sortedSets = sets
     .filter(s => !deloadIds.has(s.workoutId))
     .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
 
-  // Find the last non-deload workout that included this exercise
   if (sortedSets.length === 0) return [];
 
-  const lastWorkoutId = sortedSets[0].workoutId;
-  const lastWorkoutSets = sortedSets.filter(s => s.workoutId === lastWorkoutId);
+  // Prefer the most recent session at the requested location, if any exist.
+  let pool = sortedSets;
+  if (preferLocationId) {
+    const sameLocation = sortedSets.filter(
+      s => locationByWorkoutId.get(s.workoutId) === preferLocationId
+    );
+    if (sameLocation.length > 0) pool = sameLocation;
+  }
+
+  const lastWorkoutId = pool[0].workoutId;
+  const lastWorkoutSets = pool.filter(s => s.workoutId === lastWorkoutId);
 
   return lastWorkoutSets.slice(0, limit);
+}
+
+// Most recent completed workout that recorded a location — used as the default
+// location for workout-start paths that don't explicitly pick one (quick-start, repeat).
+export async function getLastUsedLocationId(): Promise<string | undefined> {
+  const workouts = await getWorkouts();
+  const withLocation = workouts
+    .filter(w => w.locationId)
+    .sort(
+      (a, b) =>
+        new Date(b.completedAt || b.startedAt).getTime() -
+        new Date(a.completedAt || a.startedAt).getTime()
+    );
+  return withLocation[0]?.locationId;
 }
 
 // ==================== USER SETTINGS ====================

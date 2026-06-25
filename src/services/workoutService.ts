@@ -11,6 +11,12 @@ export interface WorkoutSessionSets {
 export interface LastWorkoutForExercise {
   date: string;
   sets: WorkoutSet[];
+  // The location the returned sets were performed at (undefined for legacy workouts
+  // recorded before locationId existed).
+  fromLocationId?: string;
+  // True when the returned session is at the requested location (or when no specific
+  // location was requested). False signals "first time at this gym — here's elsewhere".
+  isSameLocation: boolean;
 }
 
 /**
@@ -42,7 +48,8 @@ export async function getSetsByExerciseIdCompleted(
  */
 export async function getLastWorkoutForExercise(
   exerciseId: string,
-  excludeWorkoutIds?: Set<string>
+  excludeWorkoutIds?: Set<string>,
+  preferLocationId?: string,
 ): Promise<LastWorkoutForExercise | null> {
   let sets = await getSetsByExerciseId(exerciseId);
 
@@ -58,15 +65,37 @@ export async function getLastWorkoutForExercise(
     (a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()
   );
 
-  // Get the most recent workout ID
-  const lastWorkoutId = sortedSets[0].workoutId;
+  // Map workoutId -> locationId so we can prefer same-location history.
+  const workouts = await getWorkouts();
+  const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+
+  // Prefer the most recent session at the requested location; fall back to the most
+  // recent session anywhere when the exercise has never been done there.
+  let pool = sortedSets;
+  let isSameLocation = true;
+  if (preferLocationId) {
+    const sameLocation = sortedSets.filter(
+      s => locationByWorkoutId.get(s.workoutId) === preferLocationId
+    );
+    if (sameLocation.length > 0) {
+      pool = sameLocation;
+      isSameLocation = true;
+    } else {
+      isSameLocation = false; // showing history from a different gym
+    }
+  }
+
+  // Get the most recent workout ID from the chosen pool
+  const lastWorkoutId = pool[0].workoutId;
 
   // Get all sets from that workout
-  const lastWorkoutSets = sortedSets.filter(s => s.workoutId === lastWorkoutId);
+  const lastWorkoutSets = pool.filter(s => s.workoutId === lastWorkoutId);
 
   return {
     date: lastWorkoutSets[0].loggedAt,
     sets: lastWorkoutSets,
+    fromLocationId: locationByWorkoutId.get(lastWorkoutId),
+    isSameLocation,
   };
 }
 

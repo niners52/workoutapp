@@ -312,6 +312,7 @@ export interface Workout {
   startedAt: string; // ISO date string
   completedAt: string | null;
   templateId: string | null;
+  locationId?: string; // References WorkoutLocation.id — where the workout happened. Optional: older records predate this field and are treated as "unknown location".
   skippedExerciseIds?: string[]; // Template exercises with zero sets logged
   isDeload?: boolean; // Workout performed during a deload week
 }

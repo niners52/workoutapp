@@ -43,6 +43,7 @@ import {
   updateSet,
   getSetsByWorkoutId,
   getLastSetsForExercise,
+  getLastUsedLocationId,
   getExerciseById,
   getTemplateById,
   getUserSettings,
@@ -94,9 +95,10 @@ interface WorkoutContextType {
   lastSessionData: LastSessionData | null;
 
   // Workout actions
-  startWorkout: (templateId?: string, exerciseIdsOverride?: string[]) => Promise<string>;
+  startWorkout: (templateId?: string, exerciseIdsOverride?: string[], locationId?: string) => Promise<string>;
   finishWorkout: (skippedExerciseIds?: string[]) => Promise<void>;
   cancelWorkout: () => Promise<void>;
+  updateActiveWorkoutLocation: (locationId: string) => Promise<void>;
 
   // Exercise actions
   setCurrentExercise: (exerciseId: string) => void;
@@ -404,12 +406,19 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const startWorkout = useCallback(async (
     templateId?: string,
     exerciseIdsOverride?: string[],
+    locationId?: string,
   ): Promise<string> => {
+    // Resolve location: explicit choice wins, otherwise reuse the last location the
+    // user trained at so per-location weight history stays meaningful even on the
+    // quick-start / repeat paths that don't surface a location picker.
+    const resolvedLocationId = locationId ?? (await getLastUsedLocationId());
+
     const workout: Workout = {
       id: generateId(),
       startedAt: new Date().toISOString(),
       completedAt: null,
       templateId: templateId || null,
+      locationId: resolvedLocationId,
       isDeload: userSettings?.isOnDeload || undefined,
     };
 
@@ -432,7 +441,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     // Load last session data for first exercise
     let initialLastSessionData: LastSessionData | null = null;
     if (exerciseIds[0]) {
-      const lastSets = await getLastSetsForExercise(exerciseIds[0]);
+      const lastSets = await getLastSetsForExercise(exerciseIds[0], 5, resolvedLocationId);
       initialLastSessionData = { exerciseId: exerciseIds[0], sets: lastSets };
     }
 
@@ -460,6 +469,25 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
     return workout.id;
   }, [updateWorkoutNotification]);
+
+  // Reassign the active workout's location mid-session. Persists to storage directly
+  // because the auto-persist effect only watches a fixed set of fields (not locationId).
+  const updateActiveWorkoutLocation = useCallback(async (locationId: string) => {
+    setActiveWorkout(prev => {
+      if (!prev) return prev;
+      const updatedWorkout = { ...prev.workout, locationId };
+      // Fire-and-forget persistence of the new location.
+      updateWorkout(updatedWorkout).catch(e => console.log('Failed to persist location:', e));
+      saveActiveWorkoutState({
+        workout: updatedWorkout,
+        exerciseIds: prev.exerciseIds,
+        originalExerciseIds: prev.originalExerciseIds,
+        currentExerciseId: prev.currentExerciseId,
+        currentExerciseIndex: prev.currentExerciseIndex,
+      }).catch(e => console.log('Failed to persist active workout location:', e));
+      return { ...prev, workout: updatedWorkout };
+    });
+  }, []);
 
   const stopRestTimer = useCallback(async () => {
     if (timerIntervalRef.current) {
@@ -922,6 +950,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     startWorkout,
     finishWorkout,
     cancelWorkout,
+    updateActiveWorkoutLocation,
     setCurrentExercise,
     addExerciseToWorkout,
     removeExerciseFromWorkout,

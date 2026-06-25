@@ -137,7 +137,7 @@ export function TemplateDetailScreen() {
   }, [templateExercises]);
 
   const handleStartWorkout = async () => {
-    const workoutId = await startWorkout(template.id);
+    const workoutId = await startWorkout(template.id, undefined, template.locationId);
     navigation.navigate('MainTabs', { screen: 'Train' });
   };
 

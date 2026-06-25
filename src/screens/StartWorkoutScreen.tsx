@@ -128,7 +128,7 @@ export function StartWorkoutScreen() {
   };
 
   const handleSelectTemplate = (template: Template) => {
-    startWorkout(template.id)
+    startWorkout(template.id, undefined, selectedLocation?.id ?? template.locationId)
       .then((workoutId) => {
         navigation.navigate('MainTabs', { screen: 'Train' });
       })
@@ -138,7 +138,7 @@ export function StartWorkoutScreen() {
   };
 
   const handleStartBlank = () => {
-    startWorkout()
+    startWorkout(undefined, undefined, selectedLocation?.id)
       .then((workoutId) => {
         navigation.navigate('MainTabs', { screen: 'Train' });
       })
@@ -268,7 +268,7 @@ export function StartWorkoutScreen() {
 
     try {
       // Start a blank workout
-      const workoutId = await startWorkout();
+      const workoutId = await startWorkout(undefined, undefined, selectedLocation?.id);
 
       // Add each selected exercise
       for (const exerciseId of selectedExerciseIds) {

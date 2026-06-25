@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
 import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/fatigueDetection';
+import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -52,11 +53,15 @@ interface ExerciseHistory {
   exerciseId: string;
   sets: WorkoutSet[];
   date: string | null;
+  // Location the history came from + whether it matches the current workout's location.
+  // Drives the "Last at <gym>" vs "First time at this gym — last at <gym>" labels.
+  fromLocationId?: string;
+  isSameLocation?: boolean;
 }
 
 export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings, locations, workouts, sets, getActiveRoutine, updateExercise } = useData();
+  const { exercises, templates, userSettings, locations, workouts, sets, exerciseSwaps, getActiveRoutine, updateExercise } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -65,6 +70,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     removeSet,
     finishWorkout,
     cancelWorkout,
+    updateActiveWorkoutLocation,
     startRestTimer,
     stopRestTimer,
     getSetsForExercise,
@@ -80,6 +86,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [exerciseHistories, setExerciseHistories] = useState<Record<string, ExerciseHistory>>({});
   const [restTimerModalVisible, setRestTimerModalVisible] = useState(false);
   const [customRestTime, setCustomRestTime] = useState(userSettings?.restTimerSeconds || 90);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
   const [swapModalVisible, setSwapModalVisible] = useState(false);
   const [exerciseToSwap, setExerciseToSwap] = useState<Exercise | null>(null);
   const [swapSearchQuery, setSwapSearchQuery] = useState('');
@@ -91,6 +98,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const prAnimValue = useRef(new Animated.Value(0)).current;
   const [sessionPRs, setSessionPRs] = useState<Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>>(new Map());
   const [fatigueWarnings, setFatigueWarnings] = useState<Map<string, ExerciseFatigueSignal>>(new Map());
+  // Exercises whose cross-day swap-conflict badge the user has dismissed ("Keep") this session.
+  const [dismissedSwapConflicts, setDismissedSwapConflicts] = useState<Set<string>>(new Set());
 
   // Edit exercise modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -121,16 +130,20 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         workouts.filter(w => w.isDeload).map(w => w.id)
       );
 
+      const workoutLocationId = activeWorkout.workout.locationId;
       const histories: Record<string, ExerciseHistory> = {};
       for (const exerciseId of activeWorkout.exerciseIds) {
         const lastWorkout = await getLastWorkoutForExercise(
           exerciseId,
-          deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined
+          deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined,
+          workoutLocationId
         );
         histories[exerciseId] = {
           exerciseId,
           sets: lastWorkout?.sets || [],
           date: lastWorkout?.date || null,
+          fromLocationId: lastWorkout?.fromLocationId,
+          isSameLocation: lastWorkout?.isSameLocation ?? true,
         };
       }
       setExerciseHistories(histories);
@@ -146,7 +159,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     };
 
     loadHistories();
-  }, [activeWorkout?.exerciseIds.length]);
+  }, [activeWorkout?.exerciseIds.length, activeWorkout?.workout.locationId]);
 
   // Initialize weight/reps when selecting exercise or after logging a set
   // Priority: 1) Last set logged THIS session, 2) History from previous sessions
@@ -175,6 +188,18 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
       setReps(history.sets[0].reps);
     }
   }, [selectedExerciseId, exerciseHistories, activeWorkout?.sets.length]);
+
+  // Cross-day swap conflicts: which of this workout's exercises were swapped in/out
+  // earlier this week. Recomputed when the lineup or the week's swap log changes.
+  const swapConflicts = useMemo(() => {
+    if (!activeWorkout) return new Map<string, SwapConflict>();
+    return getWeekSwapConflicts(activeWorkout.exerciseIds, {
+      exerciseSwaps,
+      exercises,
+      weekStartDay: userSettings?.weekStartDay ?? 'monday',
+      currentWorkoutId: activeWorkout.workout.id,
+    });
+  }, [activeWorkout?.exerciseIds, activeWorkout?.workout.id, exerciseSwaps, exercises, userSettings?.weekStartDay]);
 
   if (!isWorkoutActive || !activeWorkout) {
     if (embedded) return null;
@@ -649,7 +674,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     );
     const lastWorkout = await getLastWorkoutForExercise(
       newExercise.id,
-      deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined
+      deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined,
+      activeWorkout?.workout.locationId
     );
     setExerciseHistories(prev => ({
       ...prev,
@@ -657,6 +683,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         exerciseId: newExercise.id,
         sets: lastWorkout?.sets || [],
         date: lastWorkout?.date || null,
+        fromLocationId: lastWorkout?.fromLocationId,
+        isSameLocation: lastWorkout?.isSameLocation ?? true,
       },
     }));
 
@@ -826,6 +854,17 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             <Text style={styles.workoutTime}>
               Started {format(new Date(activeWorkout.workout.startedAt), 'h:mm a')} • {totalSetsLogged} sets logged
             </Text>
+            <TouchableOpacity
+              style={styles.locationChip}
+              onPress={() => setLocationModalVisible(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="location-outline" size={13} color={colors.primary} />
+              <Text style={styles.locationChipText}>
+                {locations.find(l => l.id === activeWorkout.workout.locationId)?.name || 'Set location'}
+              </Text>
+              <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
           <View style={styles.headerRight}>
             <TouchableOpacity
@@ -885,6 +924,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
               const exercise = exercises.find(e => e.id === exerciseId);
               const currentSets = getSetsForExercise(exerciseId);
               const history = exerciseHistories[exerciseId];
+              const fromLocationName = history?.fromLocationId
+                ? locations.find(l => l.id === history.fromLocationId)?.name
+                : undefined;
               const isExpanded = selectedExerciseId === exerciseId;
               const targetSets =
                 targetSetOverrides[exerciseId]
@@ -934,6 +976,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     isComplete={exerciseComplete}
                     isOnDeload={userSettings?.isOnDeload}
                     deloadPercentage={userSettings?.deloadPercentage}
+                    fromLocationName={fromLocationName}
+                    swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
+                    onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
                   />
                 </React.Fragment>
               );
@@ -1018,6 +1063,45 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
             fullWidth
           />
         </View>
+
+        {/* Location Modal — reassign where this workout is happening */}
+        <Modal
+          visible={locationModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setLocationModalVisible(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setLocationModalVisible(false)}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Workout Location</Text>
+              <Text style={styles.locationModalHint}>
+                "Last time" weights are pulled from your most recent session at this location.
+              </Text>
+              {locations.map(loc => {
+                const selected = loc.id === activeWorkout.workout.locationId;
+                return (
+                  <TouchableOpacity
+                    key={loc.id}
+                    style={[styles.locPickOption, selected && styles.locPickOptionSelected]}
+                    onPress={() => {
+                      updateActiveWorkoutLocation(loc.id);
+                      setLocationModalVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.locPickOptionText, selected && styles.locPickOptionTextSelected]}>
+                      {loc.name}
+                    </Text>
+                    {selected && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Rest Timer Modal */}
         <Modal
@@ -1450,9 +1534,11 @@ interface PreviousSetIndicatorProps {
   units: UnitSystem;
   isOnDeload?: boolean;
   deloadPercentage?: number;
+  // Display name of the location the history came from (when known).
+  fromLocationName?: string;
 }
 
-function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadPercentage }: PreviousSetIndicatorProps) {
+function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadPercentage, fromLocationName }: PreviousSetIndicatorProps) {
   // Determine what to show: last set from current session, or last set from previous session
   const lastCurrentSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
   const lastHistorySet = history?.sets?.[0];
@@ -1470,14 +1556,26 @@ function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadP
   }
 
   if (lastHistorySet) {
-    // Show last set from previous workout
+    // Show last set from previous workout. Build a location-aware label:
+    //  - different gym  → "First time here — last at Vasa (Jun 3):"
+    //  - same/known gym → "Last at Planet Fitness (Jun 3):"
+    //  - unknown gym    → "Last time (Jun 3):"  (legacy / no location recorded)
     const historyDate = history?.date ? format(new Date(history.date), 'MMM d') : '';
+    const datePart = historyDate ? ` (${historyDate})` : '';
+    let lastLabel: string;
+    if (history?.isSameLocation === false && fromLocationName) {
+      lastLabel = `First time here — last at ${fromLocationName}${datePart}:`;
+    } else if (fromLocationName) {
+      lastLabel = `Last at ${fromLocationName}${datePart}:`;
+    } else {
+      lastLabel = `Last time${datePart}:`;
+    }
     if (isOnDeload) {
       const pct = (deloadPercentage ?? 50) / 100;
       const deloadWeight = Math.round((lastHistorySet.weight * pct) / 5) * 5 || lastHistorySet.weight * pct;
       return (
         <View style={styles.previousSetContainer}>
-          <Text style={styles.previousSetLabel}>Last time ({historyDate}):</Text>
+          <Text style={styles.previousSetLabel}>{lastLabel}</Text>
           <Text style={styles.previousSetValue}>
             {formatWeight(lastHistorySet.weight, units)} × {lastHistorySet.reps} reps
           </Text>
@@ -1489,7 +1587,7 @@ function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadP
     }
     return (
       <View style={styles.previousSetContainer}>
-        <Text style={styles.previousSetLabel}>Last time ({historyDate}):</Text>
+        <Text style={styles.previousSetLabel}>{lastLabel}</Text>
         <Text style={styles.previousSetValue}>
           {formatWeight(lastHistorySet.weight, units)} × {lastHistorySet.reps} reps
         </Text>
@@ -1533,6 +1631,9 @@ interface ExerciseCardProps {
   isComplete: boolean;
   isOnDeload?: boolean;
   deloadPercentage?: number;
+  fromLocationName?: string;
+  swapConflict?: SwapConflict;
+  onKeepSwapConflict?: () => void;
 }
 
 function ExerciseCard({
@@ -1563,6 +1664,9 @@ function ExerciseCard({
   isComplete,
   isOnDeload,
   deloadPercentage,
+  fromLocationName,
+  swapConflict,
+  onKeepSwapConflict,
 }: ExerciseCardProps) {
   const showPR = prCelebration?.exerciseId === exercise.id;
   const setCount = currentSets.length;
@@ -1627,6 +1731,30 @@ function ExerciseCard({
           <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
         </View>
       </TouchableOpacity>
+
+      {/* Swap Conflict Banner — this exercise was swapped in/out earlier this week */}
+      {swapConflict && (
+        <View style={styles.swapConflictBanner}>
+          <Ionicons name="swap-horizontal-outline" size={14} color={colors.warning} />
+          <Text style={styles.swapConflictText}>{swapConflict.message}</Text>
+          <View style={styles.swapConflictActions}>
+            {hasSwapOptions && (
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation?.(); onSwap(); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.swapConflictSwapText}>Swap</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation?.(); onKeepSwapConflict?.(); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.swapConflictKeepText}>Keep</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Fatigue Warning Banner */}
       {fatigueWarning && !showPR && (
@@ -1716,6 +1844,7 @@ function ExerciseCard({
               units={units}
               isOnDeload={isOnDeload}
               deloadPercentage={deloadPercentage}
+              fromLocationName={fromLocationName}
             />
 
             <View style={styles.inputRow}>
@@ -1809,6 +1938,45 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  locationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  locationChipText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
+  },
+  locationModalHint: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  locPickOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundTertiary,
+    marginBottom: spacing.sm,
+  },
+  locPickOptionSelected: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  locPickOptionText: {
+    fontSize: typography.size.md,
+    color: colors.text,
+  },
+  locPickOptionTextSelected: {
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
   },
   cancelText: {
     fontSize: typography.size.md,
@@ -1939,6 +2107,34 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.warning,
     flex: 1,
+  },
+  swapConflictBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    backgroundColor: 'rgba(217, 119, 6, 0.1)',
+  },
+  swapConflictText: {
+    fontSize: typography.size.xs,
+    color: colors.warning,
+    flex: 1,
+  },
+  swapConflictActions: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing.sm,
+  },
+  swapConflictSwapText: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  swapConflictKeepText: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.weight.semibold,
   },
   swapButton: {
     backgroundColor: colors.backgroundTertiary,

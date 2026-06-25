@@ -556,6 +556,55 @@ function generatePositiveInsights(
     });
   }
 
+  // ── Per-session snapshot: sets logged in the most recent workout ──────────
+  // A "you showed up" win scoped to the latest session (not the whole week) — this
+  // is the one that lands right after a break when the weekly numbers look thin.
+  const mostRecentWorkout = completedWorkouts
+    .slice()
+    .sort((a, b) =>
+      new Date(b.completedAt || b.startedAt).getTime() -
+      new Date(a.completedAt || a.startedAt).getTime()
+    )[0];
+  if (mostRecentWorkout) {
+    const sessionSetCount = workingSets.filter(s => s.workoutId === mostRecentWorkout.id).length;
+    if (sessionSetCount > 0) {
+      suggestions.push({
+        id: 'positive:sets_this_session',
+        type: 'insight',
+        priority: 62,
+        icon: 'barbell-outline',
+        message: `${sessionSetCount} set${sessionSetCount === 1 ? '' : 's'} logged this session`,
+      });
+    }
+  }
+
+  // ── Building back up: workouts completed since the last long break ────────
+  // Fresh-start framing during the return grace window — counts forward from the
+  // comeback rather than comparing to pre-break performance.
+  if (context.inReturnGracePeriod) {
+    const datesDesc = completedWorkouts
+      .map(w => new Date(w.completedAt || w.startedAt))
+      .sort((a, b) => b.getTime() - a.getTime());
+    let sinceReturn = 0;
+    for (let i = 0; i < datesDesc.length; i++) {
+      sinceReturn += 1;
+      const next = datesDesc[i + 1];
+      if (!next) break;
+      const gapDays = Math.floor((datesDesc[i].getTime() - next.getTime()) / (24 * 60 * 60 * 1000));
+      if (gapDays >= 7) break; // the break that preceded the comeback
+    }
+    if (sinceReturn >= 2) {
+      suggestions.push({
+        id: 'positive:building_back',
+        type: 'insight',
+        priority: 72,
+        icon: 'barbell-outline',
+        message: `Building back up — ${sinceReturn} workouts since returning`,
+        detail: 'Fresh start — we compare forward from here, not back to before.',
+      });
+    }
+  }
+
   // Sets this week (always a positive snapshot when the user has any activity)
   const setsThisWeekCount = workingSets.filter(s => {
     const d = workoutDateById.get(s.workoutId);

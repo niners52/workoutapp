@@ -149,7 +149,7 @@ export function WorkoutDetailScreen() {
     if (exerciseIds.length === 0) return;
     setCreating(true);
     try {
-      const newWorkoutId = await startWorkout(undefined, exerciseIds);
+      const newWorkoutId = await startWorkout(undefined, exerciseIds, workout?.locationId ?? template?.locationId);
       setCreateModalVisible(false);
       navigation.navigate('ActiveWorkout', { workoutId: newWorkoutId });
     } catch (err) {
