@@ -27,6 +27,12 @@ export type RootStackParamList = {
   CreateRoutine: undefined;
   EditRoutine: { routineId: string };
   ImportRoutine: undefined;
+  AerobicSession: {
+    targetDurationMin?: number;
+    targetIntensityRPE?: number;
+    targetHRPctMax?: number;
+    notes?: string;
+  } | undefined;
   HealthKitData: undefined;
   WorkoutSummary: {
     workoutId: string;

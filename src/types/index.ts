@@ -22,6 +22,19 @@ export type WeekStartDay = 'sunday' | 'monday';
 export type TemplateType = 'push' | 'pull' | 'lower' | 'full_body';
 export type UnitSystem = 'imperial' | 'metric';
 
+// Workout modality — what kind of training the user is doing. Drives which logger
+// the app shows and which categories the analytics roll up under.
+// Templates without modality default to 'strength' (backward compat with all
+// existing templates, which are all weight-training).
+export type Modality = 'strength' | 'aerobic' | 'balance' | 'recovery';
+
+export const MODALITY_DISPLAY_NAMES: Record<Modality, string> = {
+  strength: 'Strength',
+  aerobic: 'Aerobic',
+  balance: 'Balance',
+  recovery: 'Recovery',
+};
+
 // Workout Location entity (user-defined locations)
 export interface WorkoutLocation {
   id: string;
@@ -304,6 +317,9 @@ export interface Template {
   type: TemplateType;
   locationId: string; // References WorkoutLocation.id
   exerciseIds: string[];
+  // What kind of training this template is for. Undefined defaults to 'strength'
+  // so all existing weight-training templates work without migration.
+  modality?: Modality;
 }
 
 // Workout
@@ -318,6 +334,9 @@ export interface Workout {
 }
 
 // Set
+// Aerobic / balance / recovery sessions reuse this entry shape rather than a
+// parallel table so analytics stay in one place. The optional fields below are
+// populated by the modality-specific loggers; strength sets leave them undefined.
 export interface WorkoutSet {
   id: string;
   workoutId: string;
@@ -325,6 +344,13 @@ export interface WorkoutSet {
   reps: number;
   weight: number; // in lbs
   loggedAt: string; // ISO date string
+  // ─── Aerobic / cardio fields (modality-gated) ─────────────────────────────
+  durationMin?: number;
+  intensityRPE?: number;     // 6-20 Borg scale, or 1-10 modified — store raw
+  avgHR?: number;            // bpm
+  maxHR?: number;            // bpm
+  distance?: number;         // miles (imperial) — UI converts for metric
+  activeEnergy?: number;     // kcal
 }
 
 export interface ExerciseSwap {
@@ -586,6 +612,15 @@ export interface RoutineDaySchedule {
   cardioDurationMinutes?: number;  // e.g., 30
   cardioIntensity?: CardioIntensity;
   cardioNotes?: string;            // e.g., "Zone 2 steady state"
+  // ─── Modality + targets (Program-style scheduling) ───────────────────────
+  // `modality` is the canonical day-type going forward; `dayType` is kept for
+  // backward compat. Derived as: strength→workout, aerobic→cardio,
+  // recovery→rest, balance→workout (with the template carrying modality:balance).
+  modality?: Modality;
+  targetDurationMin?: number;   // generalized "duration target" — supersedes cardioDurationMinutes
+  targetIntensityRPE?: number;  // e.g., 11-13 on Borg
+  targetHRPctMax?: number;      // e.g., 65 for "65% HRmax"
+  notes?: string;               // general per-day notes; supersedes cardioNotes
 }
 
 export interface Routine {
@@ -593,6 +628,24 @@ export interface Routine {
   name: string;
   daySchedule: RoutineDaySchedule[]; // 7 entries, one per day
   isActive: boolean;
+  // Built-in routines shipped with the app (e.g., MS Foundations). User can clone
+  // them into their own account but presets themselves are read-only.
+  isPreset?: boolean;
+  // Free-text notes attached to the whole routine (clinical guidance, scaling, etc.)
+  notes?: string;
+}
+
+// Map legacy dayType to the new modality. Templates dictate strength vs balance.
+export function dayTypeToModality(dayType?: RoutineDayType): Modality {
+  switch (dayType) {
+    case 'cardio': return 'aerobic';
+    case 'active_recovery':
+    case 'rest':
+      return 'recovery';
+    case 'workout':
+    default:
+      return 'strength';
+  }
 }
 
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

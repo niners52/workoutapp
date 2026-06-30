@@ -22,6 +22,7 @@ import {
   parseRoutineJSON,
   buildPreview,
   importRoutine,
+  msFoundationsAsImportData,
   ImportPreview,
   ImportRoutineData,
 } from '../services/routineImport';
@@ -122,31 +123,46 @@ export function ImportRoutineScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          {/* Starter routines */}
-          {STARTER_ROUTINES.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Suggested</Text>
-              {STARTER_ROUTINES.map(routine => (
-                <TouchableOpacity
-                  key={routine.name}
-                  style={styles.starterRow}
-                  onPress={() => handleLoadStarter(routine)}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.starterName}>{routine.name}</Text>
-                    {routine.notes ? (
-                      <Text style={styles.starterNotes}>{routine.notes}</Text>
-                    ) : null}
-                    <Text style={styles.starterMeta}>
-                      {routine.days.length} day{routine.days.length === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          {/* Suggested routines */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Suggested</Text>
+
+            {/* MS Foundations preset — built-in, isPreset:true, includes clinical notes */}
+            <TouchableOpacity
+              style={styles.starterRow}
+              onPress={() => handleLoadStarter(msFoundationsAsImportData())}
+              activeOpacity={0.7}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.starterName}>MS Foundations</Text>
+                <Text style={styles.starterNotes}>
+                  Mild-to-moderate MS · 2× strength + balance, 2× aerobic, optional pool
+                </Text>
+                <Text style={styles.starterMeta}>7-day program · Preset</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            {STARTER_ROUTINES.map(routine => (
+              <TouchableOpacity
+                key={routine.name}
+                style={styles.starterRow}
+                onPress={() => handleLoadStarter(routine)}
+                activeOpacity={0.7}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.starterName}>{routine.name}</Text>
+                  {routine.notes ? (
+                    <Text style={styles.starterNotes}>{routine.notes}</Text>
+                  ) : null}
+                  <Text style={styles.starterMeta}>
+                    {routine.days.length} day{routine.days.length === 1 ? '' : 's'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/* JSON input */}
           <View style={styles.section}>
@@ -203,6 +219,11 @@ export function ImportRoutineScreen() {
               {preview.days.map(day => {
                 const matched = day.exercises.filter(e => e.matched).length;
                 const newCount = day.exercises.length - matched;
+                // Aerobic / recovery days carry their info in targets/notes, not exercises.
+                const targetBits: string[] = [];
+                if (day.targetDurationMin) targetBits.push(`${day.targetDurationMin} min`);
+                if (day.targetIntensityRPE) targetBits.push(`RPE ${day.targetIntensityRPE}`);
+                if (day.targetHRPctMax) targetBits.push(`${day.targetHRPctMax}% HRmax`);
                 return (
                   <Card key={day.dayNumber} style={styles.dayCard}>
                     <View style={styles.dayHeader}>
@@ -211,9 +232,17 @@ export function ImportRoutineScreen() {
                         <Text style={styles.dayLocation}>{day.locationName}</Text>
                       ) : null}
                     </View>
-                    <Text style={styles.dayCounts}>
-                      {matched} matched · {newCount} new
-                    </Text>
+                    {day.modality ? (
+                      <Text style={styles.dayCounts}>
+                        Modality: {day.modality}
+                        {targetBits.length ? ` · ${targetBits.join(' · ')}` : ''}
+                      </Text>
+                    ) : null}
+                    {day.exercises.length > 0 && (
+                      <Text style={styles.dayCounts}>
+                        {matched} matched · {newCount} new
+                      </Text>
+                    )}
                     {day.exercises.map((ex, i) => (
                       <View key={`${day.dayNumber}-${i}`} style={styles.exerciseRow}>
                         <View style={{ flex: 1 }}>
@@ -229,6 +258,9 @@ export function ImportRoutineScreen() {
                         </Text>
                       </View>
                     ))}
+                    {day.notes ? (
+                      <Text style={styles.exerciseMeta}>{day.notes}</Text>
+                    ) : null}
                   </Card>
                 );
               })}

@@ -34,4 +34,5 @@ export { TrainScreen } from './TrainScreen';
 export { ProgressScreen } from './ProgressScreen';
 export { WeeklyHistoryScreen } from './WeeklyHistoryScreen';
 export { ImportRoutineScreen } from './ImportRoutineScreen';
+export { AerobicSessionScreen } from './AerobicSessionScreen';
 export { SocialScreen } from './SocialScreen';

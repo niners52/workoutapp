@@ -7,6 +7,7 @@ import {
   RoutineDaySchedule,
   Equipment,
   PrimaryMuscleGroup,
+  Modality,
   getExerciseDisplayName,
 } from '../types';
 
@@ -17,21 +18,30 @@ const generateId = () => Crypto.randomUUID();
 export interface ImportExercise {
   name: string;
   sets?: number;
-  reps?: number;
+  reps?: number | string; // string supports ranges ("8-15") in seeded presets
   unilateral?: boolean;
+  notes?: string;
 }
 
 export interface ImportDay {
-  /** 1-7 (1 = Monday … 7 = Sunday). Days not listed default to rest. */
+  /** 1-7 (1 = Monday … 7 = Sunday) OR 0-6 (0=Sunday) — both are accepted. */
   dayNumber: number;
   name?: string;
   location?: string;
   exercises: ImportExercise[];
+  // Optional modality + aerobic targets for Program-style days. Aerobic and
+  // recovery days don't need exercises; the day itself is the activity.
+  modality?: Modality;
+  targetDurationMin?: number;
+  targetIntensityRPE?: number;
+  targetHRPctMax?: number;
+  notes?: string;
 }
 
 export interface ImportRoutineData {
   name: string;
   notes?: string;
+  isPreset?: boolean;
   days: ImportDay[];
 }
 
@@ -42,10 +52,15 @@ export interface ImportPreview {
     dayNumber: number;
     name: string;
     locationName?: string;
+    modality?: Modality;
+    targetDurationMin?: number;
+    targetIntensityRPE?: number;
+    targetHRPctMax?: number;
+    notes?: string;
     exercises: {
       name: string;
       sets: number;
-      reps?: number;
+      reps?: number | string;
       unilateral: boolean;
       matched: boolean; // true if we found an existing Exercise by name
       inferredEquipment: Equipment;
@@ -82,33 +97,48 @@ export function parseRoutineJSON(text: string): ImportRoutineData {
     throw new Error('Missing "days" array.');
   }
 
+  const validModalities: Modality[] = ['strength', 'aerobic', 'balance', 'recovery'];
+
   const days: ImportDay[] = parsed.days.map((d: any, idx: number) => {
     if (typeof d !== 'object' || d === null) {
       throw new Error(`days[${idx}] is not an object.`);
     }
     const dayNumber = typeof d.dayNumber === 'number' ? d.dayNumber : idx + 1;
-    if (dayNumber < 1 || dayNumber > 7) {
-      throw new Error(`days[${idx}].dayNumber must be 1-7 (got ${dayNumber}).`);
+    if (dayNumber < 0 || dayNumber > 7) {
+      throw new Error(`days[${idx}].dayNumber must be 0-7 (got ${dayNumber}).`);
     }
-    if (!Array.isArray(d.exercises)) {
-      throw new Error(`days[${idx}].exercises must be an array.`);
-    }
+    // exercises is optional for aerobic/recovery days (the day itself is the activity)
+    const exercisesIn = Array.isArray(d.exercises) ? d.exercises : [];
+    const modality: Modality | undefined =
+      typeof d.modality === 'string' && (validModalities as string[]).includes(d.modality)
+        ? (d.modality as Modality)
+        : undefined;
     return {
       dayNumber,
       name: typeof d.name === 'string' ? d.name : undefined,
       location: typeof d.location === 'string' ? d.location : undefined,
-      exercises: d.exercises.map((e: any, ei: number) => {
+      modality,
+      targetDurationMin: typeof d.targetDurationMin === 'number' ? d.targetDurationMin : undefined,
+      targetIntensityRPE: typeof d.targetIntensityRPE === 'number' ? d.targetIntensityRPE : undefined,
+      targetHRPctMax: typeof d.targetHRPctMax === 'number' ? d.targetHRPctMax : undefined,
+      notes: typeof d.notes === 'string' ? d.notes : undefined,
+      exercises: exercisesIn.map((e: any, ei: number) => {
         if (typeof e !== 'object' || e === null) {
           throw new Error(`days[${idx}].exercises[${ei}] is not an object.`);
         }
         if (typeof e.name !== 'string' || !e.name.trim()) {
           throw new Error(`days[${idx}].exercises[${ei}] missing "name".`);
         }
+        const reps =
+          typeof e.reps === 'number' ? e.reps :
+          typeof e.reps === 'string' ? e.reps :
+          undefined;
         return {
           name: e.name.trim(),
           sets: typeof e.sets === 'number' ? e.sets : undefined,
-          reps: typeof e.reps === 'number' ? e.reps : undefined,
+          reps,
           unilateral: e.unilateral === true,
+          notes: typeof e.notes === 'string' ? e.notes : undefined,
         };
       }),
     };
@@ -117,7 +147,38 @@ export function parseRoutineJSON(text: string): ImportRoutineData {
   return {
     name: parsed.name.trim(),
     notes: typeof parsed.notes === 'string' ? parsed.notes : undefined,
+    isPreset: parsed.isPreset === true,
     days,
+  };
+}
+
+// ─── MS Foundations adapter ─────────────────────────────────────────────────
+// Converts the typed MS_FOUNDATIONS_PRESET constant into the generic ImportRoutineData
+// shape so it flows through the same importer/preview as a hand-pasted JSON routine.
+
+import { MS_FOUNDATIONS_PRESET } from '../data/msFoundationsPreset';
+
+export function msFoundationsAsImportData(): ImportRoutineData {
+  return {
+    name: MS_FOUNDATIONS_PRESET.name,
+    notes: MS_FOUNDATIONS_PRESET.notes,
+    isPreset: true,
+    days: MS_FOUNDATIONS_PRESET.days.map(d => ({
+      dayNumber: d.day, // 0-6 — importer accepts both 0-6 and 1-7
+      name: d.label,
+      modality: d.modality,
+      targetDurationMin: d.targetDurationMin,
+      targetIntensityRPE: d.targetIntensityRPE,
+      targetHRPctMax: d.targetHRPctMax,
+      notes: d.notes,
+      exercises: (d.exercises ?? []).map(e => ({
+        name: e.name,
+        sets: e.sets,
+        reps: e.reps, // string like "8-15" — accepted by the new reps?: number|string field
+        unilateral: e.unilateral,
+        notes: e.notes,
+      })),
+    })),
   };
 }
 
@@ -227,6 +288,11 @@ export function buildPreview(
       dayNumber: day.dayNumber,
       name: day.name ?? `Day ${day.dayNumber}`,
       locationName: day.location,
+      modality: day.modality,
+      targetDurationMin: day.targetDurationMin,
+      targetIntensityRPE: day.targetIntensityRPE,
+      targetHRPctMax: day.targetHRPctMax,
+      notes: day.notes,
       exercises: day.exercises.map(e => {
         const match = matchExercise(e.name, exercises);
         return {
@@ -309,20 +375,49 @@ export async function importRoutine(
     dayType: 'rest' as const,
   }));
 
-  for (const day of data.days) {
-    // dayNumber 1=Mon, 2=Tue, ..., 6=Sat, 7=Sun. Routine uses 0=Sun, 1=Mon, ..., 6=Sat.
-    const internalDay = day.dayNumber === 7 ? 0 : day.dayNumber;
-    const locationId = matchLocation(day.location, ctx.locations);
+  // Helper: map an inbound dayNumber to the internal 0=Sun..6=Sat index.
+  // Accepts both 1=Mon..7=Sun (the brief's convention) and 0=Sun..6=Sat directly.
+  const toInternalDay = (n: number): number => {
+    if (n >= 0 && n <= 6) return n;
+    if (n === 7) return 0;
+    return n; // out of range — caller already validated
+  };
 
+  // dayType derived from modality so old screens that read dayType still work.
+  const modalityToDayType = (m: Modality | undefined): 'workout' | 'cardio' | 'active_recovery' | 'rest' => {
+    switch (m) {
+      case 'aerobic': return 'cardio';
+      case 'recovery': return 'rest';
+      case 'balance':
+      case 'strength':
+      default:
+        return 'workout';
+    }
+  };
+
+  for (const day of data.days) {
+    const internalDay = toInternalDay(day.dayNumber);
+    const locationId = matchLocation(day.location, ctx.locations);
+    const modality: Modality | undefined = day.modality;
+
+    // Days with no exercises (pure recovery or pure aerobic with only a target)
+    // still get a routine-day entry so the home screen shows the target/notes.
     if (day.exercises.length === 0) {
-      // Explicit rest day with no exercises
-      daySchedule[internalDay] = { day: internalDay, templateIds: [], dayType: 'rest' };
+      daySchedule[internalDay] = {
+        day: internalDay,
+        templateIds: [],
+        dayType: modalityToDayType(modality),
+        modality,
+        targetDurationMin: day.targetDurationMin,
+        targetIntensityRPE: day.targetIntensityRPE,
+        targetHRPctMax: day.targetHRPctMax,
+        notes: day.notes,
+      };
       continue;
     }
 
     const exerciseIds: string[] = [];
     const musclesForType = new Set<PrimaryMuscleGroup>();
-    let maxSetsForDay = 0;
 
     for (const item of day.exercises) {
       let exercise = matchExercise(item.name, exercisesPool);
@@ -340,6 +435,7 @@ export async function importRoutine(
           primaryMuscleGroups: muscles,
           locationIds: locationId === 'home' ? ['home', 'gym'] : ['gym'],
           isUnilateral: item.unilateral ? true : undefined,
+          notes: item.notes,
           isCustom: true,
         };
         newExercise.name = getExerciseDisplayName(newExercise);
@@ -354,7 +450,6 @@ export async function importRoutine(
       exerciseIds.push(exercise.id);
       const primaries = exercise.primaryMuscleGroups ?? (exercise.primaryMuscleGroup ? [exercise.primaryMuscleGroup] : []);
       primaries.forEach(m => musclesForType.add(m));
-      maxSetsForDay = Math.max(maxSetsForDay, item.sets ?? 0);
     }
 
     const template: Template = {
@@ -363,6 +458,7 @@ export async function importRoutine(
       type: chooseTemplateType(musclesForType),
       locationId,
       exerciseIds,
+      modality,
     };
     await ctx.addTemplate(template);
     templatesCreated += 1;
@@ -370,7 +466,12 @@ export async function importRoutine(
     daySchedule[internalDay] = {
       day: internalDay,
       templateIds: [template.id],
-      dayType: 'workout',
+      dayType: modalityToDayType(modality),
+      modality,
+      targetDurationMin: day.targetDurationMin,
+      targetIntensityRPE: day.targetIntensityRPE,
+      targetHRPctMax: day.targetHRPctMax,
+      notes: day.notes,
     };
   }
 
@@ -379,6 +480,8 @@ export async function importRoutine(
     name: data.name,
     daySchedule,
     isActive: false, // Don't auto-activate — let the user decide from Routines screen
+    isPreset: data.isPreset,
+    notes: data.notes,
   };
   await ctx.addRoutine(routine);
 

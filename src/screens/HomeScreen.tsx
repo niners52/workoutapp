@@ -68,6 +68,8 @@ import { getTopSuggestions, CoachSuggestion, dismissSuggestion } from '../servic
 import { getCachedInsights, insightToCoachSuggestion } from '../services/insights';
 import { CoachSuggestionsCard } from '../components/coach';
 import { syncManager } from '../services/syncService';
+import { todaysModality, markRecoveryComplete } from '../services/modalityActions';
+import { getWorkouts as getWorkoutsFromStorage } from '../services/storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -465,11 +467,13 @@ export function HomeScreen() {
 
   // Get today's planned workouts from active routine
   const todayDayOfWeek = today.getDay();
-  const todayPlannedTemplateIds =
-    activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek)?.templateIds || [];
+  const todayDaySchedule = activeRoutine?.daySchedule.find(d => d.day === todayDayOfWeek);
+  const todayPlannedTemplateIds = todayDaySchedule?.templateIds || [];
   const todayPlannedTemplates = todayPlannedTemplateIds
     .map(id => templates.find(t => t.id === id))
     .filter((t): t is NonNullable<typeof t> => t !== undefined);
+  const todayModalityInfo = todaysModality(activeRoutine, templates, todayDayOfWeek);
+  const todayModality = todayModalityInfo?.modality;
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) {
@@ -831,6 +835,52 @@ export function HomeScreen() {
                     <Text style={styles.chevron}>›</Text>
                   </TouchableOpacity>
                 ))
+              ) : todayModality === 'aerobic' ? (
+                <TouchableOpacity
+                  style={styles.modalityTile}
+                  onPress={() => {
+                    navigation.navigate('AerobicSession', {
+                      targetDurationMin: todayDaySchedule?.targetDurationMin,
+                      targetIntensityRPE: todayDaySchedule?.targetIntensityRPE,
+                      targetHRPctMax: todayDaySchedule?.targetHRPctMax,
+                      notes: todayDaySchedule?.notes,
+                    });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="bicycle-outline" size={32} color={colors.primary} style={styles.modalityIcon} />
+                  <Text style={styles.modalityTileTitle}>Start Aerobic Session</Text>
+                  {todayDaySchedule?.targetDurationMin || todayDaySchedule?.targetIntensityRPE ? (
+                    <Text style={styles.modalityTileSub}>
+                      Target:{' '}
+                      {[
+                        todayDaySchedule?.targetDurationMin ? `${todayDaySchedule.targetDurationMin} min` : null,
+                        todayDaySchedule?.targetIntensityRPE ? `RPE ${todayDaySchedule.targetIntensityRPE}` : null,
+                        todayDaySchedule?.targetHRPctMax ? `${todayDaySchedule.targetHRPctMax}% HRmax` : null,
+                      ].filter(Boolean).join(' · ')}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              ) : todayModality === 'recovery' ? (
+                <TouchableOpacity
+                  style={styles.modalityTile}
+                  onPress={async () => {
+                    try {
+                      const all = await getWorkoutsFromStorage();
+                      await markRecoveryComplete(all);
+                      await refreshWorkouts();
+                    } catch (e) {
+                      Alert.alert('Error', 'Could not mark recovery complete.');
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="leaf-outline" size={32} color={colors.primary} style={styles.modalityIcon} />
+                  <Text style={styles.modalityTileTitle}>Mark Recovery Complete</Text>
+                  <Text style={styles.modalityTileSub}>
+                    {todayDaySchedule?.notes ?? 'Rest or gentle movement today.'}
+                  </Text>
+                </TouchableOpacity>
               ) : (
                 <View style={styles.restDayContainer}>
                   <Ionicons name="moon" size={32} color={colors.textSecondary} style={styles.restDayIcon} />
@@ -1215,6 +1265,25 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  modalityTile: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.base,
+  },
+  modalityIcon: {
+    marginBottom: spacing.sm,
+  },
+  modalityTileTitle: {
+    fontSize: typography.size.lg,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  modalityTileSub: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
   },
   onTrackCard: {
     alignItems: 'center',
