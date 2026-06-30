@@ -7,30 +7,38 @@ interface CalendarDayProps {
   isCurrentMonth: boolean;
   isToday: boolean;
   isFuture: boolean;
-  goalsMetCount: number; // 0-5 goals met (5 if calorie goal is set)
+  goalsMet: number;
+  goalsTotal: number; // count of ENABLED categories for this day
   hasIncompleteWorkout?: boolean;
   hasYoga?: boolean;
   hasCardio?: boolean;
   onPress: () => void;
 }
 
-// Color mapping based on goals met (4 or 5 = perfect depending on calorie goal setting)
-const getGoalBackgroundColor = (goalsMetCount: number, isFuture: boolean): string | undefined => {
-  if (isFuture) return undefined;
-  switch (goalsMetCount) {
-    case 5: return colors.primary; // Gold - perfect day (with calorie goal)
-    case 4: return colors.primary; // Gold - perfect day (without calorie goal) or excellent
-    case 3: return 'rgba(255, 197, 47, 0.5)'; // Muted gold (50% opacity)
-    case 2: return colors.backgroundTertiary; // Light navy (#1A3A5C)
-    case 1: return colors.backgroundSecondary; // Darker navy (#12284B)
-    default: return undefined; // No highlight
-  }
+// Color the day by ratio (met / total) so disabling a category doesn't make
+// "perfect" unreachable — e.g. with supplements off, met=4/total=4 is still gold.
+const getGoalBackgroundColor = (
+  met: number,
+  total: number,
+  isFuture: boolean,
+): string | undefined => {
+  if (isFuture || total <= 0) return undefined;
+  const ratio = met / total;
+  if (ratio >= 0.999) return colors.primary;                  // All enabled goals met
+  if (ratio >= 0.75) return 'rgba(255, 197, 47, 0.5)';         // Most met (3/4, 4/5)
+  if (ratio >= 0.5) return colors.backgroundTertiary;          // Half-ish (2/4, 3/5)
+  if (ratio > 0) return colors.backgroundSecondary;            // Some met (1/4, 1/5)
+  return undefined;                                            // Nothing met
 };
 
-const getGoalTextColor = (goalsMetCount: number, isFuture: boolean): string => {
+const getGoalTextColor = (
+  met: number,
+  total: number,
+  isFuture: boolean,
+): string => {
   if (isFuture) return colors.textTertiary;
-  if (goalsMetCount >= 3) return colors.textOnPrimary; // Dark text on gold (3, 4, or 5 goals)
-  return colors.text; // White text on navy or no background
+  if (total > 0 && met / total >= 0.75) return colors.textOnPrimary;
+  return colors.text;
 };
 
 export function CalendarDay({
@@ -38,15 +46,16 @@ export function CalendarDay({
   isCurrentMonth,
   isToday,
   isFuture,
-  goalsMetCount,
+  goalsMet,
+  goalsTotal,
   hasIncompleteWorkout,
   hasYoga,
   hasCardio,
   onPress,
 }: CalendarDayProps) {
   const dayNumber = date.getDate();
-  const backgroundColor = isCurrentMonth ? getGoalBackgroundColor(goalsMetCount, isFuture) : undefined;
-  const textColor = isCurrentMonth ? getGoalTextColor(goalsMetCount, isFuture) : colors.textTertiary;
+  const backgroundColor = isCurrentMonth ? getGoalBackgroundColor(goalsMet, goalsTotal, isFuture) : undefined;
+  const textColor = isCurrentMonth ? getGoalTextColor(goalsMet, goalsTotal, isFuture) : colors.textTertiary;
 
   return (
     <TouchableOpacity

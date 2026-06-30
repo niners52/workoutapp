@@ -117,53 +117,73 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
       const yogaSet = new Set<string>();
       const cardioSet = new Set<string>();
 
+      // Each entry contributes ONE category to the day's score, but only when the
+      // user has that category enabled. Disabled categories are dropped from both
+      // numerator and denominator so the day's ratio renormalizes (turning a
+      // category off scales the others up instead of leaving a hole).
+      const calorieGoal = freshSettings.calorieGoal || 0;
+      const trackTraining = dailyGoals.trackTraining !== false;
+      const trackSupps = activeSupps.length > 0;
+      const trackPT = !!dailyGoals.trackPT && activePT.length > 0;
+      const trackSleep = dailyGoals.sleepHours > 0;
+      const trackProtein = dailyGoals.proteinGrams > 0;
+      const trackCalories = calorieGoal > 0;
+
       for (const day of datesToProcess) {
         const dateStr = format(day, 'yyyy-MM-dd');
         const health = healthData.get(dateStr) || { sleepHours: 0, proteinGrams: 0, calories: 0, yogaMinutes: 0, cardioMinutes: 0 };
 
-        let goalsMetCount = 0;
+        let met = 0;
+        let total = 0;
 
-        // Sleep
-        if (health.sleepHours >= dailyGoals.sleepHours) goalsMetCount++;
+        if (trackSleep) {
+          total += 1;
+          if (health.sleepHours >= dailyGoals.sleepHours) met += 1;
+        }
 
-        // Protein
-        if (health.proteinGrams >= dailyGoals.proteinGrams) goalsMetCount++;
+        if (trackProtein) {
+          total += 1;
+          if (health.proteinGrams >= dailyGoals.proteinGrams) met += 1;
+        }
 
-        // Supplements
-        const dayIntakes = freshIntakes.filter(i => i.date === dateStr);
-        const allSupplementsTaken = activeSupps.length > 0 &&
-          activeSupps.every(s => dayIntakes.some(i => i.supplementId === s.id));
-        if (activeSupps.length === 0 || allSupplementsTaken) goalsMetCount++;
-
-        // Training
-        const hasWorkout = freshWorkouts.some(w => {
-          if (!w.completedAt) return false;
-          return format(new Date(w.completedAt), 'yyyy-MM-dd') === dateStr;
-        });
-        if (hasWorkout) goalsMetCount++;
-
-        // Calories (only if goal is set)
-        const calorieGoal = freshSettings.calorieGoal || 0;
-        if (calorieGoal > 0) {
-          const caloriesMet = checkCalorieGoalMet(
+        if (trackCalories) {
+          total += 1;
+          if (checkCalorieGoalMet(
             health.calories,
             calorieGoal,
             freshSettings.nutritionMode,
-            freshSettings.calorieTolerancePercent || 10
-          );
-          if (caloriesMet) goalsMetCount++;
+            freshSettings.calorieTolerancePercent || 10,
+          )) met += 1;
         }
 
-        // Physical therapy
-        if (dailyGoals.trackPT && activePT.length > 0) {
+        if (trackSupps) {
+          total += 1;
+          const dayIntakes = freshIntakes.filter(i => i.date === dateStr);
+          const allSupplementsTaken = activeSupps.every(s =>
+            dayIntakes.some(i => i.supplementId === s.id),
+          );
+          if (allSupplementsTaken) met += 1;
+        }
+
+        if (trackTraining) {
+          total += 1;
+          const hasWorkout = freshWorkouts.some(w => {
+            if (!w.completedAt) return false;
+            return format(new Date(w.completedAt), 'yyyy-MM-dd') === dateStr;
+          });
+          if (hasWorkout) met += 1;
+        }
+
+        if (trackPT) {
+          total += 1;
           const dayPTCompletions = freshPTCompletions.filter(c => c.date === dateStr);
           const allPTDone = activePT.every(r =>
-            dayPTCompletions.some(c => c.ptRoutineId === r.id)
+            dayPTCompletions.some(c => c.ptRoutineId === r.id),
           );
-          if (allPTDone) goalsMetCount++;
+          if (allPTDone) met += 1;
         }
 
-        statusMap[dateStr] = goalsMetCount;
+        statusMap[dateStr] = { met, total };
 
         // Track yoga/cardio session days
         if (health.yogaMinutes > 0) yogaSet.add(dateStr);
@@ -394,18 +414,15 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>
-                  {Object.values(goalStatusMap).filter(g => {
-                    const maxGoals = (userSettings.calorieGoal && userSettings.calorieGoal > 0) ? 5 : 4;
-                    return g === maxGoals;
-                  }).length}
+                  {Object.values(goalStatusMap).filter(g => g.total > 0 && g.met === g.total).length}
                 </Text>
                 <Text style={styles.statLabel}>Perfect Days</Text>
               </View>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>
-                  {Object.values(goalStatusMap).filter(g => g >= 3).length}
+                  {Object.values(goalStatusMap).filter(g => g.total > 0 && g.met / g.total >= 0.6).length}
                 </Text>
-                <Text style={styles.statLabel}>3+ Goals</Text>
+                <Text style={styles.statLabel}>Strong Days</Text>
               </View>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>

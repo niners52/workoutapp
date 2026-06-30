@@ -18,9 +18,12 @@ import { colors, typography, spacing, borderRadius } from '../../theme';
 import { CalendarDay } from './CalendarDay';
 import { WeekStartDay } from '../../types';
 
-// Map of date string to goals met count (0-4)
+// Map of date string to per-day goal totals. `total` excludes any categories
+// the user has disabled (no supplements set up, training tracking off, etc.) so
+// the day's score renormalizes — turning a category off scales the others up
+// rather than leaving a hole that deflates the score.
 export interface GoalStatusMap {
-  [dateStr: string]: number;
+  [dateStr: string]: { met: number; total: number };
 }
 
 interface CalendarViewProps {
@@ -117,7 +120,7 @@ export function CalendarView({
               const isCurrentMonth = isSameMonth(date, currentMonth);
               const isToday = isSameDay(date, today);
               const isFuture = isAfter(startOfDay(date), today);
-              const goalsMetCount = goalStatusMap[dateStr] ?? 0;
+              const dayStatus = goalStatusMap[dateStr] ?? { met: 0, total: 0 };
 
               return (
                 <CalendarDay
@@ -126,7 +129,8 @@ export function CalendarView({
                   isCurrentMonth={isCurrentMonth}
                   isToday={isToday}
                   isFuture={isFuture}
-                  goalsMetCount={goalsMetCount}
+                  goalsMet={dayStatus.met}
+                  goalsTotal={dayStatus.total}
                   hasIncompleteWorkout={incompleteDates?.has(dateStr)}
                   hasYoga={yogaDates?.has(dateStr)}
                   hasCardio={cardioDates?.has(dateStr)}
