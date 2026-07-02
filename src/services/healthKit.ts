@@ -1451,3 +1451,92 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
   // TODO: Implement real permission request
   return false;
 }
+
+// ============== HEART RATE SAMPLES (for aerobic session auto-fill) ==============
+
+export interface HeartRateAggregate {
+  avg: number;
+  max: number;
+  count: number;
+}
+
+/**
+ * Aggregate heart-rate samples over a time window. Used after an aerobic
+ * session to enrich the logged entry with avg + max HR from Apple Watch.
+ * Returns null when HealthKit is unavailable or no samples exist.
+ */
+export async function getHeartRateAggregateInRange(
+  startDate: Date,
+  endDate: Date,
+): Promise<HeartRateAggregate | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit) return null;
+  await initializeHealthKit();
+  if (typeof AppleHealthKit.getHeartRateSamples !== 'function') {
+    console.log('[HealthKit] getHeartRateSamples not available');
+    return null;
+  }
+
+  const options = {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    ascending: true,
+  };
+
+  return new Promise<HeartRateAggregate | null>((resolve) => {
+    const timeout = setTimeout(() => {
+      console.log('[HealthKit] getHeartRateSamples timed out');
+      resolve(null);
+    }, 8000);
+
+    try {
+      AppleHealthKit.getHeartRateSamples(options, (err: any, samples: any[]) => {
+        clearTimeout(timeout);
+        if (err) {
+          console.log('[HealthKit] Heart rate samples error:', err);
+          resolve(null);
+          return;
+        }
+        const arr = Array.isArray(samples) ? samples : [];
+        if (arr.length === 0) {
+          resolve(null);
+          return;
+        }
+        let sum = 0;
+        let max = 0;
+        for (const s of arr) {
+          const v = typeof s.value === 'number' ? s.value : 0;
+          if (v > 0) {
+            sum += v;
+            if (v > max) max = v;
+          }
+        }
+        resolve({ avg: Math.round(sum / arr.length), max: Math.round(max), count: arr.length });
+      });
+    } catch (e) {
+      clearTimeout(timeout);
+      console.log('[HealthKit] Heart rate samples exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Find the most recent HealthKit workout that ENDED within the lookback window.
+ * The aerobic logger calls this on focus + on demand to suggest auto-fill.
+ * Defaults to the last 3 hours, which covers "just finished my session" without
+ * accidentally pulling in this morning's run when logging an evening session.
+ */
+export async function getMostRecentHKWorkout(
+  lookbackMinutes: number = 180,
+): Promise<HealthKitWorkout | null> {
+  const end = new Date();
+  const start = new Date(end.getTime() - lookbackMinutes * 60 * 1000);
+  const workouts = await getWorkoutsFromHealthKit(start, end);
+  if (workouts.length === 0) return null;
+  // Sort by end time descending — most recent first
+  return [...workouts].sort((a, b) => {
+    const ae = a.end ? new Date(a.end).getTime() : 0;
+    const be = b.end ? new Date(b.end).getTime() : 0;
+    return be - ae;
+  })[0] ?? null;
+}

@@ -190,6 +190,15 @@ export function ChallengeScreen() {
     };
   };
 
+  // plan_completion stores a 0-100 percent; team_coop stores combined sessions.
+  // Append a friendly suffix so the user can interpret the number in the
+  // shared scoreboard. Legacy raw-output types render as bare counts.
+  const formatScoreForType = (score: number, type: ChallengeType): string => {
+    if (type === 'plan_completion') return `${score}%`;
+    if (type === 'team_coop') return `${score}`;
+    return `${score}`;
+  };
+
   // Render loading state
   if (isLoading) {
     return (
@@ -251,26 +260,32 @@ export function ChallengeScreen() {
             {/* Scoreboard */}
             <View style={styles.scoreboard}>
               <View style={[styles.scoreColumn, winStatus === 'winning' && styles.winningColumn]}>
-                <Text style={styles.scorePlayerLabel}>You</Text>
+                <Text style={styles.scorePlayerLabel}>
+                  {activeChallenge.type === 'team_coop' ? 'Team' : 'You'}
+                </Text>
                 <Text style={[styles.scoreValue, winStatus === 'winning' && styles.winningScore]}>
-                  {myScore}
+                  {formatScoreForType(myScore, activeChallenge.type)}
                 </Text>
-                {winStatus === 'winning' && (
+                {winStatus === 'winning' && activeChallenge.type !== 'team_coop' && (
                   <MaterialCommunityIcons name="crown" size={20} color={colors.primary} />
                 )}
               </View>
-              <View style={styles.vsContainer}>
-                <Text style={styles.vsText}>VS</Text>
-              </View>
-              <View style={[styles.scoreColumn, winStatus === 'losing' && styles.winningColumn]}>
-                <Text style={styles.scorePlayerLabel}>{partnerStats?.displayName || 'Partner'}</Text>
-                <Text style={[styles.scoreValue, winStatus === 'losing' && styles.winningScore]}>
-                  {partnerScore}
-                </Text>
-                {winStatus === 'losing' && (
-                  <MaterialCommunityIcons name="crown" size={20} color={colors.primary} />
-                )}
-              </View>
+              {activeChallenge.type !== 'team_coop' && (
+                <>
+                  <View style={styles.vsContainer}>
+                    <Text style={styles.vsText}>VS</Text>
+                  </View>
+                  <View style={[styles.scoreColumn, winStatus === 'losing' && styles.winningColumn]}>
+                    <Text style={styles.scorePlayerLabel}>{partnerStats?.displayName || 'Partner'}</Text>
+                    <Text style={[styles.scoreValue, winStatus === 'losing' && styles.winningScore]}>
+                      {formatScoreForType(partnerScore, activeChallenge.type)}
+                    </Text>
+                    {winStatus === 'losing' && (
+                      <MaterialCommunityIcons name="crown" size={20} color={colors.primary} />
+                    )}
+                  </View>
+                </>
+              )}
             </View>
 
             <Text style={styles.statusText}>
@@ -327,9 +342,47 @@ export function ChallengeScreen() {
           <Card style={styles.createCard}>
             <Text style={styles.createTitle}>Start a New Challenge</Text>
             <Text style={styles.createSubtitle}>
-              Challenge {partnerStats?.displayName || 'your partner'} to a weekly competition!
+              Pick a format. The plan-based options score each person against their
+              own routine — different plans can still go head-to-head fairly.
             </Text>
 
+            {/* Plan Completion — primary recommendation */}
+            <TouchableOpacity
+              style={styles.challengeOption}
+              onPress={() => handleCreateChallenge('plan_completion')}
+              disabled={isCreating}
+            >
+              <View style={styles.optionIcon}>
+                <MaterialCommunityIcons name="trophy-outline" size={28} color={colors.primary} />
+              </View>
+              <View style={styles.optionInfo}>
+                <Text style={styles.optionTitle}>Plan Completion %</Text>
+                <Text style={styles.optionDescription}>
+                  Each scored against their own routine — % of planned sessions completed
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Co-op shared goal */}
+            <TouchableOpacity
+              style={styles.challengeOption}
+              onPress={() => handleCreateChallenge('team_coop')}
+              disabled={isCreating}
+            >
+              <View style={styles.optionIcon}>
+                <MaterialCommunityIcons name="handshake-outline" size={28} color={colors.primary} />
+              </View>
+              <View style={styles.optionInfo}>
+                <Text style={styles.optionTitle}>Team Co-op</Text>
+                <Text style={styles.optionDescription}>
+                  Shared goal — combined sessions both of you log this week
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Legacy raw-output options kept for backward compat with prior challenges */}
             <TouchableOpacity
               style={styles.challengeOption}
               onPress={() => handleCreateChallenge('most_sets')}

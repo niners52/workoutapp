@@ -225,7 +225,83 @@ export async function calculateScores(
     return { user1Score: user1Sets, user2Score: user2Sets };
   }
 
+  if (type === 'plan_completion') {
+    // Each user is scored against THEIR OWN plan — completed / planned * 100.
+    // This is the level-the-field model: a 3-day-a-week plan and a 6-day plan
+    // are equally winnable. Personal output (sets, weight, minutes) is not
+    // compared head-to-head.
+    const user1Pct = await planCompletionPercent(partnership.userId1, startDate, endDate, workouts);
+    const user2Pct = await planCompletionPercent(partnership.userId2, startDate, endDate, workouts);
+    return { user1Score: user1Pct, user2Score: user2Pct };
+  }
+
+  if (type === 'team_coop') {
+    // Co-op: both users feed into a shared session-count goal. We store the
+    // combined number in both user1Score and user2Score so the UI shows the
+    // team total either way it reads. The "winner" concept doesn't apply —
+    // the team either hits the goal or doesn't.
+    const combined = workouts.length;
+    return { user1Score: combined, user2Score: combined };
+  }
+
   return { user1Score: 0, user2Score: 0 };
+}
+
+// ─── Plan completion helper ─────────────────────────────────────────────────
+// Reads the target user's active Routine from Supabase, counts how many days in
+// the [startDate, endDate] week were non-rest (the planned sessions), and
+// divides into the actually-completed workout count from the pre-fetched list.
+//
+// Returns a whole-number percent 0-100 (or 100 when there are no planned days,
+// so an empty plan can't be "failed").
+async function planCompletionPercent(
+  userId: string,
+  startDate: string,
+  endDate: string,
+  workouts: { id: string; user_id: string; completed_at: string }[],
+): Promise<number> {
+  // Pull this user's active routine. The daySchedule lives as a JSONB column on
+  // the routines table per the existing sync pattern.
+  const { data: routines } = await supabase
+    .from('routines')
+    .select('id, day_schedule, is_active')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .limit(1);
+
+  const routine = routines?.[0];
+  const daySchedule: Array<{ day: number; templateIds?: string[]; dayType?: string; modality?: string }> =
+    routine?.day_schedule ?? [];
+
+  // Iterate each day in the challenge window. A day is "planned" if its
+  // RoutineDaySchedule entry isn't a rest/recovery day. Rest days don't count
+  // toward planned OR missed.
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  let planned = 0;
+  let completed = 0;
+  const completedDays = new Set<string>();
+  for (const w of workouts) {
+    if (w.user_id !== userId || !w.completed_at) continue;
+    completedDays.add(w.completed_at.slice(0, 10));
+  }
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dayOfWeek = d.getDay();
+    const slot = daySchedule.find(s => s.day === dayOfWeek);
+    const modality = slot?.modality;
+    const dayType = slot?.dayType;
+    const isPlanned =
+      (modality && modality !== 'recovery') ||
+      (dayType && dayType !== 'rest' && dayType !== 'active_recovery') ||
+      (slot && slot.templateIds && slot.templateIds.length > 0);
+    if (!isPlanned) continue;
+    planned += 1;
+    if (completedDays.has(d.toISOString().slice(0, 10))) completed += 1;
+  }
+
+  if (planned === 0) return 100;
+  return Math.round((completed / planned) * 100);
 }
 
 /**

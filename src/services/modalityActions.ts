@@ -7,6 +7,7 @@ import {
   Routine,
   RoutineDaySchedule,
   Template,
+  CardioIntensity,
   dayTypeToModality,
 } from '../types';
 import {
@@ -83,6 +84,7 @@ export interface AerobicSessionInput {
   maxHR?: number;
   distance?: number;     // miles
   activeEnergy?: number; // kcal
+  intensityZone?: CardioIntensity;
   notes?: string;
 }
 
@@ -119,6 +121,7 @@ export async function logAerobicSession(input: AerobicSessionInput): Promise<Wor
     maxHR: input.maxHR,
     distance: input.distance,
     activeEnergy: input.activeEnergy,
+    intensityZone: input.intensityZone,
   };
   await addSet(set);
   syncSet(set).catch(e => console.log('Sync error:', e));
@@ -158,4 +161,37 @@ export async function markRecoveryComplete(allWorkouts: Workout[]): Promise<Work
  */
 export function isAerobicSet(set: WorkoutSet): boolean {
   return typeof set.durationMin === 'number' && set.durationMin > 0;
+}
+
+/**
+ * Derive a coarse intensity zone for an aerobic session. Prefers HR%max when
+ * we know maxHR (220 - age fallback), then falls back to RPE, then to a crude
+ * absolute-HR heuristic. Returns null when we have nothing to work with so the
+ * caller doesn't store a misleading guess.
+ *
+ * Thresholds align with the MS preset's "60-70% HRmax / RPE 11-13 = moderate" target.
+ */
+export function deriveIntensityZone(input: {
+  avgHR?: number;
+  rpe?: number;
+  estimatedMaxHR?: number;
+}): 'low' | 'moderate' | 'high' | null {
+  const { avgHR, rpe, estimatedMaxHR } = input;
+  if (avgHR && estimatedMaxHR && estimatedMaxHR > 0) {
+    const pct = avgHR / estimatedMaxHR;
+    if (pct >= 0.8) return 'high';
+    if (pct >= 0.6) return 'moderate';
+    return 'low';
+  }
+  if (rpe) {
+    if (rpe >= 14) return 'high';
+    if (rpe >= 11) return 'moderate';
+    return 'low';
+  }
+  if (avgHR) {
+    if (avgHR >= 150) return 'high';
+    if (avgHR >= 120) return 'moderate';
+    return 'low';
+  }
+  return null;
 }

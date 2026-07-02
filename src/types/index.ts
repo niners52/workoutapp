@@ -351,6 +351,9 @@ export interface WorkoutSet {
   maxHR?: number;            // bpm
   distance?: number;         // miles (imperial) — UI converts for metric
   activeEnergy?: number;     // kcal
+  // Derived zone from HR%max / RPE — see deriveIntensityZone(). Stored so
+  // analytics don't have to re-derive on every read.
+  intensityZone?: CardioIntensity;
 }
 
 export interface ExerciseSwap {
@@ -717,7 +720,11 @@ export interface ProgressPhoto {
 // ============================================
 
 export type PartnershipStatus = 'pending' | 'active' | 'disconnected';
-export type ChallengeType = 'most_sets' | 'most_workouts';
+export type ChallengeType =
+  | 'most_sets'         // legacy — raw-output leaderboard
+  | 'most_workouts'     // legacy — raw-output leaderboard
+  | 'plan_completion'   // % of each user's OWN planned sessions completed this week
+  | 'team_coop';        // shared goal — combined session count for both partners
 export type ChallengeStatus = 'pending' | 'active' | 'completed' | 'declined';
 
 export interface Partnership {
@@ -767,4 +774,6 @@ export interface PartnerStats {
 export const CHALLENGE_TYPE_NAMES: Record<ChallengeType, string> = {
   most_sets: 'Most Sets',
   most_workouts: 'Most Workouts',
+  plan_completion: 'Plan Completion %',
+  team_coop: 'Team Co-op',
 };

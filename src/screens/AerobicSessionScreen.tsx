@@ -17,6 +17,8 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { logAerobicSession } from '../services/modalityActions';
+import { getMostRecentHKWorkout, getHeartRateAggregateInRange, HealthKitWorkout } from '../services/healthKit';
+import { deriveIntensityZone } from '../services/modalityActions';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -50,6 +52,55 @@ export function AerobicSessionScreen() {
   const [distance, setDistance] = useState('');
   const [activeEnergy, setActiveEnergy] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // HealthKit auto-fill — surfaced as a suggestion banner when a recent HKWorkout exists.
+  // Probed on mount; the user can also re-probe with the inline button after a workout finishes.
+  const [hkSuggestion, setHkSuggestion] = useState<HealthKitWorkout | null>(null);
+  const [hkLoading, setHkLoading] = useState(false);
+
+  const probeHealthKit = async () => {
+    setHkLoading(true);
+    try {
+      const w = await getMostRecentHKWorkout(180); // 3-hour lookback window
+      setHkSuggestion(w);
+    } catch (err) {
+      console.log('[Aerobic] HealthKit probe failed:', err);
+    } finally {
+      setHkLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    probeHealthKit();
+  }, []);
+
+  const applyHKAutoFill = async (w: HealthKitWorkout) => {
+    setHkLoading(true);
+    try {
+      // Pull HR samples for the workout's time window. Some sources (manual entries)
+      // won't have HR; that's fine — we just leave those fields untouched.
+      const start = w.start ? new Date(w.start) : null;
+      const end = w.end ? new Date(w.end) : null;
+      let hr: { avg: number; max: number } | null = null;
+      if (start && end) {
+        const agg = await getHeartRateAggregateInRange(start, end);
+        if (agg) hr = { avg: agg.avg, max: agg.max };
+      }
+      if (w.duration > 0) setDurationOverride(String(Math.round(w.duration * 10) / 10));
+      if (w.calories > 0) setActiveEnergy(String(Math.round(w.calories)));
+      if (w.distance > 0) setDistance(String(Math.round(w.distance * 100) / 100));
+      if (hr) {
+        setAvgHR(String(hr.avg));
+        setMaxHR(String(hr.max));
+      }
+      // Hide the banner once applied so the UI returns to the manual entry state
+      setHkSuggestion(null);
+    } catch (err) {
+      Alert.alert('Auto-fill failed', 'Could not read HealthKit data. Enter manually.');
+    } finally {
+      setHkLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!running) return;
@@ -102,13 +153,21 @@ export function AerobicSessionScreen() {
     }
     setSaving(true);
     try {
+      const avgHrNum = avgHR ? parseInt(avgHR, 10) : undefined;
+      const maxHrNum = maxHR ? parseInt(maxHR, 10) : undefined;
+      // Derive an intensity zone now so analytics don't have to re-derive on every read.
+      // No estimatedMaxHR yet (would need age/biological sex from settings); we fall
+      // back to RPE → absolute HR tiers inside deriveIntensityZone.
+      const intensityZone =
+        deriveIntensityZone({ avgHR: avgHrNum, rpe: rpe ?? undefined }) ?? undefined;
       await logAerobicSession({
         durationMin,
         intensityRPE: rpe ?? undefined,
-        avgHR: avgHR ? parseInt(avgHR, 10) : undefined,
-        maxHR: maxHR ? parseInt(maxHR, 10) : undefined,
+        avgHR: avgHrNum,
+        maxHR: maxHrNum,
         distance: distance ? parseFloat(distance) : undefined,
         activeEnergy: activeEnergy ? parseInt(activeEnergy, 10) : undefined,
+        intensityZone,
       });
       await refreshWorkouts();
       navigation.goBack();
@@ -151,6 +210,33 @@ export function AerobicSessionScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          {/* HealthKit auto-fill suggestion — appears when a recent HKWorkout exists */}
+          {hkSuggestion && (
+            <Card style={styles.hkCard}>
+              <Text style={styles.hkTitle}>Apple Watch session detected</Text>
+              <Text style={styles.hkBody}>
+                {hkSuggestion.activityName} · {Math.round(hkSuggestion.duration)} min
+                {hkSuggestion.calories > 0 ? ` · ${Math.round(hkSuggestion.calories)} kcal` : ''}
+              </Text>
+              <View style={styles.hkActions}>
+                <TouchableOpacity
+                  style={[styles.hkApply, hkLoading && styles.hkActionDisabled]}
+                  onPress={() => applyHKAutoFill(hkSuggestion)}
+                  disabled={hkLoading}
+                >
+                  <Text style={styles.hkApplyText}>{hkLoading ? 'Loading…' : 'Auto-fill'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.hkDismiss}
+                  onPress={() => setHkSuggestion(null)}
+                  disabled={hkLoading}
+                >
+                  <Text style={styles.hkDismissText}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          )}
+
           {/* Target from routine */}
           {targetText && (
             <Card style={styles.targetCard}>
@@ -262,6 +348,18 @@ export function AerobicSessionScreen() {
             </View>
           </View>
 
+          {!hkSuggestion && (
+            <TouchableOpacity
+              style={styles.recheckButton}
+              onPress={probeHealthKit}
+              disabled={hkLoading}
+            >
+              <Text style={styles.recheckText}>
+                {hkLoading ? 'Checking Apple Watch…' : 'Re-check Apple Watch'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.saveButton, saving && styles.saveDisabled]}
             onPress={handleSave}
@@ -305,6 +403,61 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   targetNotes: { color: colors.textSecondary, fontSize: typography.size.sm, marginTop: spacing.xs },
+  hkCard: {
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  hkTitle: {
+    color: colors.primary,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+  },
+  hkBody: {
+    color: colors.text,
+    fontSize: typography.size.md,
+    marginTop: spacing.xs,
+  },
+  hkActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  hkApply: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  hkApplyText: {
+    color: colors.textOnPrimary,
+    fontWeight: typography.weight.semibold,
+  },
+  hkDismiss: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hkDismissText: {
+    color: colors.textSecondary,
+  },
+  hkActionDisabled: {
+    opacity: 0.5,
+  },
+  recheckButton: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  recheckText: {
+    color: colors.primary,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+  },
   timerCard: { marginBottom: spacing.lg, alignItems: 'center', paddingVertical: spacing.lg },
   timerValue: {
     color: colors.primary,
