@@ -1,42 +1,35 @@
--- Row-Level Security migration for WorkoutTracker
+-- Row-Level Security migration for WorkoutTracker (v2 — self-guarding)
 --
--- Applies the data-separation policy described in the build brief:
+-- Applies the data-separation policy:
 --   - Per-user tables: each user can only see/modify their own rows
 --     (auth.uid() = user_id).
 --   - Shared tables (partnership + game tier): both participants can read
 --     each other's rows, but NOT the underlying private workout/set data.
 --
--- The file is idempotent — DROP POLICY IF EXISTS guards every CREATE so
--- it's safe to re-run.
+-- v2 changes:
+--   - Every table block first checks the table EXISTS (to_regclass) and skips
+--     with a NOTICE when it doesn't — no more "relation does not exist" errors.
+--   - 'locations' corrected to 'workout_locations' (the name the app's sync
+--     code actually writes to).
+--   - 'exercise_swaps' removed — swaps are local-only, there is no Supabase
+--     table for them.
+--
+-- The file is idempotent — safe to re-run any number of times.
 --
 -- TO APPLY:
---   Supabase dashboard → SQL Editor → paste & run
---   OR: psql "$DATABASE_URL" -f supabase/migrations/20260701000000_enable_rls.sql
---
--- ASSUMPTIONS:
---   - Tables are named per the existing sync/challenge code: exercises,
---     templates, workouts, workout_sets, locations, supplements,
---     supplement_intakes, routines, body_measurements, exercise_swaps,
---     user_settings, profiles, partnerships, partner_stats, invite_codes,
---     challenges.
---   - Each per-user table has a `user_id uuid` column referencing auth.users(id).
---   - workout_sets does NOT have user_id directly — access is granted via
---     the parent workout row.
---   - partnerships has columns: user_id_1, user_id_2, status.
---   - partner_stats keys by user_id (single row per user).
---   - invite_codes has user_id (creator) + used_by columns.
---   - challenges has partnership_id; access is granted via the parent partnership.
---
--- If a table doesn't exist yet in your Supabase project, the ENABLE/POLICY
--- lines for it will error — comment that table's block out and re-run.
+--   Supabase dashboard → SQL Editor → paste & run.
+--   Watch the "Messages"/output pane: any skipped table prints a NOTICE like
+--   "Skipping body_measurements — table does not exist". That's informational,
+--   not an error.
 
 BEGIN;
 
 -- ─── HELPER: shared check for partnership membership ─────────────────────────
---
--- Used by partner_stats / challenges policies so the SQL stays declarative.
--- Marked STABLE because partnership membership doesn't change inside a
--- statement, which lets Postgres cache the result per row scan.
+-- Used by partner_stats / challenges policies. SECURITY DEFINER so the check
+-- can read partnerships regardless of the caller's own RLS visibility.
+-- Created without body validation in case partnerships doesn't exist yet.
+
+SET LOCAL check_function_bodies = off;
 
 CREATE OR REPLACE FUNCTION public.users_share_active_partnership(other_user uuid)
 RETURNS boolean
@@ -58,260 +51,259 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.users_share_active_partnership(uuid) TO authenticated;
 
--- ─── PER-USER PRIVATE TABLES ─────────────────────────────────────────────────
---
--- Pattern: enable RLS + four policies (SELECT/INSERT/UPDATE/DELETE) all
--- scoped to auth.uid() = user_id. Loop unrolled because Postgres has no
--- "do this for every table" syntax that's clean to read.
+-- ─── PER-USER PRIVATE TABLES (standard user_id pattern) ──────────────────────
+-- One loop applies the same four policies to every table that (a) exists and
+-- (b) keys privacy on a user_id column. Missing tables are skipped with a NOTICE.
 
--- exercises
-ALTER TABLE exercises ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS exercises_select_own ON exercises;
-DROP POLICY IF EXISTS exercises_insert_own ON exercises;
-DROP POLICY IF EXISTS exercises_update_own ON exercises;
-DROP POLICY IF EXISTS exercises_delete_own ON exercises;
-CREATE POLICY exercises_select_own ON exercises FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY exercises_insert_own ON exercises FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY exercises_update_own ON exercises FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY exercises_delete_own ON exercises FOR DELETE TO authenticated USING (auth.uid() = user_id);
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'exercises',
+    'templates',
+    'workouts',
+    'workout_locations',
+    'supplements',
+    'supplement_intakes',
+    'routines',
+    'body_measurements',
+    'user_settings'
+  ] LOOP
+    IF to_regclass('public.' || t) IS NULL THEN
+      RAISE NOTICE 'Skipping % — table does not exist', t;
+      CONTINUE;
+    END IF;
 
--- templates
-ALTER TABLE templates ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS templates_select_own ON templates;
-DROP POLICY IF EXISTS templates_insert_own ON templates;
-DROP POLICY IF EXISTS templates_update_own ON templates;
-DROP POLICY IF EXISTS templates_delete_own ON templates;
-CREATE POLICY templates_select_own ON templates FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY templates_insert_own ON templates FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY templates_update_own ON templates FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY templates_delete_own ON templates FOR DELETE TO authenticated USING (auth.uid() = user_id);
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
 
--- workouts
-ALTER TABLE workouts ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS workouts_select_own ON workouts;
-DROP POLICY IF EXISTS workouts_insert_own ON workouts;
-DROP POLICY IF EXISTS workouts_update_own ON workouts;
-DROP POLICY IF EXISTS workouts_delete_own ON workouts;
-CREATE POLICY workouts_select_own ON workouts FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY workouts_insert_own ON workouts FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY workouts_update_own ON workouts FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY workouts_delete_own ON workouts FOR DELETE TO authenticated USING (auth.uid() = user_id);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_select_own', t);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_insert_own', t);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_update_own', t);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_delete_own', t);
 
--- workout_sets — no user_id column; access granted via parent workout
-ALTER TABLE workout_sets ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS workout_sets_select_via_workout ON workout_sets;
-DROP POLICY IF EXISTS workout_sets_insert_via_workout ON workout_sets;
-DROP POLICY IF EXISTS workout_sets_update_via_workout ON workout_sets;
-DROP POLICY IF EXISTS workout_sets_delete_via_workout ON workout_sets;
-CREATE POLICY workout_sets_select_via_workout ON workout_sets FOR SELECT TO authenticated USING (
-  EXISTS (SELECT 1 FROM workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
-);
-CREATE POLICY workout_sets_insert_via_workout ON workout_sets FOR INSERT TO authenticated WITH CHECK (
-  EXISTS (SELECT 1 FROM workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
-);
-CREATE POLICY workout_sets_update_via_workout ON workout_sets FOR UPDATE TO authenticated USING (
-  EXISTS (SELECT 1 FROM workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
-) WITH CHECK (
-  EXISTS (SELECT 1 FROM workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
-);
-CREATE POLICY workout_sets_delete_via_workout ON workout_sets FOR DELETE TO authenticated USING (
-  EXISTS (SELECT 1 FROM workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
-);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (auth.uid() = user_id)',
+      t || '_select_own', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)',
+      t || '_insert_own', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)',
+      t || '_update_own', t);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (auth.uid() = user_id)',
+      t || '_delete_own', t);
 
--- locations
-ALTER TABLE locations ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS locations_select_own ON locations;
-DROP POLICY IF EXISTS locations_insert_own ON locations;
-DROP POLICY IF EXISTS locations_update_own ON locations;
-DROP POLICY IF EXISTS locations_delete_own ON locations;
-CREATE POLICY locations_select_own ON locations FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY locations_insert_own ON locations FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY locations_update_own ON locations FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY locations_delete_own ON locations FOR DELETE TO authenticated USING (auth.uid() = user_id);
+    RAISE NOTICE 'RLS enabled on %', t;
+  END LOOP;
+END $$;
 
--- supplements
-ALTER TABLE supplements ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS supplements_select_own ON supplements;
-DROP POLICY IF EXISTS supplements_insert_own ON supplements;
-DROP POLICY IF EXISTS supplements_update_own ON supplements;
-DROP POLICY IF EXISTS supplements_delete_own ON supplements;
-CREATE POLICY supplements_select_own ON supplements FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY supplements_insert_own ON supplements FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY supplements_update_own ON supplements FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY supplements_delete_own ON supplements FOR DELETE TO authenticated USING (auth.uid() = user_id);
+-- ─── workout_sets — no user_id column; access via parent workout ─────────────
 
--- supplement_intakes
-ALTER TABLE supplement_intakes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS supplement_intakes_select_own ON supplement_intakes;
-DROP POLICY IF EXISTS supplement_intakes_insert_own ON supplement_intakes;
-DROP POLICY IF EXISTS supplement_intakes_update_own ON supplement_intakes;
-DROP POLICY IF EXISTS supplement_intakes_delete_own ON supplement_intakes;
-CREATE POLICY supplement_intakes_select_own ON supplement_intakes FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY supplement_intakes_insert_own ON supplement_intakes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY supplement_intakes_update_own ON supplement_intakes FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY supplement_intakes_delete_own ON supplement_intakes FOR DELETE TO authenticated USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF to_regclass('public.workout_sets') IS NULL THEN
+    RAISE NOTICE 'Skipping workout_sets — table does not exist';
+    RETURN;
+  END IF;
 
--- routines (the Program/Routine entity)
-ALTER TABLE routines ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS routines_select_own ON routines;
-DROP POLICY IF EXISTS routines_insert_own ON routines;
-DROP POLICY IF EXISTS routines_update_own ON routines;
-DROP POLICY IF EXISTS routines_delete_own ON routines;
-CREATE POLICY routines_select_own ON routines FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY routines_insert_own ON routines FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY routines_update_own ON routines FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY routines_delete_own ON routines FOR DELETE TO authenticated USING (auth.uid() = user_id);
+  EXECUTE 'ALTER TABLE public.workout_sets ENABLE ROW LEVEL SECURITY';
 
--- body_measurements
-ALTER TABLE body_measurements ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS body_measurements_select_own ON body_measurements;
-DROP POLICY IF EXISTS body_measurements_insert_own ON body_measurements;
-DROP POLICY IF EXISTS body_measurements_update_own ON body_measurements;
-DROP POLICY IF EXISTS body_measurements_delete_own ON body_measurements;
-CREATE POLICY body_measurements_select_own ON body_measurements FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY body_measurements_insert_own ON body_measurements FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY body_measurements_update_own ON body_measurements FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY body_measurements_delete_own ON body_measurements FOR DELETE TO authenticated USING (auth.uid() = user_id);
+  EXECUTE 'DROP POLICY IF EXISTS workout_sets_select_via_workout ON public.workout_sets';
+  EXECUTE 'DROP POLICY IF EXISTS workout_sets_insert_via_workout ON public.workout_sets';
+  EXECUTE 'DROP POLICY IF EXISTS workout_sets_update_via_workout ON public.workout_sets';
+  EXECUTE 'DROP POLICY IF EXISTS workout_sets_delete_via_workout ON public.workout_sets';
 
--- exercise_swaps
-ALTER TABLE exercise_swaps ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS exercise_swaps_select_own ON exercise_swaps;
-DROP POLICY IF EXISTS exercise_swaps_insert_own ON exercise_swaps;
-DROP POLICY IF EXISTS exercise_swaps_update_own ON exercise_swaps;
-DROP POLICY IF EXISTS exercise_swaps_delete_own ON exercise_swaps;
-CREATE POLICY exercise_swaps_select_own ON exercise_swaps FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY exercise_swaps_insert_own ON exercise_swaps FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY exercise_swaps_update_own ON exercise_swaps FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY exercise_swaps_delete_own ON exercise_swaps FOR DELETE TO authenticated USING (auth.uid() = user_id);
+  EXECUTE $pol$CREATE POLICY workout_sets_select_via_workout ON public.workout_sets FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY workout_sets_insert_via_workout ON public.workout_sets FOR INSERT TO authenticated WITH CHECK (
+    EXISTS (SELECT 1 FROM public.workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY workout_sets_update_via_workout ON public.workout_sets FOR UPDATE TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
+  ) WITH CHECK (
+    EXISTS (SELECT 1 FROM public.workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY workout_sets_delete_via_workout ON public.workout_sets FOR DELETE TO authenticated USING (
+    EXISTS (SELECT 1 FROM public.workouts w WHERE w.id = workout_sets.workout_id AND w.user_id = auth.uid())
+  )$pol$;
 
--- user_settings — primary key is user_id (one row per user)
-ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS user_settings_select_own ON user_settings;
-DROP POLICY IF EXISTS user_settings_insert_own ON user_settings;
-DROP POLICY IF EXISTS user_settings_update_own ON user_settings;
-DROP POLICY IF EXISTS user_settings_delete_own ON user_settings;
-CREATE POLICY user_settings_select_own ON user_settings FOR SELECT TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY user_settings_insert_own ON user_settings FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY user_settings_update_own ON user_settings FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-CREATE POLICY user_settings_delete_own ON user_settings FOR DELETE TO authenticated USING (auth.uid() = user_id);
+  RAISE NOTICE 'RLS enabled on workout_sets';
+END $$;
 
--- ─── SHARED / GAME-TIER TABLES ───────────────────────────────────────────────
---
--- profiles: display name + avatar. Readable by anyone authenticated (they're
--- shown to partners when accepting invites and on the social tab). Writable
--- only by the owner.
+-- ─── profiles — readable by all authenticated, writable by owner ─────────────
 
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS profiles_select_all ON profiles;
-DROP POLICY IF EXISTS profiles_insert_own ON profiles;
-DROP POLICY IF EXISTS profiles_update_own ON profiles;
-CREATE POLICY profiles_select_all ON profiles FOR SELECT TO authenticated USING (true);
-CREATE POLICY profiles_insert_own ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY profiles_update_own ON profiles FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF to_regclass('public.profiles') IS NULL THEN
+    RAISE NOTICE 'Skipping profiles — table does not exist';
+    RETURN;
+  END IF;
 
--- invite_codes: creator can see/modify their own. Other users need SELECT
--- access to UNUSED codes so they can validate before accepting.
-ALTER TABLE invite_codes ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS invite_codes_select_own_or_unused ON invite_codes;
-DROP POLICY IF EXISTS invite_codes_insert_own ON invite_codes;
-DROP POLICY IF EXISTS invite_codes_update_accept ON invite_codes;
-DROP POLICY IF EXISTS invite_codes_delete_own ON invite_codes;
-CREATE POLICY invite_codes_select_own_or_unused ON invite_codes FOR SELECT TO authenticated USING (
-  user_id = auth.uid() OR (used_by IS NULL AND expires_at > now())
-);
-CREATE POLICY invite_codes_insert_own ON invite_codes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
--- UPDATE allowed to: (a) creator (e.g., to delete/regenerate), or (b) any
--- authenticated user accepting the code (sets used_by = auth.uid()).
-CREATE POLICY invite_codes_update_accept ON invite_codes FOR UPDATE TO authenticated
-  USING (user_id = auth.uid() OR used_by IS NULL)
-  WITH CHECK (user_id = auth.uid() OR used_by = auth.uid());
-CREATE POLICY invite_codes_delete_own ON invite_codes FOR DELETE TO authenticated USING (auth.uid() = user_id);
+  EXECUTE 'ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY';
 
--- partnerships: both members can see their row.
-ALTER TABLE partnerships ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS partnerships_select_member ON partnerships;
-DROP POLICY IF EXISTS partnerships_insert_self_initiated ON partnerships;
-DROP POLICY IF EXISTS partnerships_update_member ON partnerships;
-CREATE POLICY partnerships_select_member ON partnerships FOR SELECT TO authenticated USING (
-  user_id_1 = auth.uid() OR user_id_2 = auth.uid()
-);
-CREATE POLICY partnerships_insert_self_initiated ON partnerships FOR INSERT TO authenticated WITH CHECK (
-  initiated_by = auth.uid() AND (user_id_1 = auth.uid() OR user_id_2 = auth.uid())
-);
-CREATE POLICY partnerships_update_member ON partnerships FOR UPDATE TO authenticated USING (
-  user_id_1 = auth.uid() OR user_id_2 = auth.uid()
-) WITH CHECK (
-  user_id_1 = auth.uid() OR user_id_2 = auth.uid()
-);
+  EXECUTE 'DROP POLICY IF EXISTS profiles_select_all ON public.profiles';
+  EXECUTE 'DROP POLICY IF EXISTS profiles_insert_own ON public.profiles';
+  EXECUTE 'DROP POLICY IF EXISTS profiles_update_own ON public.profiles';
 
--- partner_stats: visible to self + active partners (helper function).
-ALTER TABLE partner_stats ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS partner_stats_select_self_or_partner ON partner_stats;
-DROP POLICY IF EXISTS partner_stats_insert_own ON partner_stats;
-DROP POLICY IF EXISTS partner_stats_update_own ON partner_stats;
-CREATE POLICY partner_stats_select_self_or_partner ON partner_stats FOR SELECT TO authenticated USING (
-  public.users_share_active_partnership(user_id)
-);
-CREATE POLICY partner_stats_insert_own ON partner_stats FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY partner_stats_update_own ON partner_stats FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+  EXECUTE 'CREATE POLICY profiles_select_all ON public.profiles FOR SELECT TO authenticated USING (true)';
+  EXECUTE 'CREATE POLICY profiles_insert_own ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)';
+  EXECUTE 'CREATE POLICY profiles_update_own ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
 
--- challenges: visible to both partnership members; either can create/update.
-ALTER TABLE challenges ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS challenges_select_via_partnership ON challenges;
-DROP POLICY IF EXISTS challenges_insert_via_partnership ON challenges;
-DROP POLICY IF EXISTS challenges_update_via_partnership ON challenges;
-DROP POLICY IF EXISTS challenges_delete_via_partnership ON challenges;
-CREATE POLICY challenges_select_via_partnership ON challenges FOR SELECT TO authenticated USING (
-  EXISTS (
-    SELECT 1 FROM partnerships p
-    WHERE p.id = challenges.partnership_id
-      AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
-  )
-);
-CREATE POLICY challenges_insert_via_partnership ON challenges FOR INSERT TO authenticated WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM partnerships p
-    WHERE p.id = challenges.partnership_id
-      AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
-  )
-);
-CREATE POLICY challenges_update_via_partnership ON challenges FOR UPDATE TO authenticated USING (
-  EXISTS (
-    SELECT 1 FROM partnerships p
-    WHERE p.id = challenges.partnership_id
-      AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
-  )
-);
-CREATE POLICY challenges_delete_via_partnership ON challenges FOR DELETE TO authenticated USING (
-  EXISTS (
-    SELECT 1 FROM partnerships p
-    WHERE p.id = challenges.partnership_id
-      AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
-  )
-);
+  RAISE NOTICE 'RLS enabled on profiles';
+END $$;
+
+-- ─── invite_codes — creator owns; others can validate unused codes ───────────
+
+DO $$
+BEGIN
+  IF to_regclass('public.invite_codes') IS NULL THEN
+    RAISE NOTICE 'Skipping invite_codes — table does not exist';
+    RETURN;
+  END IF;
+
+  EXECUTE 'ALTER TABLE public.invite_codes ENABLE ROW LEVEL SECURITY';
+
+  EXECUTE 'DROP POLICY IF EXISTS invite_codes_select_own_or_unused ON public.invite_codes';
+  EXECUTE 'DROP POLICY IF EXISTS invite_codes_insert_own ON public.invite_codes';
+  EXECUTE 'DROP POLICY IF EXISTS invite_codes_update_accept ON public.invite_codes';
+  EXECUTE 'DROP POLICY IF EXISTS invite_codes_delete_own ON public.invite_codes';
+
+  EXECUTE $pol$CREATE POLICY invite_codes_select_own_or_unused ON public.invite_codes FOR SELECT TO authenticated USING (
+    user_id = auth.uid() OR (used_by IS NULL AND expires_at > now())
+  )$pol$;
+  EXECUTE 'CREATE POLICY invite_codes_insert_own ON public.invite_codes FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)';
+  -- UPDATE allowed to: (a) creator, or (b) any authenticated user accepting
+  -- the code (sets used_by = auth.uid()).
+  EXECUTE $pol$CREATE POLICY invite_codes_update_accept ON public.invite_codes FOR UPDATE TO authenticated
+    USING (user_id = auth.uid() OR used_by IS NULL)
+    WITH CHECK (user_id = auth.uid() OR used_by = auth.uid())$pol$;
+  EXECUTE 'CREATE POLICY invite_codes_delete_own ON public.invite_codes FOR DELETE TO authenticated USING (auth.uid() = user_id)';
+
+  RAISE NOTICE 'RLS enabled on invite_codes';
+END $$;
+
+-- ─── partnerships — both members can see/update their row ────────────────────
+
+DO $$
+BEGIN
+  IF to_regclass('public.partnerships') IS NULL THEN
+    RAISE NOTICE 'Skipping partnerships — table does not exist';
+    RETURN;
+  END IF;
+
+  EXECUTE 'ALTER TABLE public.partnerships ENABLE ROW LEVEL SECURITY';
+
+  EXECUTE 'DROP POLICY IF EXISTS partnerships_select_member ON public.partnerships';
+  EXECUTE 'DROP POLICY IF EXISTS partnerships_insert_self_initiated ON public.partnerships';
+  EXECUTE 'DROP POLICY IF EXISTS partnerships_update_member ON public.partnerships';
+
+  EXECUTE $pol$CREATE POLICY partnerships_select_member ON public.partnerships FOR SELECT TO authenticated USING (
+    user_id_1 = auth.uid() OR user_id_2 = auth.uid()
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY partnerships_insert_self_initiated ON public.partnerships FOR INSERT TO authenticated WITH CHECK (
+    initiated_by = auth.uid() AND (user_id_1 = auth.uid() OR user_id_2 = auth.uid())
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY partnerships_update_member ON public.partnerships FOR UPDATE TO authenticated USING (
+    user_id_1 = auth.uid() OR user_id_2 = auth.uid()
+  ) WITH CHECK (
+    user_id_1 = auth.uid() OR user_id_2 = auth.uid()
+  )$pol$;
+
+  RAISE NOTICE 'RLS enabled on partnerships';
+END $$;
+
+-- ─── partner_stats — visible to self + active partner ────────────────────────
+
+DO $$
+BEGIN
+  IF to_regclass('public.partner_stats') IS NULL THEN
+    RAISE NOTICE 'Skipping partner_stats — table does not exist';
+    RETURN;
+  END IF;
+
+  EXECUTE 'ALTER TABLE public.partner_stats ENABLE ROW LEVEL SECURITY';
+
+  EXECUTE 'DROP POLICY IF EXISTS partner_stats_select_self_or_partner ON public.partner_stats';
+  EXECUTE 'DROP POLICY IF EXISTS partner_stats_insert_own ON public.partner_stats';
+  EXECUTE 'DROP POLICY IF EXISTS partner_stats_update_own ON public.partner_stats';
+
+  EXECUTE $pol$CREATE POLICY partner_stats_select_self_or_partner ON public.partner_stats FOR SELECT TO authenticated USING (
+    public.users_share_active_partnership(user_id)
+  )$pol$;
+  EXECUTE 'CREATE POLICY partner_stats_insert_own ON public.partner_stats FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)';
+  EXECUTE 'CREATE POLICY partner_stats_update_own ON public.partner_stats FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
+
+  RAISE NOTICE 'RLS enabled on partner_stats';
+END $$;
+
+-- ─── challenges — visible to both partnership members ────────────────────────
+
+DO $$
+BEGIN
+  IF to_regclass('public.challenges') IS NULL THEN
+    RAISE NOTICE 'Skipping challenges — table does not exist';
+    RETURN;
+  END IF;
+
+  EXECUTE 'ALTER TABLE public.challenges ENABLE ROW LEVEL SECURITY';
+
+  EXECUTE 'DROP POLICY IF EXISTS challenges_select_via_partnership ON public.challenges';
+  EXECUTE 'DROP POLICY IF EXISTS challenges_insert_via_partnership ON public.challenges';
+  EXECUTE 'DROP POLICY IF EXISTS challenges_update_via_partnership ON public.challenges';
+  EXECUTE 'DROP POLICY IF EXISTS challenges_delete_via_partnership ON public.challenges';
+
+  EXECUTE $pol$CREATE POLICY challenges_select_via_partnership ON public.challenges FOR SELECT TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.partnerships p
+      WHERE p.id = challenges.partnership_id
+        AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
+    )
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY challenges_insert_via_partnership ON public.challenges FOR INSERT TO authenticated WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.partnerships p
+      WHERE p.id = challenges.partnership_id
+        AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
+    )
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY challenges_update_via_partnership ON public.challenges FOR UPDATE TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.partnerships p
+      WHERE p.id = challenges.partnership_id
+        AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
+    )
+  )$pol$;
+  EXECUTE $pol$CREATE POLICY challenges_delete_via_partnership ON public.challenges FOR DELETE TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.partnerships p
+      WHERE p.id = challenges.partnership_id
+        AND (p.user_id_1 = auth.uid() OR p.user_id_2 = auth.uid())
+    )
+  )$pol$;
+
+  RAISE NOTICE 'RLS enabled on challenges';
+END $$;
 
 COMMIT;
 
--- ─── SMOKE TESTS ─────────────────────────────────────────────────────────────
--- Run these after applying to confirm policies behave correctly. Replace
--- '<user-a>' and '<user-b>' with two real auth.users IDs.
+-- ─── VERIFY ──────────────────────────────────────────────────────────────────
+-- After running, this query lists every table with RLS on and its policy count:
 --
--- 1. As user A, you should see only your own workouts:
---      SET request.jwt.claim.sub = '<user-a>';
---      SELECT count(*) FROM workouts;
+--   SELECT c.relname AS table_name,
+--          c.relrowsecurity AS rls_enabled,
+--          count(p.polname) AS policies
+--   FROM pg_class c
+--   LEFT JOIN pg_policy p ON p.polrelid = c.oid
+--   JOIN pg_namespace n ON n.oid = c.relnamespace
+--   WHERE n.nspname = 'public' AND c.relkind = 'r'
+--   GROUP BY c.relname, c.relrowsecurity
+--   ORDER BY c.relname;
 --
--- 2. As user A, querying another user's private data returns 0 rows:
---      SELECT * FROM workouts WHERE user_id = '<user-b>';
---
--- 3. As user A (with an active partnership to B), you can read B's stats:
---      SELECT * FROM partner_stats WHERE user_id = '<user-b>';
---
--- 4. As user C (no partnership), querying B's stats returns 0 rows:
---      SET request.jwt.claim.sub = '<user-c>';
---      SELECT * FROM partner_stats WHERE user_id = '<user-b>';
+-- Every table your app syncs should show rls_enabled = true with 3-4 policies.
 --
 -- ─── ROLLBACK ────────────────────────────────────────────────────────────────
--- To disable RLS again (e.g., for debugging):
---   ALTER TABLE workouts DISABLE ROW LEVEL SECURITY;
---   -- ... repeat for each table
--- Or drop the policies individually with DROP POLICY ... ON <table>.
+-- To disable RLS on a table (e.g., for debugging):
+--   ALTER TABLE public.workouts DISABLE ROW LEVEL SECURITY;
