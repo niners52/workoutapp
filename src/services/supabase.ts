@@ -51,7 +51,7 @@ export async function signInWithApple() {
       await supabase
         .from('profiles')
         .update({ display_name: displayName })
-        .eq('user_id', data.user.id);
+        .eq('id', data.user.id);
     }
   }
 

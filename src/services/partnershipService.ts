@@ -186,11 +186,12 @@ export async function validateInviteCode(code: string): Promise<{
     return { valid: false, error: 'You already have a partner' };
   }
 
-  // Get creator's display name
+  // Get creator's display name. profiles keys on `id` (= auth.users.id),
+  // not user_id — querying user_id silently returned nothing for months.
   const { data: profile } = await supabase
     .from('profiles')
     .select('display_name')
-    .eq('user_id', data.user_id)
+    .eq('id', data.user_id)
     .single();
 
   return {
@@ -324,11 +325,11 @@ export async function getPartnerStats(partnerId: string): Promise<PartnerStats |
     .eq('user_id', partnerId)
     .single();
 
-  // Get display name from profiles
+  // Get display name from profiles (keyed on id = auth.users.id)
   const { data: profile } = await supabase
     .from('profiles')
     .select('display_name')
-    .eq('user_id', partnerId)
+    .eq('id', partnerId)
     .single();
 
   if (statsError && statsError.code !== 'PGRST116') {
