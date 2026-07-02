@@ -1,33 +1,56 @@
--- Row-Level Security migration for WorkoutTracker (v2 — self-guarding)
+-- Row-Level Security migration for WorkoutTracker (v3 — schema-adaptive)
 --
 -- Applies the data-separation policy:
---   - Per-user tables: each user can only see/modify their own rows
---     (auth.uid() = user_id).
+--   - Per-user tables: each user can only see/modify their own rows.
 --   - Shared tables (partnership + game tier): both participants can read
 --     each other's rows, but NOT the underlying private workout/set data.
 --
--- v2 changes:
---   - Every table block first checks the table EXISTS (to_regclass) and skips
---     with a NOTICE when it doesn't — no more "relation does not exist" errors.
---   - 'locations' corrected to 'workout_locations' (the name the app's sync
---     code actually writes to).
---   - 'exercise_swaps' removed — swaps are local-only, there is no Supabase
---     table for them.
+-- v3 changes:
+--   - Owner-column detection: tables keyed on `id` instead of `user_id`
+--     (e.g. a Supabase-convention `profiles` table) are handled automatically.
+--   - Every block catches schema surprises (missing column, etc.) and prints
+--     a WARNING naming the table instead of aborting the whole run. Any table
+--     that warns is NOT protected — read the output.
 --
 -- The file is idempotent — safe to re-run any number of times.
 --
 -- TO APPLY:
 --   Supabase dashboard → SQL Editor → paste & run.
---   Watch the "Messages"/output pane: any skipped table prints a NOTICE like
---   "Skipping body_measurements — table does not exist". That's informational,
---   not an error.
+--   Then READ THE MESSAGES PANE:
+--     "RLS enabled on X"        → protected
+--     "Skipping X — ..."        → table doesn't exist (fine)
+--     "WARNING: X NOT protected" → schema mismatch; tell me the table's columns
 
 BEGIN;
 
+-- ─── HELPER: detect a table's owner column ────────────────────────────────────
+-- Returns 'user_id' if present, else 'id' if it's a uuid (Supabase-convention
+-- profile tables key on id = auth.users.id), else NULL.
+
+CREATE OR REPLACE FUNCTION pg_temp.owner_column(tbl text)
+RETURNS text
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = tbl AND column_name = 'user_id'
+  ) THEN
+    RETURN 'user_id';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = tbl
+      AND column_name = 'id' AND data_type = 'uuid'
+  ) THEN
+    RETURN 'id';
+  END IF;
+  RETURN NULL;
+END $$;
+
 -- ─── HELPER: shared check for partnership membership ─────────────────────────
--- Used by partner_stats / challenges policies. SECURITY DEFINER so the check
--- can read partnerships regardless of the caller's own RLS visibility.
--- Created without body validation in case partnerships doesn't exist yet.
+-- SECURITY DEFINER so the check can read partnerships regardless of the
+-- caller's own RLS visibility.
 
 SET LOCAL check_function_bodies = off;
 
@@ -51,13 +74,14 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.users_share_active_partnership(uuid) TO authenticated;
 
--- ─── PER-USER PRIVATE TABLES (standard user_id pattern) ──────────────────────
--- One loop applies the same four policies to every table that (a) exists and
--- (b) keys privacy on a user_id column. Missing tables are skipped with a NOTICE.
+-- ─── PER-USER PRIVATE TABLES ─────────────────────────────────────────────────
+-- Applies SELECT/INSERT/UPDATE/DELETE policies scoped to the detected owner
+-- column. Missing tables are skipped; unexpected schemas warn and continue.
 
 DO $$
 DECLARE
   t text;
+  owner_col text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'exercises',
@@ -70,32 +94,42 @@ BEGIN
     'body_measurements',
     'user_settings'
   ] LOOP
-    IF to_regclass('public.' || t) IS NULL THEN
-      RAISE NOTICE 'Skipping % — table does not exist', t;
-      CONTINUE;
-    END IF;
+    BEGIN
+      IF to_regclass('public.' || t) IS NULL THEN
+        RAISE NOTICE 'Skipping % — table does not exist', t;
+        CONTINUE;
+      END IF;
 
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+      owner_col := pg_temp.owner_column(t);
+      IF owner_col IS NULL THEN
+        RAISE WARNING '% NOT protected — no user_id or uuid id column found', t;
+        CONTINUE;
+      END IF;
 
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_select_own', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_insert_own', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_update_own', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_delete_own', t);
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
 
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (auth.uid() = user_id)',
-      t || '_select_own', t);
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)',
-      t || '_insert_own', t);
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)',
-      t || '_update_own', t);
-    EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (auth.uid() = user_id)',
-      t || '_delete_own', t);
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_select_own', t);
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_insert_own', t);
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_update_own', t);
+      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_delete_own', t);
 
-    RAISE NOTICE 'RLS enabled on %', t;
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (auth.uid() = %I)',
+        t || '_select_own', t, owner_col);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (auth.uid() = %I)',
+        t || '_insert_own', t, owner_col);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (auth.uid() = %I) WITH CHECK (auth.uid() = %I)',
+        t || '_update_own', t, owner_col, owner_col);
+      EXECUTE format(
+        'CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (auth.uid() = %I)',
+        t || '_delete_own', t, owner_col);
+
+      RAISE NOTICE 'RLS enabled on % (owner column: %)', t, owner_col;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING '% NOT protected — %', t, SQLERRM;
+    END;
   END LOOP;
 END $$;
 
@@ -131,14 +165,26 @@ BEGIN
   )$pol$;
 
   RAISE NOTICE 'RLS enabled on workout_sets';
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'workout_sets NOT protected — %', SQLERRM;
 END $$;
 
 -- ─── profiles — readable by all authenticated, writable by owner ─────────────
+-- Owner column detected: Supabase-convention profiles key on `id`, but this
+-- app's code queries by `user_id`; handle either.
 
 DO $$
+DECLARE
+  owner_col text;
 BEGIN
   IF to_regclass('public.profiles') IS NULL THEN
     RAISE NOTICE 'Skipping profiles — table does not exist';
+    RETURN;
+  END IF;
+
+  owner_col := pg_temp.owner_column('profiles');
+  IF owner_col IS NULL THEN
+    RAISE WARNING 'profiles NOT protected — no user_id or uuid id column found';
     RETURN;
   END IF;
 
@@ -149,10 +195,16 @@ BEGIN
   EXECUTE 'DROP POLICY IF EXISTS profiles_update_own ON public.profiles';
 
   EXECUTE 'CREATE POLICY profiles_select_all ON public.profiles FOR SELECT TO authenticated USING (true)';
-  EXECUTE 'CREATE POLICY profiles_insert_own ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id)';
-  EXECUTE 'CREATE POLICY profiles_update_own ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
+  EXECUTE format(
+    'CREATE POLICY profiles_insert_own ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = %I)',
+    owner_col);
+  EXECUTE format(
+    'CREATE POLICY profiles_update_own ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = %I) WITH CHECK (auth.uid() = %I)',
+    owner_col, owner_col);
 
-  RAISE NOTICE 'RLS enabled on profiles';
+  RAISE NOTICE 'RLS enabled on profiles (owner column: %)', owner_col;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'profiles NOT protected — %', SQLERRM;
 END $$;
 
 -- ─── invite_codes — creator owns; others can validate unused codes ───────────
@@ -183,6 +235,8 @@ BEGIN
   EXECUTE 'CREATE POLICY invite_codes_delete_own ON public.invite_codes FOR DELETE TO authenticated USING (auth.uid() = user_id)';
 
   RAISE NOTICE 'RLS enabled on invite_codes';
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'invite_codes NOT protected — %', SQLERRM;
 END $$;
 
 -- ─── partnerships — both members can see/update their row ────────────────────
@@ -213,6 +267,8 @@ BEGIN
   )$pol$;
 
   RAISE NOTICE 'RLS enabled on partnerships';
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'partnerships NOT protected — %', SQLERRM;
 END $$;
 
 -- ─── partner_stats — visible to self + active partner ────────────────────────
@@ -237,6 +293,8 @@ BEGIN
   EXECUTE 'CREATE POLICY partner_stats_update_own ON public.partner_stats FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id)';
 
   RAISE NOTICE 'RLS enabled on partner_stats';
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'partner_stats NOT protected — %', SQLERRM;
 END $$;
 
 -- ─── challenges — visible to both partnership members ────────────────────────
@@ -285,6 +343,8 @@ BEGIN
   )$pol$;
 
   RAISE NOTICE 'RLS enabled on challenges';
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'challenges NOT protected — %', SQLERRM;
 END $$;
 
 COMMIT;
