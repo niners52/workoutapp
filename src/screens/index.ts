@@ -35,4 +35,5 @@ export { ProgressScreen } from './ProgressScreen';
 export { WeeklyHistoryScreen } from './WeeklyHistoryScreen';
 export { ImportRoutineScreen } from './ImportRoutineScreen';
 export { AerobicSessionScreen } from './AerobicSessionScreen';
+export { RoutineEditorScreen } from './RoutineEditorScreen';
 export { SocialScreen } from './SocialScreen';

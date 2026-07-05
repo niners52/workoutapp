@@ -52,6 +52,7 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
   const [incompleteDates, setIncompleteDates] = useState<Set<string>>(new Set());
   const [yogaDates, setYogaDates] = useState<Set<string>>(new Set());
   const [cardioDates, setCardioDates] = useState<Set<string>>(new Set());
+  const [travelDates, setTravelDates] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [healthKitWorkouts, setHealthKitWorkouts] = useState<HealthKitWorkout[]>([]);
 
@@ -194,6 +195,14 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
       setYogaDates(yogaSet);
       setCardioDates(cardioSet);
 
+      // Travel/Other workout days (✈️ marker on the calendar)
+      const travelSet = new Set<string>(
+        freshWorkouts
+          .filter(w => w.completedAt && w.locationId === 'travel')
+          .map(w => format(new Date(w.startedAt), 'yyyy-MM-dd'))
+      );
+      setTravelDates(travelSet);
+
       // Compute incomplete workout dates
       const incompleteDateSet = new Set(
         freshWorkouts
@@ -314,6 +323,7 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
           incompleteDates={incompleteDates}
           yogaDates={userSettings.trackYoga ? yogaDates : undefined}
           cardioDates={userSettings.trackCardio ? cardioDates : undefined}
+          travelDates={travelDates}
         />
 
         {/* Selected Date Workouts */}

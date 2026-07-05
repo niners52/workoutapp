@@ -1,11 +1,12 @@
 import { format } from 'date-fns';
-import { WorkoutSet, Workout } from '../types';
+import { WorkoutSet, Workout, TRAVEL_LOCATION_ID } from '../types';
 import { getSetsByExerciseId, getWorkouts } from './storage';
 
 export interface WorkoutSessionSets {
   workoutId: string;
   date: string;
   sets: WorkoutSet[];
+  locationId?: string; // where the session happened ('travel' = Travel/Other)
 }
 
 export interface LastWorkoutForExercise {
@@ -69,12 +70,35 @@ export async function getLastWorkoutForExercise(
   const workouts = await getWorkouts();
   const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
 
+  // Travel/Other sessions never feed weight suggestions — hotel-gym dumbbell
+  // weights shouldn't overwrite regular-gym history. (They still appear in the
+  // exercise history screen, which uses getExerciseHistory, not this function.)
+  const nonTravelSets = sortedSets.filter(
+    s => locationByWorkoutId.get(s.workoutId) !== TRAVEL_LOCATION_ID
+  );
+  if (nonTravelSets.length === 0) {
+    // Only-ever-done-while-traveling edge case: fall back to travel history
+    // rather than returning nothing.
+    const lastWorkoutId = sortedSets[0].workoutId;
+    const lastWorkoutSets = sortedSets.filter(s => s.workoutId === lastWorkoutId);
+    return {
+      date: lastWorkoutSets[0].loggedAt,
+      sets: lastWorkoutSets,
+      fromLocationId: TRAVEL_LOCATION_ID,
+      isSameLocation: preferLocationId === TRAVEL_LOCATION_ID,
+    };
+  }
+
   // Prefer the most recent session at the requested location; fall back to the most
   // recent session anywhere when the exercise has never been done there.
-  let pool = sortedSets;
+  // When AT the travel gym, we intentionally skip same-location matching so the
+  // user sees their regular-gym numbers as the reference.
+  let pool = nonTravelSets;
   let isSameLocation = true;
-  if (preferLocationId) {
-    const sameLocation = sortedSets.filter(
+  if (preferLocationId === TRAVEL_LOCATION_ID) {
+    isSameLocation = false; // reference weights are from a regular gym
+  } else if (preferLocationId) {
+    const sameLocation = nonTravelSets.filter(
       s => locationByWorkoutId.get(s.workoutId) === preferLocationId
     );
     if (sameLocation.length > 0) {
@@ -124,6 +148,10 @@ export async function getExerciseHistory(
     workoutMap.get(set.workoutId)!.push(set);
   }
 
+  // Location per workout (so travel sessions can be tagged in the UI)
+  const workouts = await getWorkouts();
+  const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+
   // Convert to array of workout sessions
   const sessions: WorkoutSessionSets[] = [];
   for (const [workoutId, workoutSets] of workoutMap) {
@@ -131,6 +159,7 @@ export async function getExerciseHistory(
       workoutId,
       date: workoutSets[0].loggedAt,
       sets: workoutSets,
+      locationId: locationByWorkoutId.get(workoutId),
     });
   }
 

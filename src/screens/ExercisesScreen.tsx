@@ -31,6 +31,7 @@ import {
 import { RootStackParamList } from '../navigation/types';
 import { getExercisePRSummaries, ExercisePRs } from '../services/personalRecords';
 import { getSets } from '../services/storage';
+import { matchesAllWords } from '../utils/search';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -132,15 +133,15 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
       result = result.filter(e => e.equipment === selectedEquipment);
     }
 
-    // Filter by search query
+    // Filter by search query — every word must appear somewhere across the
+    // exercise's name / muscles / equipment ("cable fly" matches
+    // "High to Low Cable Fly").
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        e =>
-          e.name.toLowerCase().includes(query) ||
-          (e.baseName && e.baseName.toLowerCase().includes(query)) ||
-          getPrimaryMusclesText(e).toLowerCase().includes(query) ||
-          getEquipmentText(e).toLowerCase().includes(query)
+      result = result.filter(e =>
+        matchesAllWords(
+          `${e.name} ${e.baseName ?? ''} ${getPrimaryMusclesText(e)} ${getEquipmentText(e)}`,
+          searchQuery,
+        )
       );
     }
 

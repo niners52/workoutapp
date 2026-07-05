@@ -35,6 +35,7 @@ interface CalendarViewProps {
   incompleteDates?: Set<string>;
   yogaDates?: Set<string>;
   cardioDates?: Set<string>;
+  travelDates?: Set<string>; // days with a Travel/Other workout
 }
 
 export function CalendarView({
@@ -46,6 +47,7 @@ export function CalendarView({
   incompleteDates,
   yogaDates,
   cardioDates,
+  travelDates,
 }: CalendarViewProps) {
   const today = startOfDay(new Date());
   const weekStartsOn = weekStartDay === 'sunday' ? 0 : 1;
@@ -134,6 +136,7 @@ export function CalendarView({
                   hasIncompleteWorkout={incompleteDates?.has(dateStr)}
                   hasYoga={yogaDates?.has(dateStr)}
                   hasCardio={cardioDates?.has(dateStr)}
+                  hasTravel={travelDates?.has(dateStr)}
                   onPress={() => onDayPress(date)}
                 />
               );

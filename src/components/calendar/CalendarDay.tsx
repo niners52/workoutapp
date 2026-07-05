@@ -12,6 +12,7 @@ interface CalendarDayProps {
   hasIncompleteWorkout?: boolean;
   hasYoga?: boolean;
   hasCardio?: boolean;
+  hasTravel?: boolean; // workout logged at the Travel/Other pseudo-location
   onPress: () => void;
 }
 
@@ -51,6 +52,7 @@ export function CalendarDay({
   hasIncompleteWorkout,
   hasYoga,
   hasCardio,
+  hasTravel,
   onPress,
 }: CalendarDayProps) {
   const dayNumber = date.getDate();
@@ -79,10 +81,11 @@ export function CalendarDay({
       {hasIncompleteWorkout && isCurrentMonth && (
         <View style={styles.incompleteIndicator} />
       )}
-      {isCurrentMonth && !isFuture && (hasYoga || hasCardio) && (
+      {isCurrentMonth && !isFuture && (hasYoga || hasCardio || hasTravel) && (
         <View style={styles.activityDots}>
           {hasYoga && <View style={[styles.activityDot, { backgroundColor: colors.chartYoga }]} />}
           {hasCardio && <View style={[styles.activityDot, { backgroundColor: colors.chartCardio }]} />}
+          {hasTravel && <Text style={styles.travelIcon}>✈️</Text>}
         </View>
       )}
     </TouchableOpacity>
@@ -128,6 +131,10 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
+  },
+  travelIcon: {
+    fontSize: 7,
+    lineHeight: 8,
   },
 });
 

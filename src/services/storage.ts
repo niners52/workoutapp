@@ -878,14 +878,18 @@ export async function getLastSetsForExercise(
   const deloadIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
   const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
 
-  // Filter out deload sets, then sort by loggedAt descending
+  // Filter out deload sets AND Travel/Other sets (temporary-gym weights must
+  // not feed suggestions), then sort by loggedAt descending
   const sortedSets = sets
     .filter(s => !deloadIds.has(s.workoutId))
+    .filter(s => locationByWorkoutId.get(s.workoutId) !== 'travel')
     .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
 
   if (sortedSets.length === 0) return [];
 
   // Prefer the most recent session at the requested location, if any exist.
+  // 'travel' as preferLocationId intentionally never matches (excluded above),
+  // so at a travel gym the user sees regular-gym reference numbers.
   let pool = sortedSets;
   if (preferLocationId) {
     const sameLocation = sortedSets.filter(
@@ -902,10 +906,12 @@ export async function getLastSetsForExercise(
 
 // Most recent completed workout that recorded a location — used as the default
 // location for workout-start paths that don't explicitly pick one (quick-start, repeat).
+// Travel/Other is skipped: coming home from a trip shouldn't keep defaulting new
+// workouts to the travel pseudo-location.
 export async function getLastUsedLocationId(): Promise<string | undefined> {
   const workouts = await getWorkouts();
   const withLocation = workouts
-    .filter(w => w.locationId)
+    .filter(w => w.locationId && w.locationId !== 'travel')
     .sort(
       (a, b) =>
         new Date(b.completedAt || b.startedAt).getTime() -

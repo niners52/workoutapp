@@ -39,6 +39,7 @@ const TEMPLATE_TYPE_MUSCLES: Record<TemplateType, PrimaryMuscleGroup[]> = {
   full_body: ['chest', 'front_delts', 'side_delts', 'triceps', 'biceps', 'forearms', 'lats', 'upper_back', 'traps', 'quads', 'hamstrings', 'glutes', 'calves', 'abs', 'lower_back'],
 };
 import { RootStackParamList } from '../navigation/types';
+import { matchesAllWords } from '../utils/search';
 
 type RouteProps = RouteProp<RootStackParamList, 'EditTemplate'>;
 
@@ -178,10 +179,9 @@ export function CreateTemplateScreen() {
     const muscleMatch = exerciseMuscles.some(muscle => templateMuscles.includes(muscle));
 
     return muscleMatch;
-  }).filter(e => {
-    if (!exerciseSearch.trim()) return true;
-    return e.name.toLowerCase().includes(exerciseSearch.trim().toLowerCase());
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  }).filter(e =>
+    matchesAllWords(e.name, exerciseSearch)
+  ).sort((a, b) => a.name.localeCompare(b.name));
 
   const selectedExerciseObjects = selectedExercises
     .map(id => exercises.find(e => e.id === id))

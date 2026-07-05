@@ -17,13 +17,14 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, startOfWeek } from 'date-fns';
+import { matchesAllWords } from '../utils/search';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, NumberInput, SearchBar } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
-import { WorkoutSet, Exercise, Equipment, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem } from '../types';
+import { WorkoutSet, Exercise, Equipment, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem, TRAVEL_LOCATION_ID, TRAVEL_LOCATION } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
@@ -925,7 +926,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
               const currentSets = getSetsForExercise(exerciseId);
               const history = exerciseHistories[exerciseId];
               const fromLocationName = history?.fromLocationId
-                ? locations.find(l => l.id === history.fromLocationId)?.name
+                ? (history.fromLocationId === TRAVEL_LOCATION_ID
+                    ? TRAVEL_LOCATION.name
+                    : locations.find(l => l.id === history.fromLocationId)?.name)
                 : undefined;
               const isExpanded = selectedExerciseId === exerciseId;
               const targetSets =
@@ -977,6 +980,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     isOnDeload={userSettings?.isOnDeload}
                     deloadPercentage={userSettings?.deloadPercentage}
                     fromLocationName={fromLocationName}
+                    atTravelGym={activeWorkout.workout.locationId === TRAVEL_LOCATION_ID}
                     swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
                     onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
                   />
@@ -1196,12 +1200,12 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                 {exerciseToSwap && (() => {
                   const sections = getSwapSections(exerciseToSwap);
 
-                  // When searching, flatten all sections and filter by name
+                  // When searching, flatten all sections and filter by name.
+                  // All query words must appear anywhere in the name, any order.
                   if (swapSearchQuery) {
-                    const query = swapSearchQuery.toLowerCase();
                     const allExercises = sections.flatMap(s => s.exercises);
                     const filtered = allExercises.filter(e =>
-                      e.name.toLowerCase().includes(query)
+                      matchesAllWords(e.name, swapSearchQuery)
                     );
                     return filtered.map(exercise => (
                       <TouchableOpacity
@@ -1536,9 +1540,13 @@ interface PreviousSetIndicatorProps {
   deloadPercentage?: number;
   // Display name of the location the history came from (when known).
   fromLocationName?: string;
+  // True when the CURRENT workout is at the Travel/Other pseudo-location —
+  // changes the label to a neutral reference ("At Planet Fitness: ...") since
+  // "first time here" doesn't fit a temporary gym.
+  atTravelGym?: boolean;
 }
 
-function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadPercentage, fromLocationName }: PreviousSetIndicatorProps) {
+function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadPercentage, fromLocationName, atTravelGym }: PreviousSetIndicatorProps) {
   // Determine what to show: last set from current session, or last set from previous session
   const lastCurrentSet = currentSets.length > 0 ? currentSets[currentSets.length - 1] : null;
   const lastHistorySet = history?.sets?.[0];
@@ -1563,7 +1571,10 @@ function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadP
     const historyDate = history?.date ? format(new Date(history.date), 'MMM d') : '';
     const datePart = historyDate ? ` (${historyDate})` : '';
     let lastLabel: string;
-    if (history?.isSameLocation === false && fromLocationName) {
+    if (atTravelGym && fromLocationName) {
+      // Traveling: show the regular gym's numbers as a neutral reference
+      lastLabel = `At ${fromLocationName}${datePart}:`;
+    } else if (history?.isSameLocation === false && fromLocationName) {
       lastLabel = `First time here — last at ${fromLocationName}${datePart}:`;
     } else if (fromLocationName) {
       lastLabel = `Last at ${fromLocationName}${datePart}:`;
@@ -1632,6 +1643,7 @@ interface ExerciseCardProps {
   isOnDeload?: boolean;
   deloadPercentage?: number;
   fromLocationName?: string;
+  atTravelGym?: boolean;
   swapConflict?: SwapConflict;
   onKeepSwapConflict?: () => void;
 }
@@ -1665,6 +1677,7 @@ function ExerciseCard({
   isOnDeload,
   deloadPercentage,
   fromLocationName,
+  atTravelGym,
   swapConflict,
   onKeepSwapConflict,
 }: ExerciseCardProps) {
@@ -1845,6 +1858,7 @@ function ExerciseCard({
               isOnDeload={isOnDeload}
               deloadPercentage={deloadPercentage}
               fromLocationName={fromLocationName}
+              atTravelGym={atTravelGym}
             />
 
             <View style={styles.inputRow}>

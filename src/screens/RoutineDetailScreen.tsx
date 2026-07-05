@@ -324,10 +324,16 @@ export function RoutineDetailScreen() {
         {/* Actions */}
         <View style={styles.actions}>
           <Button
+            title="Edit Exercises"
+            onPress={() => navigation.navigate('RoutineEditor', { routineId: routine.id })}
+            fullWidth
+          />
+          <Button
             title="Edit Routine"
             onPress={handleEdit}
             variant="secondary"
             fullWidth
+            style={styles.actionButton}
           />
           {routine.isActive && (
             <Button

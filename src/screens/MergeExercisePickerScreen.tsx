@@ -17,6 +17,7 @@ import { SearchBar } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
+import { matchesAllWords } from '../utils/search';
 
 type MergeExercisePickerRouteProp = RouteProp<RootStackParamList, 'MergeExercisePicker'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -46,11 +47,8 @@ export function MergeExercisePickerScreen() {
     let result = exercises.filter(e => e.id !== sourceExerciseId);
 
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        e =>
-          e.name.toLowerCase().includes(query) ||
-          getPrimaryMusclesText(e).toLowerCase().includes(query)
+      result = result.filter(e =>
+        matchesAllWords(`${e.name} ${getPrimaryMusclesText(e)}`, searchQuery)
       );
     }
 

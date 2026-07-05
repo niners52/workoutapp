@@ -17,6 +17,7 @@ import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
+import { matchesAllWords } from '../utils/search';
 
 type ExercisePickerRouteProp = RouteProp<RootStackParamList, 'ExercisePicker'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -40,12 +41,12 @@ export function ExercisePickerScreen() {
   const filteredExercises = useMemo(() => {
     if (!searchQuery) return exercises;
 
-    const query = searchQuery.toLowerCase();
-    return exercises.filter(
-      e =>
-        e.name.toLowerCase().includes(query) ||
-        (e.baseName && e.baseName.toLowerCase().includes(query)) ||
-        getPrimaryMusclesText(e).toLowerCase().includes(query)
+    // Every query word must appear somewhere in name/baseName/muscles
+    return exercises.filter(e =>
+      matchesAllWords(
+        `${e.name} ${e.baseName ?? ''} ${getPrimaryMusclesText(e)}`,
+        searchQuery,
+      )
     );
   }, [exercises, searchQuery]);
 

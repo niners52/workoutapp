@@ -28,6 +28,7 @@ import {
   CARDIO_TYPE_DISPLAY_NAMES,
   CARDIO_INTENSITY_DISPLAY_NAMES,
   DAY_NAMES,
+  TRAVEL_LOCATION,
 } from '../types';
 import { getWeeklyVolume, getTemplatesForDay } from '../services/analytics';
 import { RootStackParamList } from '../navigation/types';
@@ -596,6 +597,17 @@ export function StartWorkoutScreen() {
               <Text style={styles.locationName}>{location.name}</Text>
             </TouchableOpacity>
           ))}
+          {/* Built-in Travel/Other for temporary gyms — always offered.
+              Weights logged here never overwrite regular-gym history. */}
+          <TouchableOpacity
+            key={TRAVEL_LOCATION.id}
+            style={styles.locationCard}
+            onPress={() => handleLocationSelect(TRAVEL_LOCATION)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="airplane" size={28} color={colors.textSecondary} style={styles.locationIcon} />
+            <Text style={styles.locationName}>{TRAVEL_LOCATION.name}</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>

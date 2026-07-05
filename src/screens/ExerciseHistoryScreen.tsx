@@ -120,6 +120,7 @@ export function ExerciseHistoryScreen() {
                 <View style={styles.sessionHeader}>
                   <Text style={styles.sessionDate}>
                     {format(new Date(session.date), 'EEEE, MMMM d, yyyy')}
+                    {session.locationId === 'travel' ? '  ✈️ Travel' : ''}
                   </Text>
                   <Text style={styles.sessionTime}>
                     {format(new Date(session.date), 'h:mm a')}

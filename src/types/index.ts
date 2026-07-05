@@ -47,6 +47,18 @@ export const DEFAULT_LOCATIONS: WorkoutLocation[] = [
   { id: 'home', name: 'Home', sortOrder: 1 },
 ];
 
+// Built-in pseudo-location for temporary gyms (vacation, hotel, etc.).
+// Not stored in the locations table — always offered in the location picker.
+// Workouts here count toward volume/streaks/goals like any workout, but are
+// EXCLUDED from per-gym weight-suggestion history so hotel-dumbbell weights
+// never overwrite your regular gym numbers.
+export const TRAVEL_LOCATION_ID = 'travel';
+export const TRAVEL_LOCATION: WorkoutLocation = {
+  id: TRAVEL_LOCATION_ID,
+  name: 'Travel / Other',
+  sortOrder: 9999,
+};
+
 // Supplement tracking
 export interface Supplement {
   id: string;
@@ -292,6 +304,7 @@ export interface Exercise {
   isUnilateral?: boolean; // Single-limb exercise — doubles target sets, halves volume credit
   notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
   targetSets?: number; // Per-exercise default target set count; falls back to UserSettings.defaultTargetSets (doubled if unilateral) when undefined
+  targetReps?: string; // Display target, e.g. "8" or "8-15". Informational — not enforced by the logger.
 }
 
 /**
