@@ -38,23 +38,37 @@ function rowToChallenge(row: any): Challenge {
 
 // ==================== CHALLENGE CRUD ====================
 
+export interface CreateChallengeResult {
+  challenge: Challenge | null;
+  // Set when creation was blocked by a live (non-expired) pending/active challenge,
+  // so the UI can name it instead of guessing.
+  blockedBy?: Challenge;
+}
+
 /**
  * Create a new challenge.
  * Default duration is current week (Mon-Sun or Sun-Sat based on settings).
+ *
+ * Runs the auto-expire pass first so stale rows (expired pending challenges,
+ * finished active ones) can never block creation — the exact failure mode where
+ * a phantom record made "create first challenge" impossible.
  */
 export async function createChallenge(
   partnershipId: string,
   type: ChallengeType,
   weekStartsOnMonday: boolean = true
-): Promise<Challenge | null> {
+): Promise<CreateChallengeResult> {
   const userId = await getUserId();
-  if (!userId) return null;
+  if (!userId) return { challenge: null };
 
-  // Check for existing active/pending challenge
+  // Clean up anything past its end date BEFORE checking for blockers
+  await processCompletedChallenges(partnershipId);
+
+  // Check for existing live challenge (pending/active AND not yet ended)
   const existing = await getActiveChallenge(partnershipId);
   if (existing) {
-    console.log('[challengeService] Already has active challenge');
-    return null;
+    console.log('[challengeService] Blocked by live challenge:', existing.id, existing.type, existing.endDate);
+    return { challenge: null, blockedBy: existing };
   }
 
   // Calculate week dates
@@ -78,10 +92,10 @@ export async function createChallenge(
 
   if (error) {
     console.error('[challengeService] Error creating challenge:', error);
-    return null;
+    return { challenge: null };
   }
 
-  return rowToChallenge(data);
+  return { challenge: rowToChallenge(data) };
 }
 
 /**
@@ -127,20 +141,43 @@ export async function declineChallenge(challengeId: string): Promise<boolean> {
 }
 
 /**
- * Get active or pending challenge for a partnership
+ * Get the LIVE active or pending challenge for a partnership.
+ * A challenge only counts as live while its end_date hasn't passed — expired
+ * rows (whatever their status says) never block anything; they're cleaned up
+ * by processCompletedChallenges.
  */
 export async function getActiveChallenge(partnershipId: string): Promise<Challenge | null> {
+  const today = format(new Date(), 'yyyy-MM-dd');
   const { data, error } = await supabase
     .from('challenges')
     .select('*')
     .eq('partnership_id', partnershipId)
     .in('status', ['pending', 'active'])
+    .gte('end_date', today)
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
 
   if (error || !data) return null;
   return rowToChallenge(data);
+}
+
+/**
+ * Cancel/abandon a live challenge. Either partner can do this; the status
+ * change syncs through the shared table so both see it cancelled.
+ */
+export async function cancelChallenge(challengeId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('challenges')
+    .update({ status: 'cancelled' })
+    .eq('id', challengeId)
+    .in('status', ['pending', 'active']);
+
+  if (error) {
+    console.error('[challengeService] Error cancelling challenge:', error);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -331,6 +368,19 @@ export async function updateChallengeScores(
  */
 export async function processCompletedChallenges(partnershipId: string): Promise<void> {
   const today = format(new Date(), 'yyyy-MM-dd');
+
+  // Expired PENDING challenges were never accepted — decline them so they can't
+  // block new challenge creation. (This is the "phantom record" cleanup: failed
+  // or forgotten creations from past weeks used to sit in 'pending' forever.)
+  const { error: declineError } = await supabase
+    .from('challenges')
+    .update({ status: 'declined' })
+    .eq('partnership_id', partnershipId)
+    .eq('status', 'pending')
+    .lt('end_date', today);
+  if (declineError) {
+    console.error('[challengeService] Error declining expired pending challenges:', declineError);
+  }
 
   // Get active challenges that have ended
   const { data: challenges, error } = await supabase

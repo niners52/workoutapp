@@ -23,6 +23,7 @@ import {
   createChallenge,
   acceptChallenge,
   declineChallenge,
+  cancelChallenge,
   getActiveChallenge,
   getChallengeHistory,
   getWinLossRecord,
@@ -115,18 +116,51 @@ export function ChallengeScreen() {
   const handleCreateChallenge = async (type: ChallengeType) => {
     setIsCreating(true);
     try {
-      const challenge = await createChallenge(partnershipId, type);
-      if (challenge) {
-        setActiveChallenge(challenge);
+      const result = await createChallenge(partnershipId, type);
+      if (result.challenge) {
+        setActiveChallenge(result.challenge);
         Alert.alert('Challenge Created', 'Your partner will be notified to accept the challenge.');
+      } else if (result.blockedBy) {
+        // Name the exact blocker so the user isn't left guessing
+        const b = result.blockedBy;
+        setActiveChallenge(b); // surface it in the UI so Cancel is reachable
+        Alert.alert(
+          'Challenge Already Running',
+          `You have a ${b.status} challenge: ${CHALLENGE_TYPE_NAMES[b.type]}, ending ${format(new Date(b.endDate), 'MMM d')}. ` +
+          'Cancel it from the scoreboard if you want to start a new one.'
+        );
       } else {
-        Alert.alert('Error', 'Failed to create challenge. You may already have an active challenge.');
+        Alert.alert('Error', 'Failed to create challenge. Check your connection and try again.');
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to create challenge.');
     } finally {
       setIsCreating(false);
     }
+  };
+
+  // Cancel/abandon the live challenge — both partners see it cancelled
+  const handleCancelChallenge = () => {
+    if (!activeChallenge) return;
+    Alert.alert(
+      'Cancel Challenge?',
+      `This ends the ${CHALLENGE_TYPE_NAMES[activeChallenge.type]} challenge for both of you. No winner is recorded.`,
+      [
+        { text: 'Keep Going', style: 'cancel' },
+        {
+          text: 'Cancel Challenge',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await cancelChallenge(activeChallenge.id);
+            if (ok) {
+              setActiveChallenge(null);
+            } else {
+              Alert.alert('Error', 'Could not cancel the challenge. Try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Accept a pending challenge
@@ -295,6 +329,9 @@ export function ChallengeScreen() {
                 ? 'Your partner is ahead. Time to catch up!'
                 : "It's a tie! Push harder to take the lead!"}
             </Text>
+            <TouchableOpacity style={styles.cancelChallengeLink} onPress={handleCancelChallenge}>
+              <Text style={styles.cancelChallengeText}>Cancel Challenge</Text>
+            </TouchableOpacity>
           </Card>
         )}
 
@@ -307,6 +344,9 @@ export function ChallengeScreen() {
               Waiting for {partnerStats?.displayName || 'your partner'} to accept your{' '}
               {CHALLENGE_TYPE_NAMES[activeChallenge.type]} challenge.
             </Text>
+            <TouchableOpacity style={styles.cancelChallengeLink} onPress={handleCancelChallenge}>
+              <Text style={styles.cancelChallengeText}>Cancel Challenge</Text>
+            </TouchableOpacity>
           </Card>
         )}
 
@@ -643,6 +683,15 @@ const styles = StyleSheet.create({
   },
   declineText: {
     fontSize: typography.size.base,
+    color: colors.error,
+  },
+  cancelChallengeLink: {
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  cancelChallengeText: {
+    fontSize: typography.size.sm,
     color: colors.error,
   },
   // Create Challenge

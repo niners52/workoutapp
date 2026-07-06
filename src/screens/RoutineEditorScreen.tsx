@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { SearchBar } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { Exercise, Template, DAY_NAMES } from '../types';
+import { Exercise, Template, DAY_NAMES, PrimaryMuscleGroup, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { matchesAllWords } from '../utils/search';
 
@@ -247,6 +247,35 @@ export function RoutineEditorScreen() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [exercises, pickerSearch]);
 
+  // ─── Live weekly volume per muscle group ──────────────────────────────────
+  // Recomputed from the DRAFT state (items + unsaved target edits) so totals
+  // update instantly on add/remove/move/target-change — no save required.
+  // Matches the analytics volume rules: each set credits every PRIMARY muscle
+  // group; unilateral sets count half (6 logged = 3 credited).
+  const [volumePanelOpen, setVolumePanelOpen] = useState(true);
+  const volumeByMuscle = useMemo(() => {
+    const totals = new Map<PrimaryMuscleGroup, number>();
+    for (const item of items) {
+      if (item.kind !== 'exercise') continue;
+      const ex = exerciseById.get(item.exerciseId);
+      if (!ex) continue;
+      const sets =
+        targetEdits[item.exerciseId]?.targetSets
+        ?? ex.targetSets
+        ?? (ex.isUnilateral ? defaultSets * 2 : defaultSets);
+      const credit = sets * (ex.isUnilateral ? 0.5 : 1);
+      const primaries = ex.primaryMuscleGroups
+        ?? (ex.primaryMuscleGroup ? [ex.primaryMuscleGroup] : []);
+      for (const mg of primaries) {
+        totals.set(mg, (totals.get(mg) ?? 0) + credit);
+      }
+    }
+    // Sort descending by volume for a stable, scannable panel
+    return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+  }, [items, targetEdits, exerciseById, defaultSets]);
+
+  const muscleTargets = userSettings?.muscleGroupTargets ?? {};
+
   const renderItem = ({ item, drag, isActive }: RenderItemParams<EditorItem>) => {
     if (item.kind === 'header') {
       const template = templates.find(t => t.id === item.templateId);
@@ -327,6 +356,51 @@ export function RoutineEditorScreen() {
       <Text style={styles.hint}>
         Long-press an exercise to drag it — within a day or into another day.
       </Text>
+
+      {/* Live weekly volume panel — reflects the current draft, not saved state */}
+      <View style={styles.volumePanel}>
+        <TouchableOpacity
+          style={styles.volumePanelHeader}
+          onPress={() => setVolumePanelOpen(o => !o)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.volumePanelTitle}>Weekly Volume</Text>
+          <Ionicons
+            name={volumePanelOpen ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={colors.textSecondary}
+          />
+        </TouchableOpacity>
+        {volumePanelOpen && (
+          <View style={styles.volumeGrid}>
+            {volumeByMuscle.length === 0 ? (
+              <Text style={styles.volumeEmpty}>No exercises yet</Text>
+            ) : (
+              volumeByMuscle.map(([mg, sets]) => {
+                const target = muscleTargets[mg] ?? 0;
+                const display = Number.isInteger(sets) ? String(sets) : sets.toFixed(1);
+                const hasTarget = target > 0;
+                const met = hasTarget && sets >= target;
+                return (
+                  <View key={mg} style={styles.volumeCell}>
+                    <Text style={styles.volumeMuscle} numberOfLines={1}>
+                      {MUSCLE_GROUP_DISPLAY_NAMES[mg] ?? mg}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.volumeValue,
+                        hasTarget && (met ? styles.volumeMet : styles.volumeUnder),
+                      ]}
+                    >
+                      {hasTarget ? `${display}/${target}${met ? ' ✓' : ''}` : display}
+                    </Text>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
+      </View>
 
       <DraggableFlatList
         data={items}
@@ -455,6 +529,63 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   listContent: { paddingBottom: spacing.xxl },
+  volumePanel: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+  },
+  volumePanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  volumePanelTitle: {
+    color: colors.textSecondary,
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  volumeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  volumeCell: {
+    width: '50%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    paddingRight: spacing.md,
+  },
+  volumeMuscle: {
+    color: colors.text,
+    fontSize: typography.size.sm,
+    flexShrink: 1,
+  },
+  volumeValue: {
+    color: colors.textSecondary,
+    fontSize: typography.size.sm,
+    fontVariant: ['tabular-nums'],
+    marginLeft: spacing.sm,
+  },
+  volumeMet: {
+    color: colors.success,
+    fontWeight: typography.weight.semibold,
+  },
+  volumeUnder: {
+    color: colors.warning,
+  },
+  volumeEmpty: {
+    color: colors.textTertiary,
+    fontSize: typography.size.sm,
+    paddingBottom: spacing.sm,
+  },
   dayHeader: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -738,7 +738,7 @@ export type ChallengeType =
   | 'most_workouts'     // legacy — raw-output leaderboard
   | 'plan_completion'   // % of each user's OWN planned sessions completed this week
   | 'team_coop';        // shared goal — combined session count for both partners
-export type ChallengeStatus = 'pending' | 'active' | 'completed' | 'declined';
+export type ChallengeStatus = 'pending' | 'active' | 'completed' | 'declined' | 'cancelled';
 
 export interface Partnership {
   id: string;
