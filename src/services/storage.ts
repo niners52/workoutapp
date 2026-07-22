@@ -55,7 +55,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 11;
+const CURRENT_MIGRATION_VERSION = 12;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -153,6 +153,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 11) {
     await migrateToV11();
+  }
+
+  if (currentVersion < 12) {
+    await migrateToV12();
   }
 
   // Update migration version
@@ -505,6 +509,34 @@ async function migrateToV10(): Promise<void> {
 // understood as deliberately optional going forward.
 async function migrateToV11(): Promise<void> {
   console.log('Running migration to V11 - Workout.locationId introduced (no backfill)');
+}
+
+// Migration V12: Heal unilateral exercises with an undoubled stored targetSets.
+// A unilateral exercise's TOTAL target should be at least base*2 (sides come in
+// pairs). A stored total below that is the known corruption that made progress
+// circles complete early / stick full — clear it so the unilateral-aware
+// default fallback (base*2) applies again.
+async function migrateToV12(): Promise<void> {
+  console.log('Running migration to V12 - healing undoubled unilateral targetSets...');
+
+  const settings = await getItem<any>(STORAGE_KEYS.USER_SETTINGS, DEFAULT_USER_SETTINGS);
+  const base = settings?.defaultTargetSets ?? 3;
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  let healed = 0;
+  const updated = exercises.map(e => {
+    if (!e.isUnilateral) return e;
+    if (typeof e.targetSets !== 'number') return e;
+    if (e.targetSets >= base * 2) return e;
+    healed += 1;
+    const { targetSets: _drop, ...rest } = e;
+    return rest as Exercise;
+  });
+
+  if (healed > 0) {
+    await setItem(STORAGE_KEYS.EXERCISES, updated);
+  }
+  console.log(`Migration to V12 complete - healed ${healed} unilateral exercises`);
 }
 
 // Reset storage (for debugging/testing)

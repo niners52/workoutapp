@@ -850,18 +850,21 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
     const currentExerciseId = activeWorkout.currentExerciseId;
     let exerciseName = 'Unknown Exercise';
+    // Real effective target for the Watch display — per-exercise targetSets first,
+    // then the unilateral-aware default. Was previously hard-coded to 3, so the
+    // Watch showed "of 3" even for 6-set unilateral exercises.
+    let watchTargetSets = userSettings?.defaultTargetSets ?? 3;
 
     if (currentExerciseId) {
-      // Check cache first
-      if (exerciseNamesRef.current.has(currentExerciseId)) {
+      // Check cache first (names only), but always resolve target from storage
+      const exercise = await getExerciseById(currentExerciseId);
+      if (exercise) {
+        exerciseName = exercise.name;
+        exerciseNamesRef.current.set(currentExerciseId, exercise.name);
+        const base = userSettings?.defaultTargetSets ?? 3;
+        watchTargetSets = exercise.targetSets ?? (exercise.isUnilateral ? base * 2 : base);
+      } else if (exerciseNamesRef.current.has(currentExerciseId)) {
         exerciseName = exerciseNamesRef.current.get(currentExerciseId) || exerciseName;
-      } else {
-        // Fetch from storage and cache
-        const exercise = await getExerciseById(currentExerciseId);
-        if (exercise) {
-          exerciseName = exercise.name;
-          exerciseNamesRef.current.set(currentExerciseId, exercise.name);
-        }
       }
     }
 
@@ -876,7 +879,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       exerciseIndex: activeWorkout.currentExerciseIndex,
       totalExercises: activeWorkout.exerciseIds.length,
       currentSetNumber: setsForCurrentExercise.length + 1,
-      targetSets: 3, // Default target
+      targetSets: watchTargetSets,
       lastWeight: lastSet?.weight || 0,
       lastReps: lastSet?.reps || 0,
       restTimerActive: restTimer.isRunning,

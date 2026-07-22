@@ -562,11 +562,14 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     const defaultForNewUnilateral = editUnilateral ? baseTarget * 2 : baseTarget;
 
     // If the user picked "permanent", roll the target-sets change into the same updateExercise call.
+    // When the unilateral flag flips WITHOUT a permanent target choice, the stored
+    // targetSets was set under the OLD unilateral semantics and would now be wrong
+    // (e.g. stored total 3 on a newly-unilateral exercise completes at 3 instead
+    // of 6) — clear it so the unilateral-aware default fallback applies.
     const newTargetSets = editTargetSetsPermanent
       ? (editTargetSets === defaultForNewUnilateral ? undefined : editTargetSets)
-      : editingExercise.targetSets;
-    const targetSetsChanged =
-      editTargetSetsPermanent && newTargetSets !== editingExercise.targetSets;
+      : (unilateralChanged ? undefined : editingExercise.targetSets);
+    const targetSetsChanged = newTargetSets !== editingExercise.targetSets;
 
     // Persist exercise changes (name, unilateral, notes, equipment are always permanent;
     // targetSets only when the user opted into "permanent").
@@ -1380,12 +1383,20 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           transparent={true}
           onRequestClose={() => setEditModalVisible(false)}
         >
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
           <TouchableOpacity
             style={styles.modalOverlay}
             activeOpacity={1}
             onPress={() => setEditModalVisible(false)}
           >
             <View style={[styles.modalContent, styles.editModalContent]} onStartShouldSetResponder={() => true}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
               <Text style={styles.modalTitle}>Edit Exercise</Text>
 
               {/* Name */}
@@ -1516,8 +1527,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                   <Text style={styles.editSaveButtonText}>Save</Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </TouchableOpacity>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* Brief save confirmation — appears at the top for ~1.5s after an edit persists */}

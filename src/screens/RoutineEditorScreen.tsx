@@ -166,10 +166,16 @@ export function RoutineEditorScreen() {
     setPickerSearch('');
   };
 
+  // Effective default respects the unilateral doubling — a unilateral exercise's
+  // TOTAL target is base*2 (3 per side = 6). Storing an undoubled total on a
+  // unilateral exercise is what made progress circles complete early.
+  const effectiveDefaultFor = (ex: Exercise | undefined): number =>
+    ex?.isUnilateral ? defaultSets * 2 : defaultSets;
+
   const openTargetEditor = (exerciseId: string) => {
     const ex = exerciseById.get(exerciseId);
     const edit = targetEdits[exerciseId];
-    setEditSets(edit?.targetSets ?? ex?.targetSets ?? defaultSets);
+    setEditSets(edit?.targetSets ?? ex?.targetSets ?? effectiveDefaultFor(ex));
     setEditReps(edit?.targetReps ?? ex?.targetReps ?? '');
     setEditingTargets({ exerciseId });
   };
@@ -224,7 +230,9 @@ export function RoutineEditorScreen() {
         if (changed) {
           await updateExercise({
             ...ex,
-            targetSets: edit.targetSets === defaultSets ? undefined : edit.targetSets,
+            // Store undefined when the chosen total equals the (unilateral-aware)
+            // default so the exercise keeps tracking future default changes.
+            targetSets: edit.targetSets === effectiveDefaultFor(ex) ? undefined : edit.targetSets,
             targetReps: edit.targetReps,
           });
         }
@@ -297,7 +305,7 @@ export function RoutineEditorScreen() {
 
     const exercise = exerciseById.get(item.exerciseId);
     const edit = targetEdits[item.exerciseId];
-    const sets = edit?.targetSets ?? exercise?.targetSets ?? defaultSets;
+    const sets = edit?.targetSets ?? exercise?.targetSets ?? effectiveDefaultFor(exercise);
     const reps = edit?.targetReps ?? exercise?.targetReps;
     return (
       <TouchableOpacity

@@ -728,13 +728,24 @@ function generatePositiveInsights(
     const ex = exercises.find(e => e.id === topExerciseId);
     const exId = topExerciseId;
     if (ex) {
-      const recent = workingSets.filter(s => {
-        if (s.exerciseId !== exId) return false;
+      // Compare within ONE location only — different gyms' machines use
+      // different weight scales, so cross-gym comparisons are meaningless.
+      // Travel sessions never participate. Focus location = the exercise's
+      // most recent non-travel session.
+      const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+      const exSets = workingSets
+        .filter(s => s.exerciseId === exId)
+        .filter(s => locationByWorkoutId.get(s.workoutId) !== 'travel')
+        .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
+      const focusLocation = exSets[0] ? locationByWorkoutId.get(exSets[0].workoutId) : undefined;
+      const sameLocationSets = exSets.filter(
+        s => locationByWorkoutId.get(s.workoutId) === focusLocation
+      );
+      const recent = sameLocationSets.filter(s => {
         const d = workoutDateById.get(s.workoutId)!;
         return d >= fourWeeksAgo;
       });
-      const prior = workingSets.filter(s => {
-        if (s.exerciseId !== exId) return false;
+      const prior = sameLocationSets.filter(s => {
         const d = workoutDateById.get(s.workoutId)!;
         return d >= eightWeeksAgo && d < fourWeeksAgo;
       });

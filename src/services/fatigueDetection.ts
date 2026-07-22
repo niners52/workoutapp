@@ -40,6 +40,7 @@ interface ExerciseSession {
   topSetReps: number;
   totalVolume: number;
   sets: WorkoutSet[];
+  locationId?: string; // where the session happened; undefined for legacy workouts
 }
 
 function buildWorkoutDateMap(workouts: Workout[]): Map<string, Date> {
@@ -52,10 +53,34 @@ function buildWorkoutDateMap(workouts: Workout[]): Map<string, Date> {
   return map;
 }
 
+function buildWorkoutLocationMap(workouts: Workout[]): Map<string, string | undefined> {
+  return new Map(workouts.map(w => [w.id, w.locationId]));
+}
+
+/**
+ * Restrict sessions to the location of the most recent (non-travel) session so
+ * all trend comparisons are apples-to-apples. Cable stacks at different gyms
+ * use different scales — comparing Vasa weights against Planet Fitness weights
+ * produced false "down X%" warnings.
+ *
+ * - Travel/Other sessions are dropped entirely (temporary equipment, no trend value).
+ * - The remaining sessions are filtered to the most recent session's location.
+ *   Legacy sessions with no recorded location group together (undefined === undefined).
+ * - Callers' existing minimum-session checks (>= 4) then apply WITHIN the
+ *   location, which implements "not enough history at this gym → no comparison".
+ */
+function filterToComparableLocation(sessions: ExerciseSession[]): ExerciseSession[] {
+  const nonTravel = sessions.filter(s => s.locationId !== 'travel');
+  if (nonTravel.length === 0) return [];
+  const focusLocation = nonTravel[0].locationId;
+  return nonTravel.filter(s => s.locationId === focusLocation);
+}
+
 function buildExerciseSessions(
   exerciseId: string,
   allSets: WorkoutSet[],
-  workoutDateMap: Map<string, Date>
+  workoutDateMap: Map<string, Date>,
+  locationByWorkoutId?: Map<string, string | undefined>
 ): ExerciseSession[] {
   const cutoff = subWeeks(new Date(), 8);
 
@@ -91,7 +116,15 @@ function buildExerciseSessions(
       }
     }
 
-    sessions.push({ workoutId, date, topWeight, topSetReps, totalVolume, sets });
+    sessions.push({
+      workoutId,
+      date,
+      topWeight,
+      topSetReps,
+      totalVolume,
+      sets,
+      locationId: locationByWorkoutId?.get(workoutId),
+    });
   }
 
   // Sort by date descending (most recent first)
@@ -358,6 +391,7 @@ export function analyzeFatigue(
 ): FatigueAnalysis {
   const sensitivity = settings.fatigueSensitivity ?? 10;
   const workoutDateMap = buildWorkoutDateMap(workouts);
+  const locationMap = buildWorkoutLocationMap(workouts);
 
   // Only analyze exercises done in the last 2 weeks (avoids flagging swapped/abandoned exercises)
   const recentCutoff = subWeeks(new Date(), 2);
@@ -371,13 +405,15 @@ export function analyzeFatigue(
 
   const exerciseMap = new Map(exercises.map(e => [e.id, e]));
 
-  // Per-exercise analysis
+  // Per-exercise analysis — trends compared within a single location only
   const exerciseSignals: ExerciseFatigueSignal[] = [];
   for (const exerciseId of recentExerciseIds) {
     const exercise = exerciseMap.get(exerciseId);
     if (!exercise) continue;
 
-    const sessions = buildExerciseSessions(exerciseId, sets, workoutDateMap);
+    const sessions = filterToComparableLocation(
+      buildExerciseSessions(exerciseId, sets, workoutDateMap, locationMap)
+    );
     if (sessions.length < 4) continue;
 
     const strengthSignal = analyzeExerciseStrengthTrend(
@@ -431,13 +467,16 @@ export function getExerciseFatigueWarnings(
 
   const sensitivity = settings.fatigueSensitivity ?? 10;
   const workoutDateMap = buildWorkoutDateMap(workouts);
+  const locationMap = buildWorkoutLocationMap(workouts);
   const exerciseMap = new Map(exercises.map(e => [e.id, e]));
 
   for (const exerciseId of exerciseIds) {
     const exercise = exerciseMap.get(exerciseId);
     if (!exercise) continue;
 
-    const sessions = buildExerciseSessions(exerciseId, sets, workoutDateMap);
+    const sessions = filterToComparableLocation(
+      buildExerciseSessions(exerciseId, sets, workoutDateMap, locationMap)
+    );
     if (sessions.length < 4) continue;
 
     // Pick the highest severity signal
