@@ -137,8 +137,10 @@ export function TemplateDetailScreen() {
   }, [templateExercises]);
 
   const handleStartWorkout = async () => {
+    // null = user cancelled the in-progress-workout prompt; same-template taps
+    // return the existing workout id, so this also acts as "resume".
     const workoutId = await startWorkout(template.id, undefined, template.locationId);
-    navigation.navigate('MainTabs', { screen: 'Train' });
+    if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
   };
 
   const handleEdit = () => {

@@ -69,6 +69,7 @@ import { getCachedInsights, insightToCoachSuggestion } from '../services/insight
 import { CoachSuggestionsCard } from '../components/coach';
 import { syncManager } from '../services/syncService';
 import { todaysModality, markRecoveryComplete } from '../services/modalityActions';
+import { requestCalendarFocus } from '../services/calendarFocus';
 import { getWorkouts as getWorkoutsFromStorage } from '../services/storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -652,6 +653,11 @@ export function HomeScreen() {
             todayIndex={weeklyGridData.todayIndex}
             dayLabels={weeklyGridData.dayLabels}
             dailyGoals={dailyGoals}
+            onDayPress={(dateStr) => {
+              // Open that day's detail in the Progress-tab calendar
+              requestCalendarFocus(dateStr);
+              navigation.navigate('MainTabs', { screen: 'Progress' });
+            }}
           />
         ) : (
           <Card style={styles.loadingCard}>

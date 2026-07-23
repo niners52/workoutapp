@@ -150,6 +150,7 @@ export function WorkoutDetailScreen() {
     setCreating(true);
     try {
       const newWorkoutId = await startWorkout(undefined, exerciseIds, workout?.locationId ?? template?.locationId);
+      if (!newWorkoutId) return; // user kept their in-progress workout
       setCreateModalVisible(false);
       navigation.navigate('ActiveWorkout', { workoutId: newWorkoutId });
     } catch (err) {

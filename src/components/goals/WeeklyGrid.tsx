@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Card } from '../common';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { DailyGoalStatus, LetterGrade, GRADE_COLORS } from '../../services/streaks';
@@ -11,6 +11,9 @@ interface WeeklyGridProps {
   todayIndex: number;
   dayLabels: string[];
   dailyGoals: DailyGoals;
+  // Tapping any day column (grade cell or header) opens that day's detail —
+  // previously the grid showed grades but wasn't tappable at all.
+  onDayPress?: (dateStr: string) => void;
 }
 
 type GoalStatus = { type: 'grade'; grade: LetterGrade } | { type: 'future' } | { type: 'na' };
@@ -31,11 +34,13 @@ function GridRow({
   days,
   getStatus,
   todayIndex,
+  onDayPress,
 }: {
   label: string;
   days: DailyGoalStatus[];
   getStatus: (day: DailyGoalStatus, isFutureDay: boolean) => GoalStatus;
   todayIndex: number;
+  onDayPress?: (dateStr: string) => void;
 }) {
   return (
     <View style={styles.gridRow}>
@@ -47,12 +52,15 @@ function GridRow({
           const status = getStatus(day, isFutureDay);
 
           return (
-            <View
+            <TouchableOpacity
               key={day.date}
               style={[styles.cell, isToday && styles.cellToday]}
+              onPress={onDayPress ? () => onDayPress(day.date) : undefined}
+              disabled={!onDayPress}
+              activeOpacity={0.6}
             >
               <StatusIcon status={status} />
-            </View>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -60,7 +68,7 @@ function GridRow({
   );
 }
 
-export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGridProps) {
+export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals, onDayPress }: WeeklyGridProps) {
   const getSleepStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
     if (isFutureDay) return { type: 'future' };
     if (day.sleep.hours === 0) return { type: 'na' };
@@ -100,9 +108,12 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
         <Text style={styles.headerLabel} />
         <View style={styles.rowCells}>
           {dayLabels.map((label, index) => (
-            <View
+            <TouchableOpacity
               key={index}
               style={[styles.headerCell, index === todayIndex && styles.headerCellToday]}
+              onPress={onDayPress && days[index] ? () => onDayPress(days[index].date) : undefined}
+              disabled={!onDayPress || !days[index]}
+              activeOpacity={0.6}
             >
               <Text
                 style={[
@@ -112,7 +123,7 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
               >
                 {label}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       </View>
@@ -123,12 +134,14 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
         days={days}
         getStatus={getSleepStatus}
         todayIndex={todayIndex}
+        onDayPress={onDayPress}
       />
       <GridRow
         label="Protein"
         days={days}
         getStatus={getProteinStatus}
         todayIndex={todayIndex}
+        onDayPress={onDayPress}
       />
       {dailyGoals.trackCreatine && (
         <GridRow
@@ -136,6 +149,7 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
           days={days}
           getStatus={getSupplementsStatus}
           todayIndex={todayIndex}
+          onDayPress={onDayPress}
         />
       )}
       {dailyGoals.trackTraining && (
@@ -144,6 +158,7 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
           days={days}
           getStatus={getTrainingStatus}
           todayIndex={todayIndex}
+          onDayPress={onDayPress}
         />
       )}
       {dailyGoals.trackPT && (
@@ -152,6 +167,7 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals }: WeeklyGr
           days={days}
           getStatus={getPTStatus}
           todayIndex={todayIndex}
+          onDayPress={onDayPress}
         />
       )}
     </Card>

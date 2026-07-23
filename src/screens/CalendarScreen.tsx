@@ -19,10 +19,13 @@ import {
   eachDayOfInterval,
   isAfter,
   startOfDay,
+  parseISO,
 } from 'date-fns';
+import { consumeCalendarFocus } from '../services/calendarFocus';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Card } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
+import { useWorkout } from '../contexts/WorkoutContext';
 import { CalendarView, GoalStatusMap } from '../components/calendar';
 import { useData } from '../contexts/DataContext';
 import {
@@ -45,6 +48,7 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { workouts, templates, userSettings, refreshWorkouts } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
+  const { activeWorkout } = useWorkout();
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -220,8 +224,29 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
     useCallback(() => {
       refreshWorkouts();
       loadGoalStatus();
+      // Another screen (e.g. Home's weekly grade grid) may have asked us to
+      // open a specific day's detail.
+      const pending = consumeCalendarFocus();
+      if (pending) {
+        const date = parseISO(pending);
+        setCurrentMonth(date);
+        setSelectedDate(date);
+      }
     }, [refreshWorkouts, loadGoalStatus])
   );
+
+  // Auto-scroll to the day-detail section when a day is selected — previously
+  // the section rendered below the fold and tapping a day looked like a no-op.
+  const scrollRef = useRef<ScrollView>(null);
+  const detailYRef = useRef(0);
+  useEffect(() => {
+    if (!selectedDate) return;
+    // Give the section a frame to lay out before scrolling
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, detailYRef.current - 12), animated: true });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [selectedDate]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -301,6 +326,7 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
 
   const content = (
     <ScrollView
+      ref={scrollRef}
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + workoutBarPadding }]}
       refreshControl={
@@ -328,7 +354,10 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
 
         {/* Selected Date Workouts */}
         {selectedDate && (
-          <View style={styles.section}>
+          <View
+            style={styles.section}
+            onLayout={(e) => { detailYRef.current = e.nativeEvent.layout.y; }}
+          >
             <Text style={styles.sectionTitle}>
               {format(selectedDate, 'EEEE, MMMM d, yyyy')}
             </Text>
@@ -358,7 +387,9 @@ export function CalendarScreen({ embedded }: { embedded?: boolean }) {
                         </Text>
                         {!workout.completedAt && (
                           <View style={styles.interruptedBadge}>
-                            <Text style={styles.interruptedBadgeText}>Interrupted</Text>
+                            <Text style={styles.interruptedBadgeText}>
+                              {activeWorkout?.workout.id === workout.id ? 'In Progress' : 'Incomplete'}
+                            </Text>
                           </View>
                         )}
                       </View>

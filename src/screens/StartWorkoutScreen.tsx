@@ -54,7 +54,7 @@ interface SuggestedExercise {
 export function StartWorkoutScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { templates, locations, exercises, getActiveRoutine } = useData();
-  const { startWorkout, addExerciseToWorkout } = useWorkout();
+  const { startWorkout, addExerciseToWorkout, activeWorkout } = useWorkout();
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<TemplateType | null>(null);
@@ -131,7 +131,8 @@ export function StartWorkoutScreen() {
   const handleSelectTemplate = (template: Template) => {
     startWorkout(template.id, undefined, selectedLocation?.id ?? template.locationId)
       .then((workoutId) => {
-        navigation.navigate('MainTabs', { screen: 'Train' });
+        // null = user cancelled out of the in-progress-workout prompt
+        if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
       })
       .catch((error) => {
         console.error('Failed to start workout:', error);
@@ -141,7 +142,7 @@ export function StartWorkoutScreen() {
   const handleStartBlank = () => {
     startWorkout(undefined, undefined, selectedLocation?.id)
       .then((workoutId) => {
-        navigation.navigate('MainTabs', { screen: 'Train' });
+        if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
       })
       .catch((error) => {
         console.error('Failed to start workout:', error);
@@ -268,12 +269,17 @@ export function StartWorkoutScreen() {
     }
 
     try {
-      // Start a blank workout
+      const priorActiveId = activeWorkout?.workout.id;
+      // Start a blank workout (null = user kept their in-progress workout)
       const workoutId = await startWorkout(undefined, undefined, selectedLocation?.id);
+      if (!workoutId) return;
 
-      // Add each selected exercise
-      for (const exerciseId of selectedExerciseIds) {
-        await addExerciseToWorkout(exerciseId);
+      // If the user chose "Resume" in the in-progress prompt we get the EXISTING
+      // workout id back — don't inject shortfall exercises into it, just navigate.
+      if (workoutId !== priorActiveId) {
+        for (const exerciseId of selectedExerciseIds) {
+          await addExerciseToWorkout(exerciseId);
+        }
       }
 
       navigation.navigate('MainTabs', { screen: 'Train' });

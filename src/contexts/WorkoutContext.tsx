@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { AppState, AppStateStatus, Platform } from 'react-native';
+import { AppState, AppStateStatus, Platform, Alert } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
@@ -95,7 +95,10 @@ interface WorkoutContextType {
   lastSessionData: LastSessionData | null;
 
   // Workout actions
-  startWorkout: (templateId?: string, exerciseIdsOverride?: string[], locationId?: string) => Promise<string>;
+  // Returns the workout id to open (new OR resumed-existing), or null when the
+  // user cancelled out of the in-progress-workout prompt. Callers must not
+  // navigate on null.
+  startWorkout: (templateId?: string, exerciseIdsOverride?: string[], locationId?: string) => Promise<string | null>;
   finishWorkout: (skippedExerciseIds?: string[]) => Promise<void>;
   cancelWorkout: () => Promise<void>;
   updateActiveWorkoutLocation: (locationId: string) => Promise<void>;
@@ -407,7 +410,49 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     templateId?: string,
     exerciseIdsOverride?: string[],
     locationId?: string,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
+    // ── Wipe protection ──────────────────────────────────────────────────────
+    // Never silently replace an in-progress workout. Every start path funnels
+    // through here, so this guard covers template select, blank start, remaining
+    // work, template-detail Start, and past-workout Start Now uniformly.
+    if (activeWorkout) {
+      // Tapping the SAME template that's already running → resume it, never recreate.
+      if (templateId && activeWorkout.workout.templateId === templateId) {
+        return activeWorkout.workout.id;
+      }
+
+      const setsLogged = activeWorkout.sets.length;
+      let activeName = 'Workout';
+      if (activeWorkout.workout.templateId) {
+        const t = await getTemplateById(activeWorkout.workout.templateId);
+        if (t) activeName = t.name;
+      }
+
+      const choice = await new Promise<'resume' | 'discard' | 'cancel'>(resolve => {
+        Alert.alert(
+          'Workout in Progress',
+          `${activeName} — ${setsLogged} set${setsLogged === 1 ? '' : 's'} logged. What would you like to do?`,
+          [
+            { text: 'Resume Current Workout', onPress: () => resolve('resume'), isPreferred: true },
+            { text: 'Discard and Start New', style: 'destructive', onPress: () => resolve('discard') },
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+          ],
+          { cancelable: true, onDismiss: () => resolve('cancel') },
+        );
+      });
+
+      if (choice === 'resume') return activeWorkout.workout.id;
+      if (choice === 'cancel') return null;
+      // 'discard': clear active state only — the workout row and its logged sets
+      // stay in storage (incomplete), so no data is ever lost by switching.
+      // (Inlined rather than calling cancelWorkout(), which is declared below.)
+      setActiveWorkout(null);
+      setLastSessionData(null);
+      await clearActiveWorkoutState();
+      await stopRestTimer();
+      await dismissWorkoutNotification();
+    }
+
     // Resolve location: explicit choice wins, otherwise reuse the last location the
     // user trained at so per-location weight history stays meaningful even on the
     // quick-start / repeat paths that don't surface a location picker.
@@ -468,7 +513,9 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     );
 
     return workout.id;
-  }, [updateWorkoutNotification]);
+    // stopRestTimer/dismissWorkoutNotification intentionally omitted: both are
+    // dependency-stable useCallbacks declared later in this component (TDZ).
+  }, [activeWorkout, userSettings, updateWorkoutNotification]);
 
   // Reassign the active workout's location mid-session. Persists to storage directly
   // because the auto-persist effect only watches a fixed set of fields (not locationId).
