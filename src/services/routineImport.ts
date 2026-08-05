@@ -321,7 +321,7 @@ export interface ImportContext {
   addRoutine: (routine: Routine) => Promise<void>;
 }
 
-function chooseTemplateType(muscles: Set<PrimaryMuscleGroup>): TemplateType {
+export function chooseTemplateType(muscles: Set<PrimaryMuscleGroup>): TemplateType {
   // Heuristic: routine days that hit many groups are full body; otherwise pick the dominant pattern.
   if (muscles.size === 0) return 'full_body';
   const hasUpperPush = muscles.has('chest') || muscles.has('front_delts') || muscles.has('triceps');

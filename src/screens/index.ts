@@ -36,4 +36,5 @@ export { WeeklyHistoryScreen } from './WeeklyHistoryScreen';
 export { ImportRoutineScreen } from './ImportRoutineScreen';
 export { AerobicSessionScreen } from './AerobicSessionScreen';
 export { RoutineEditorScreen } from './RoutineEditorScreen';
+export { RoutineBuilderScreen } from './RoutineBuilderScreen';
 export { SocialScreen } from './SocialScreen';

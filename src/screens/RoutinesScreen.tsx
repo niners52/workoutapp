@@ -75,12 +75,20 @@ export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
         </View>
       )}
 
-        {/* Create / Import Buttons */}
+        {/* Create / Build / Import Buttons */}
+        <Button
+          title="Build Routine"
+          onPress={() => navigation.navigate('RoutineBuilder')}
+          fullWidth
+          size="large"
+        />
         <Button
           title="Create New Routine"
           onPress={() => navigation.navigate('CreateRoutine')}
+          variant="secondary"
           fullWidth
           size="large"
+          style={styles.createButton}
         />
         <TouchableOpacity
           style={styles.importLink}
@@ -189,6 +197,9 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.lg,
+  },
+  createButton: {
+    marginTop: spacing.sm,
   },
   importLink: {
     alignSelf: 'center',

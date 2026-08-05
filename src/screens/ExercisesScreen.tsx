@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { formatDistanceToNowStrict } from 'date-fns';
 import {
   View,
   Text,
@@ -78,6 +79,22 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
     return counts;
   }, [sets]);
 
+  // Most recent loggedAt per exercise — powers the "last performed" label and
+  // the staleness sort, so unused exercises are easy to spot and delete.
+  const lastPerformed = useMemo(() => {
+    const map = new Map<string, number>(); // exerciseId -> epoch ms
+    sets.forEach(set => {
+      const t = new Date(set.loggedAt).getTime();
+      if (!Number.isFinite(t)) return;
+      const prev = map.get(set.exerciseId);
+      if (prev === undefined || t > prev) map.set(set.exerciseId, t);
+    });
+    return map;
+  }, [sets]);
+
+  type SortMode = 'muscle' | 'stale' | 'recent';
+  const [sortMode, setSortMode] = useState<SortMode>('muscle');
+
   // Find exercises with duplicate names
   const duplicateNames = useMemo(() => {
     const nameCounts = new Map<string, number>();
@@ -148,8 +165,22 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
     return result;
   }, [exercises, searchQuery, selectedMuscle, selectedEquipment]);
 
-  // Group by first primary muscle group
+  // Group by first primary muscle group — or a single flat list when sorting
+  // by last-performed (cleanup mode).
   const sections: ExerciseSection[] = useMemo(() => {
+    if (sortMode !== 'muscle') {
+      const sorted = [...filteredExercises].sort((a, b) => {
+        // Never-performed sits at the "stale" extreme (0), so 'stale' puts it first
+        const ta = lastPerformed.get(a.id) ?? 0;
+        const tb = lastPerformed.get(b.id) ?? 0;
+        return sortMode === 'stale' ? ta - tb : tb - ta;
+      });
+      return [{
+        title: sortMode === 'stale' ? 'Least Recently Performed' : 'Most Recently Performed',
+        data: sorted,
+      }];
+    }
+
     const groups: { [key: string]: Exercise[] } = {};
 
     filteredExercises.forEach(exercise => {
@@ -170,7 +201,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         title,
         data: data.sort((a, b) => a.name.localeCompare(b.name)),
       }));
-  }, [filteredExercises]);
+  }, [filteredExercises, sortMode, lastPerformed]);
 
   const handleExercisePress = useCallback((exercise: Exercise) => {
     navigation.navigate('ExerciseDetail', { exerciseId: exercise.id });
@@ -220,6 +251,10 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
     const hasPR = exercisePRs && (exercisePRs.weightPR || exercisePRs.e1rmPR);
     const setCount = exerciseSetCounts.get(exercise.id) || 0;
     const isDuplicate = duplicateNames.has(exercise.name.toLowerCase());
+    const lastMs = lastPerformed.get(exercise.id);
+    const lastLabel = lastMs
+      ? `${formatDistanceToNowStrict(new Date(lastMs), { addSuffix: true })}`
+      : 'Never';
 
     return (
       <TouchableOpacity
@@ -239,6 +274,9 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
           <Text style={styles.exerciseDetail}>
             {getEquipmentText(exercise)} | {getPrimaryMusclesText(exercise)}
           </Text>
+          <Text style={[styles.lastPerformed, !lastMs && styles.lastPerformedNever]}>
+            {lastLabel}
+          </Text>
           {isDuplicate && (
             <Text style={styles.duplicateSubtitle}>
               {setCount > 0 ? `${setCount} sets logged` : 'No sets logged'}
@@ -251,7 +289,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         <Text style={styles.chevron}>›</Text>
       </TouchableOpacity>
     );
-  }, [handleExercisePress, handleLongPress, prSummaries, exerciseSetCounts, duplicateNames]);
+  }, [handleExercisePress, handleLongPress, prSummaries, exerciseSetCounts, duplicateNames, lastPerformed]);
 
   const renderSectionHeader = useCallback(({ section }: { section: ExerciseSection }) => (
     <View style={styles.sectionHeader}>
@@ -333,6 +371,30 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
           >
             <Text style={[styles.filterChipText, selectedEquipment === eq && styles.filterChipTextSelected]}>
               {EQUIPMENT_DISPLAY_NAMES[eq]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Sort */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterContainer}
+        contentContainerStyle={styles.filterContent}
+      >
+        {([
+          { key: 'muscle' as const, label: 'By Muscle' },
+          { key: 'stale' as const, label: 'Least Recent' },
+          { key: 'recent' as const, label: 'Most Recent' },
+        ]).map(opt => (
+          <TouchableOpacity
+            key={opt.key}
+            style={[styles.filterChip, sortMode === opt.key && styles.filterChipSelected]}
+            onPress={() => setSortMode(opt.key)}
+          >
+            <Text style={[styles.filterChipText, sortMode === opt.key && styles.filterChipTextSelected]}>
+              {opt.label}
             </Text>
           </TouchableOpacity>
         ))}
@@ -477,6 +539,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
     textTransform: 'capitalize',
+  },
+  lastPerformed: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  lastPerformedNever: {
+    color: colors.textTertiary,
+    fontStyle: 'italic',
   },
   duplicateSubtitle: {
     fontSize: typography.size.xs,

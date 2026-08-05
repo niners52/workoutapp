@@ -42,6 +42,7 @@ export const colors = {
     upper_back: '#5B8BA8', // Light steel blue
     front_delts: '#FFD65A', // Light yellow
     side_delts: '#FFE082', // Bright yellow
+    traps: '#87A9C4', // Slate blue
     triceps: '#6B9AB8', // Soft blue
     biceps: '#E6B422', // Medium yellow
     quads: '#3D6B8C', // Navy blue

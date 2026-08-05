@@ -27,6 +27,7 @@ export type RootStackParamList = {
   CreateRoutine: undefined;
   EditRoutine: { routineId: string };
   RoutineEditor: { routineId: string };
+  RoutineBuilder: undefined;
   ImportRoutine: undefined;
   AerobicSession: {
     targetDurationMin?: number;
