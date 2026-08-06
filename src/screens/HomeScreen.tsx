@@ -599,6 +599,7 @@ export function HomeScreen() {
             dailyGoals={dailyGoals}
             calorieGoal={userSettings.calorieGoal}
             userSettings={userSettings}
+            hasActiveSupplements={activeSupplements.length > 0}
           />
         ) : (
           <Card style={styles.loadingCard}>
@@ -653,6 +654,7 @@ export function HomeScreen() {
             todayIndex={weeklyGridData.todayIndex}
             dayLabels={weeklyGridData.dayLabels}
             dailyGoals={dailyGoals}
+            hasActiveSupplements={activeSupplements.length > 0}
             onDayPress={(dateStr) => {
               // Open that day's detail in the Progress-tab calendar
               requestCalendarFocus(dateStr);
@@ -672,6 +674,7 @@ export function HomeScreen() {
             weeklyGoals={weeklyGoals}
             dailyGoals={dailyGoals}
             userSettings={userSettings}
+            hasActiveSupplements={activeSupplements.length > 0}
           />
         ) : (
           <Card style={styles.loadingCard}>

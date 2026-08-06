@@ -8,6 +8,8 @@ import {
   Modal,
   TextInput,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -426,7 +428,10 @@ export function RoutineEditorScreen() {
         transparent
         onRequestClose={() => setPickerForDay(null)}
       >
-        <View style={styles.pickerOverlay}>
+        <KeyboardAvoidingView
+          style={styles.pickerOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.pickerSheet}>
             <Text style={styles.pickerTitle}>
               Add to {pickerForDay !== null ? DAY_NAMES[pickerForDay] : ''}
@@ -452,7 +457,7 @@ export function RoutineEditorScreen() {
               <Text style={styles.pickerCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Sets/reps editor */}

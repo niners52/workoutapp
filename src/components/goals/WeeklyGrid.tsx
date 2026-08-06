@@ -14,6 +14,9 @@ interface WeeklyGridProps {
   // Tapping any day column (grade cell or header) opens that day's detail —
   // previously the grid showed grades but wasn't tappable at all.
   onDayPress?: (dateStr: string) => void;
+  // False when the user has zero ACTIVE supplements — hides the Supps row
+  // regardless of trackCreatine (which defaults true).
+  hasActiveSupplements?: boolean;
 }
 
 type GoalStatus = { type: 'grade'; grade: LetterGrade } | { type: 'future' } | { type: 'na' };
@@ -68,7 +71,7 @@ function GridRow({
   );
 }
 
-export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals, onDayPress }: WeeklyGridProps) {
+export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals, onDayPress, hasActiveSupplements = true }: WeeklyGridProps) {
   const getSleepStatus = (day: DailyGoalStatus, isFutureDay: boolean): GoalStatus => {
     if (isFutureDay) return { type: 'future' };
     if (day.sleep.hours === 0) return { type: 'na' };
@@ -143,7 +146,7 @@ export function WeeklyGrid({ days, todayIndex, dayLabels, dailyGoals, onDayPress
         todayIndex={todayIndex}
         onDayPress={onDayPress}
       />
-      {dailyGoals.trackCreatine && (
+      {dailyGoals.trackCreatine && hasActiveSupplements && (
         <GridRow
           label="Supps"
           days={days}

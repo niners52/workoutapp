@@ -9,6 +9,8 @@ import {
   TextInput,
   FlatList,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -572,7 +574,10 @@ export function RoutineBuilderScreen() {
         transparent
         onRequestClose={() => setPickerForDay(null)}
       >
-        <View style={styles.pickerOverlay}>
+        <KeyboardAvoidingView
+          style={styles.pickerOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.pickerSheet}>
             <Text style={styles.pickerTitle}>
               Add to {pickerForDay !== null ? DAY_NAMES[pickerForDay] : ''}
@@ -594,7 +599,7 @@ export function RoutineBuilderScreen() {
               <Text style={styles.pickerCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Sets/reps editor */}

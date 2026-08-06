@@ -33,6 +33,7 @@ import { RootStackParamList } from '../navigation/types';
 import { getExercisePRSummaries, ExercisePRs } from '../services/personalRecords';
 import { getSets } from '../services/storage';
 import { matchesAllWords } from '../utils/search';
+import { useKeyboardHeight } from '../utils/useKeyboardHeight';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -45,6 +46,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { exercises, workouts, deleteExercise, sets } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
+  const keyboardHeight = useKeyboardHeight();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
@@ -299,10 +301,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   ), []);
 
   const content = (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Exercises</Text>
@@ -407,7 +406,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         renderItem={renderExercise}
         renderSectionHeader={renderSectionHeader}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding }]}
+        contentContainerStyle={[styles.listContent, { paddingBottom: spacing.xl + workoutBarPadding + keyboardHeight }]}
         initialNumToRender={20}
         maxToRenderPerBatch={20}
         windowSize={10}
@@ -415,7 +414,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 
   if (embedded) return content;

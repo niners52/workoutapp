@@ -11,6 +11,9 @@ interface StreakCountersProps {
   dailyGoals: DailyGoals;
   calorieGoal?: number | null;
   userSettings?: UserSettings;
+  // False when the user has zero ACTIVE supplements — hides the Creatine
+  // streak regardless of the trackCreatine setting (which defaults true).
+  hasActiveSupplements?: boolean;
 }
 
 type IconType = 'ionicons' | 'material';
@@ -55,7 +58,7 @@ function StreakItem({ iconType, iconName, label, count, highlight }: StreakItemP
   );
 }
 
-export function StreakCounters({ streaks, dailyGoals, calorieGoal, userSettings }: StreakCountersProps) {
+export function StreakCounters({ streaks, dailyGoals, calorieGoal, userSettings, hasActiveSupplements = true }: StreakCountersProps) {
   const showCalorieStreak = calorieGoal && calorieGoal > 0;
 
   return (
@@ -86,7 +89,7 @@ export function StreakCounters({ streaks, dailyGoals, calorieGoal, userSettings 
             count={streaks.calories}
           />
         )}
-        {dailyGoals.trackCreatine && (
+        {dailyGoals.trackCreatine && hasActiveSupplements && (
           <StreakItem
             iconType="material"
             iconName="pill"

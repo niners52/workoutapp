@@ -10,6 +10,9 @@ interface WeeklyTotalsProps {
   weeklyGoals: WeeklyGoals;
   dailyGoals: DailyGoals;
   userSettings?: UserSettings;
+  // False when the user has zero ACTIVE supplements — hides Creatine Days
+  // regardless of trackCreatine (which defaults true).
+  hasActiveSupplements?: boolean;
 }
 
 interface TotalRowProps {
@@ -41,7 +44,7 @@ function TotalRow({ label, current, target, unit = '', color = colors.primary }:
   );
 }
 
-export function WeeklyTotals({ summary, weeklyGoals, dailyGoals, userSettings }: WeeklyTotalsProps) {
+export function WeeklyTotals({ summary, weeklyGoals, dailyGoals, userSettings, hasActiveSupplements = true }: WeeklyTotalsProps) {
   return (
     <Card style={styles.card}>
       <Text style={styles.title}>Weekly Totals</Text>
@@ -61,7 +64,7 @@ export function WeeklyTotals({ summary, weeklyGoals, dailyGoals, userSettings }:
         color={colors.chartProtein}
       />
 
-      {dailyGoals.trackCreatine && (
+      {dailyGoals.trackCreatine && hasActiveSupplements && (
         <TotalRow
           label="Creatine Days"
           current={summary.creatineDays}

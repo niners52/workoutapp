@@ -18,6 +18,7 @@ import { useData } from '../contexts/DataContext';
 import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { matchesAllWords } from '../utils/search';
+import { useKeyboardHeight } from '../utils/useKeyboardHeight';
 
 type MergeExercisePickerRouteProp = RouteProp<RootStackParamList, 'MergeExercisePicker'>;
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -27,6 +28,7 @@ export function MergeExercisePickerScreen() {
   const route = useRoute<MergeExercisePickerRouteProp>();
   const { sourceExerciseId } = route.params;
   const { exercises, sets, mergeExercise } = useData();
+  const keyboardHeight = useKeyboardHeight();
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -99,10 +101,7 @@ export function MergeExercisePickerScreen() {
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -133,12 +132,12 @@ export function MergeExercisePickerScreen() {
           data={filteredExercises}
           keyExtractor={item => item.id}
           renderItem={renderExercise}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: keyboardHeight + spacing.xl }]}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         />
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
