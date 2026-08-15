@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, { Path, G, Ellipse } from 'react-native-svg';
+import Svg, { Path, G } from 'react-native-svg';
 import { PrimaryMuscleGroup } from '../../types';
 import { colors } from '../../theme';
 import { STRENGTH_LEVEL_COLORS } from '../../services/strengthStandards';
@@ -24,7 +24,6 @@ const ELITE_RING = '#FFF6D6';
 export function MuscleMapBack({ muscleColors, onMusclePress, width, height }: MuscleMapProps) {
   return (
     <Svg width={width} height={height} viewBox={`0 0 ${VB_W} ${VB_H}`}>
-      <Ellipse cx="100" cy="27.5" rx="19.5" ry="21.5" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1" />
       <Path
         d={BODY_SILHOUETTE}
         fill={BODY_FILL}
