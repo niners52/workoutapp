@@ -38,13 +38,16 @@ export const STRENGTH_LEVEL_LABELS: Record<StrengthLevel, string> = {
   elite: 'Elite',
 };
 
+// Sequential single-hue ramp: strength is a magnitude, so brightness carries
+// it — dim bronze (beginner) up to bright cream-gold (elite) on the navy body.
+// The old blue/green/gold/orange/red rainbow read red-as-problem.
 export const STRENGTH_LEVEL_COLORS: Record<StrengthLevel, string> = {
-  untrained: '#1A3A5C',   // backgroundTertiary
-  beginner: '#5B8DEF',    // blue
-  novice: '#4CAF50',      // green
-  intermediate: '#FFC52F', // gold
-  advanced: '#FF9800',    // orange
-  elite: '#F44336',       // red
+  untrained: '#16304F',   // body fill — reads as "no data"
+  beginner: '#6B5714',
+  novice: '#9A7A1A',
+  intermediate: '#C9A022',
+  advanced: '#F2C52F',    // ≈ app primary gold
+  elite: '#FFE894',       // brightest; maps add a light ring as a second cue
 };
 
 interface LevelThresholds {
