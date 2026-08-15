@@ -66,7 +66,7 @@ interface ExerciseHistory {
 
 export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings, locations, workouts, sets, exerciseSwaps, getActiveRoutine, updateExercise } = useData();
+  const { exercises, templates, userSettings, locations, workouts, sets, exerciseSwaps, getActiveRoutine, updateExercise, toggleExerciseFavorite } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -974,6 +974,11 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     onOpenRestTimer={() => setRestTimerModalVisible(true)}
                     onSwap={() => handleOpenSwapModal(exercise)}
                     onEdit={() => handleOpenEditModal(exercise)}
+                    onToggleFavorite={() =>
+                      toggleExerciseFavorite(exercise.id).catch(e =>
+                        console.log('Favorite toggle failed:', e)
+                      )
+                    }
                     onViewHistory={(exerciseId) => navigation.navigate('ExerciseHistory', { exerciseId })}
                     hasSwapOptions={hasAnySwapOptions(exercise)}
                     weight={weight}
@@ -1669,6 +1674,7 @@ interface ExerciseCardProps {
   onOpenRestTimer: () => void;
   onSwap: () => void;
   onEdit: () => void;
+  onToggleFavorite: () => void;
   onViewHistory: (exerciseId: string) => void;
   hasSwapOptions: boolean;
   weight: number;
@@ -1703,6 +1709,7 @@ function ExerciseCard({
   onOpenRestTimer,
   onSwap,
   onEdit,
+  onToggleFavorite,
   onViewHistory,
   hasSwapOptions,
   weight,
@@ -1752,6 +1759,13 @@ function ExerciseCard({
           </Text>
         </View>
         <View style={styles.exerciseHeaderRight}>
+          {/* Favorite mid-workout, when "this one's a keeper" is freshest */}
+          <FavoriteStar
+            isFavorite={!!exercise.isFavorite}
+            onToggle={onToggleFavorite}
+            exerciseName={exercise.name}
+            size={18}
+          />
           {hasSwapOptions && (
             <TouchableOpacity
               style={styles.swapButton}
