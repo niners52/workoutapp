@@ -30,29 +30,46 @@ export function MuscleGroupVolumeChart({
           {group.isParentHeader && (
             <Text style={styles.parentHeader}>{group.parentName}</Text>
           )}
-          {group.items.map((volume) => (
-            <TouchableOpacity
-              key={volume.muscleGroup}
-              style={styles.muscleRow}
-              onPress={() => onMuscleGroupPress?.(volume.muscleGroup)}
-              disabled={!onMuscleGroupPress}
-              activeOpacity={0.7}
-            >
-              <View style={styles.labelRow}>
-                <Text style={styles.muscleLabel}>
-                  {MUSCLE_GROUP_DISPLAY_NAMES[volume.muscleGroup]}
-                </Text>
-                <Text style={styles.setsText}>
-                  {volume.sets}/{volume.target} sets
-                </Text>
-              </View>
-              <ProgressBar
-                progress={(volume.sets / volume.target) * 100}
-                color={getColorForMuscleGroup(volume.muscleGroup)}
-                height={6}
-              />
-            </TouchableOpacity>
-          ))}
+          {group.items.map((volume) => {
+            const metMin = volume.target > 0 && volume.sets >= volume.target;
+            const roomToMax = volume.targetMax
+              ? Math.max(0, volume.targetMax - volume.sets)
+              : 0;
+            return (
+              <TouchableOpacity
+                key={volume.muscleGroup}
+                style={styles.muscleRow}
+                onPress={() => onMuscleGroupPress?.(volume.muscleGroup)}
+                disabled={!onMuscleGroupPress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.labelRow}>
+                  <Text style={styles.muscleLabel}>
+                    {MUSCLE_GROUP_DISPLAY_NAMES[volume.muscleGroup]}
+                  </Text>
+                  <View style={styles.setsRow}>
+                    {/* Once the minimum is met, the remaining question is "how much
+                        ideal volume is left" — surface it instead of a bare tally */}
+                    {metMin && roomToMax > 0 && (
+                      <Text style={styles.roomText}>+{roomToMax} to ideal</Text>
+                    )}
+                    {metMin && volume.targetMax != null && roomToMax === 0 && (
+                      <Text style={styles.maxedText}>ideal ✓</Text>
+                    )}
+                    <Text style={[styles.setsText, metMin && styles.setsTextMet]}>
+                      {volume.sets}/{volume.target}
+                      {volume.targetMax != null ? `–${volume.targetMax}` : ''} sets
+                    </Text>
+                  </View>
+                </View>
+                <ProgressBar
+                  progress={(volume.sets / volume.target) * 100}
+                  color={getColorForMuscleGroup(volume.muscleGroup)}
+                  height={6}
+                />
+              </TouchableOpacity>
+            );
+          })}
         </View>
       ))}
     </View>
@@ -122,9 +139,27 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     color: colors.text,
   },
+  setsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   setsText: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
+  },
+  setsTextMet: {
+    color: colors.success,
+  },
+  roomText: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  maxedText: {
+    fontSize: typography.size.sm,
+    color: colors.success,
+    fontWeight: typography.weight.semibold,
   },
 });
 

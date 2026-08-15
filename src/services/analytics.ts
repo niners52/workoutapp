@@ -86,12 +86,18 @@ export async function calculateVolumeForDateRange(
   });
 
   // Convert to array format
-  const result: MuscleGroupVolume[] = ALL_TRACKABLE_MUSCLE_GROUPS.map(mg => ({
-    muscleGroup: mg,
-    sets: volumeMap.get(mg)?.sets || 0,
-    target: settings.muscleGroupTargets[mg] || 0,
-    exercises: Array.from(volumeMap.get(mg)?.exercises.values() || []),
-  }));
+  const result: MuscleGroupVolume[] = ALL_TRACKABLE_MUSCLE_GROUPS.map(mg => {
+    const target = settings.muscleGroupTargets[mg] || 0;
+    const max = settings.muscleGroupTargetsMax?.[mg] || 0;
+    return {
+      muscleGroup: mg,
+      sets: volumeMap.get(mg)?.sets || 0,
+      target,
+      // A ceiling at or below the minimum is meaningless — treat as unset
+      targetMax: max > target ? max : undefined,
+      exercises: Array.from(volumeMap.get(mg)?.exercises.values() || []),
+    };
+  });
 
   return result;
 }

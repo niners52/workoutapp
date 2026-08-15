@@ -436,6 +436,9 @@ export interface UserSettings {
   defaultTargetSets: number; // Target sets per exercise during workout (drives "Set X of Y")
   moveCompletedToBottom: boolean; // Auto-move completed exercises to bottom of list
   muscleGroupTargets: MuscleGroupTargets;
+  // Optional per-muscle ideal ceiling; muscleGroupTargets is the weekly minimum.
+  // 0/absent = no ceiling. Local-only (not synced to cloud, like coach/fatigue settings).
+  muscleGroupTargetsMax?: MuscleGroupTargets;
   dailyGoals: DailyGoals;
   weeklyGoals: WeeklyGoals;
   creatineSupplementId?: string; // ID of the supplement to track as "creatine" for streaks
@@ -557,7 +560,8 @@ export interface ManualSleepEntry {
 export interface MuscleGroupVolume {
   muscleGroup: PrimaryMuscleGroup;
   sets: number;
-  target: number;
+  target: number; // weekly minimum
+  targetMax?: number; // ideal ceiling; undefined when the user hasn't set one
   exercises: { exerciseId: string; exerciseName: string; sets: number }[];
 }
 

@@ -376,6 +376,14 @@ export function SettingsScreen() {
     updateUserSettings({ muscleGroupTargets: newTargets });
   };
 
+  const handleMuscleTargetMaxChange = (muscleGroup: string, value: number) => {
+    const newTargets = {
+      ...userSettings.muscleGroupTargetsMax,
+      [muscleGroup]: value,
+    };
+    updateUserSettings({ muscleGroupTargetsMax: newTargets });
+  };
+
   const handleAddLocation = async () => {
     if (!newLocationName.trim()) return;
 
@@ -1873,19 +1881,35 @@ export function SettingsScreen() {
                   <Text style={styles.muscleLabel}>
                     {MUSCLE_GROUP_DISPLAY_NAMES[mg]}
                   </Text>
-                  <NumberInput
-                    value={userSettings.muscleGroupTargets[mg] || 0}
-                    onChangeValue={(value) => handleMuscleTargetChange(mg, value)}
-                    min={0}
-                    max={30}
-                    step={1}
-                  />
+                  <View style={styles.targetInputs}>
+                    <View style={styles.targetInputRow}>
+                      <Text style={styles.targetInputLabel}>Min</Text>
+                      <NumberInput
+                        value={userSettings.muscleGroupTargets[mg] || 0}
+                        onChangeValue={(value) => handleMuscleTargetChange(mg, value)}
+                        min={0}
+                        max={30}
+                        step={1}
+                      />
+                    </View>
+                    <View style={styles.targetInputRow}>
+                      <Text style={styles.targetInputLabel}>Max</Text>
+                      <NumberInput
+                        value={userSettings.muscleGroupTargetsMax?.[mg] || 0}
+                        onChangeValue={(value) => handleMuscleTargetMaxChange(mg, value)}
+                        min={0}
+                        max={40}
+                        step={1}
+                      />
+                    </View>
+                  </View>
                 </View>
               ))}
             </Card>
           )}
           <Text style={styles.hint}>
-            Set to 0 to track without counting toward weekly score
+            Min 0 = track without counting toward weekly score. Max is the ideal
+            ceiling — leave 0 for none; it must be above Min to show as a range.
           </Text>
         </View>
 
@@ -2206,6 +2230,21 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     color: colors.text,
     flex: 1,
+  },
+  targetInputs: {
+    gap: spacing.xs,
+  },
+  targetInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  targetInputLabel: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    width: 30,
+    textAlign: 'right',
   },
   hint: {
     fontSize: typography.size.sm,

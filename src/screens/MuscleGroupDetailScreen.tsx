@@ -62,6 +62,8 @@ export function MuscleGroupDetailScreen() {
   }, [muscleGroup, weekStart]);
 
   const target = userSettings.muscleGroupTargets[muscleGroup] || 0;
+  const rawMax = userSettings.muscleGroupTargetsMax?.[muscleGroup] || 0;
+  const targetMax = rawMax > target ? rawMax : 0;
   const totalSets = exerciseVolume.reduce((sum, e) => sum + e.sets, 0);
   const progress = target > 0 ? (totalSets / target) * 100 : 0;
 
@@ -85,7 +87,7 @@ export function MuscleGroupDetailScreen() {
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel}>Weekly Progress</Text>
             <Text style={styles.progressValue}>
-              {totalSets} / {target} sets
+              {totalSets} / {target}{targetMax ? `–${targetMax}` : ''} sets
             </Text>
           </View>
           <ProgressBar
@@ -94,7 +96,9 @@ export function MuscleGroupDetailScreen() {
             color={progress >= 100 ? colors.success : colors.primary}
           />
           <Text style={styles.progressPercent}>
-            {Math.round(progress)}% of target
+            {progress >= 100 && targetMax > totalSets
+              ? `Minimum hit — ${targetMax - totalSets} more to ideal max`
+              : `${Math.round(progress)}% of target`}
           </Text>
         </Card>
 
