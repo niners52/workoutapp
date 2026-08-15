@@ -18,3 +18,21 @@ export function consumeCalendarFocus(): string | null {
   pendingDate = null;
   return d;
 }
+
+// ─── Progress tab segment handoff ────────────────────────────────────────────
+// Same pattern for asking the Progress tab to open on a specific segment
+// (e.g. Home's Weekly Sets card → Analytics volume view).
+
+type ProgressTabKey = 'calendar' | 'analytics' | 'weeks' | 'photos';
+
+let pendingProgressTab: ProgressTabKey | null = null;
+
+export function requestProgressTab(tab: ProgressTabKey): void {
+  pendingProgressTab = tab;
+}
+
+export function consumeProgressTab(): ProgressTabKey | null {
+  const t = pendingProgressTab;
+  pendingProgressTab = null;
+  return t;
+}

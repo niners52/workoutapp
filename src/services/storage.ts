@@ -22,7 +22,9 @@ import {
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
   DEFAULT_WEEKLY_GOALS,
+  TRAVEL_LOCATION_ID,
 } from '../types';
+import { buildLocationResolver } from './locationMatch';
 import { SEED_EXERCISES } from '../data/exercises';
 import { SEED_TEMPLATES } from '../data/templates';
 import { IMPORTED_EXERCISES } from '../data/importedExercises';
@@ -55,7 +57,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 12;
+const CURRENT_MIGRATION_VERSION = 13;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -157,6 +159,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 12) {
     await migrateToV12();
+  }
+
+  if (currentVersion < 13) {
+    await migrateToV13();
   }
 
   // Update migration version
@@ -539,6 +545,37 @@ async function migrateToV12(): Promise<void> {
   console.log(`Migration to V12 complete - healed ${healed} unilateral exercises`);
 }
 
+// Migration V13: Canonicalize Workout.locationId onto the real location records.
+// Workouts were written by several paths over time, so a handful stored the gym's
+// NAME ("Planet Fitness") or a differently-cased id where the canonical id belongs.
+// Those never matched the active workout's location, which surfaced as a bogus
+// "first time here" mid-workout. Rewrite them once so every consumer compares
+// like for like. Workouts with no location stay untouched — there is nothing to
+// recover, and the lookup now reports those as "unknown" rather than "different".
+async function migrateToV13(): Promise<void> {
+  console.log('Running migration to V13 - canonicalizing workout locations...');
+
+  const [workouts, locations] = await Promise.all([
+    getItem<Workout[]>(STORAGE_KEYS.WORKOUTS, []),
+    getItem<WorkoutLocation[]>(STORAGE_KEYS.LOCATIONS, DEFAULT_LOCATIONS),
+  ]);
+
+  const resolver = buildLocationResolver(workouts, locations);
+  let rewritten = 0;
+  const updated = workouts.map(w => {
+    if (!w.locationId) return w;
+    const canonical = resolver.canonical(w.locationId);
+    if (!canonical || canonical === w.locationId) return w;
+    rewritten += 1;
+    return { ...w, locationId: canonical };
+  });
+
+  if (rewritten > 0) {
+    await setItem(STORAGE_KEYS.WORKOUTS, updated);
+  }
+  console.log(`Migration to V13 complete - canonicalized ${rewritten} workout locations`);
+}
+
 // Reset storage (for debugging/testing)
 export async function resetStorage(): Promise<void> {
   await AsyncStorage.clear();
@@ -569,6 +606,20 @@ export async function updateExercise(exercise: Exercise): Promise<void> {
     exercises[index] = exercise;
     await setItem(STORAGE_KEYS.EXERCISES, exercises);
   }
+}
+
+/**
+ * Flip an exercise's favorite flag and return the updated record so callers can
+ * sync it. Returns undefined when the exercise no longer exists.
+ */
+export async function toggleExerciseFavorite(id: string): Promise<Exercise | undefined> {
+  const exercises = await getExercises();
+  const index = exercises.findIndex(e => e.id === id);
+  if (index === -1) return undefined;
+  const updated = { ...exercises[index], isFavorite: !exercises[index].isFavorite };
+  exercises[index] = updated;
+  await setItem(STORAGE_KEYS.EXERCISES, exercises);
+  return updated;
 }
 
 export async function deleteExercise(id: string): Promise<void> {
@@ -901,20 +952,23 @@ export async function getLastSetsForExercise(
   limit: number = 5,
   preferLocationId?: string,
 ): Promise<WorkoutSet[]> {
-  const [sets, workouts] = await Promise.all([
+  const [sets, workouts, locations] = await Promise.all([
     getSetsByExerciseId(exerciseId),
     getWorkouts(),
+    getLocations(),
   ]);
 
   // Build set of deload workout IDs to exclude
   const deloadIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
-  const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+  // Canonical matching (see locationMatch.ts) so id casing and legacy name-in-id
+  // records resolve to the same gym the active workout is tagged with.
+  const resolver = buildLocationResolver(workouts, locations);
 
   // Filter out deload sets AND Travel/Other sets (temporary-gym weights must
   // not feed suggestions), then sort by loggedAt descending
   const sortedSets = sets
     .filter(s => !deloadIds.has(s.workoutId))
-    .filter(s => locationByWorkoutId.get(s.workoutId) !== 'travel')
+    .filter(s => resolver.forWorkout(s.workoutId) !== TRAVEL_LOCATION_ID)
     .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
 
   if (sortedSets.length === 0) return [];
@@ -923,9 +977,10 @@ export async function getLastSetsForExercise(
   // 'travel' as preferLocationId intentionally never matches (excluded above),
   // so at a travel gym the user sees regular-gym reference numbers.
   let pool = sortedSets;
-  if (preferLocationId) {
+  const target = resolver.canonical(preferLocationId);
+  if (target) {
     const sameLocation = sortedSets.filter(
-      s => locationByWorkoutId.get(s.workoutId) === preferLocationId
+      s => resolver.forWorkout(s.workoutId) === target
     );
     if (sameLocation.length > 0) pool = sameLocation;
   }
@@ -941,15 +996,21 @@ export async function getLastSetsForExercise(
 // Travel/Other is skipped: coming home from a trip shouldn't keep defaulting new
 // workouts to the travel pseudo-location.
 export async function getLastUsedLocationId(): Promise<string | undefined> {
-  const workouts = await getWorkouts();
+  const [workouts, locations] = await Promise.all([getWorkouts(), getLocations()]);
+  // Canonicalize so a workout tagged with a differently-cased id or a location
+  // name still defaults the next workout to the real location record.
+  const resolver = buildLocationResolver(workouts, locations);
   const withLocation = workouts
-    .filter(w => w.locationId && w.locationId !== 'travel')
+    .filter(w => {
+      const loc = resolver.forWorkout(w.id);
+      return loc !== undefined && loc !== TRAVEL_LOCATION_ID;
+    })
     .sort(
       (a, b) =>
         new Date(b.completedAt || b.startedAt).getTime() -
         new Date(a.completedAt || a.startedAt).getTime()
     );
-  return withLocation[0]?.locationId;
+  return withLocation[0] ? resolver.forWorkout(withLocation[0].id) : undefined;
 }
 
 // ==================== USER SETTINGS ====================

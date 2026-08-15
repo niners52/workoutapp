@@ -1,6 +1,12 @@
 import { format } from 'date-fns';
 import { WorkoutSet, Workout, TRAVEL_LOCATION_ID } from '../types';
-import { getSetsByExerciseId, getWorkouts } from './storage';
+import { getSetsByExerciseId, getWorkouts, getLocations } from './storage';
+import {
+  buildLocationResolver,
+  classifyLocationMatch,
+  logLocationLookup,
+  LocationMatch,
+} from './locationMatch';
 
 export interface WorkoutSessionSets {
   workoutId: string;
@@ -15,9 +21,13 @@ export interface LastWorkoutForExercise {
   // The location the returned sets were performed at (undefined for legacy workouts
   // recorded before locationId existed).
   fromLocationId?: string;
-  // True when the returned session is at the requested location (or when no specific
-  // location was requested). False signals "first time at this gym — here's elsewhere".
-  isSameLocation: boolean;
+  // How the returned session relates to the gym we're at:
+  //   'same'      → performed here (or no gym context was requested)
+  //   'different' → provably performed elsewhere; safe to say "first time here"
+  //   'unknown'   → at least one past session has no location recorded, so we
+  //                 cannot claim this is the first time here. Callers must fall
+  //                 back to a neutral "Last time" label.
+  locationMatch: LocationMatch;
 }
 
 /**
@@ -66,15 +76,17 @@ export async function getLastWorkoutForExercise(
     (a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()
   );
 
-  // Map workoutId -> locationId so we can prefer same-location history.
-  const workouts = await getWorkouts();
-  const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+  // Resolve every workout's location through the canonical matcher so id casing,
+  // stray whitespace and name-instead-of-id records all compare correctly.
+  const [workouts, locations] = await Promise.all([getWorkouts(), getLocations()]);
+  const resolver = buildLocationResolver(workouts, locations);
+  const target = resolver.canonical(preferLocationId);
 
   // Travel/Other sessions never feed weight suggestions — hotel-gym dumbbell
   // weights shouldn't overwrite regular-gym history. (They still appear in the
   // exercise history screen, which uses getExerciseHistory, not this function.)
   const nonTravelSets = sortedSets.filter(
-    s => locationByWorkoutId.get(s.workoutId) !== TRAVEL_LOCATION_ID
+    s => resolver.forWorkout(s.workoutId) !== TRAVEL_LOCATION_ID
   );
   if (nonTravelSets.length === 0) {
     // Only-ever-done-while-traveling edge case: fall back to travel history
@@ -85,27 +97,41 @@ export async function getLastWorkoutForExercise(
       date: lastWorkoutSets[0].loggedAt,
       sets: lastWorkoutSets,
       fromLocationId: TRAVEL_LOCATION_ID,
-      isSameLocation: preferLocationId === TRAVEL_LOCATION_ID,
+      locationMatch: target === TRAVEL_LOCATION_ID ? 'same' : 'different',
     };
   }
+
+  logLocationLookup(
+    `lastWorkout exercise=${exerciseId}`,
+    preferLocationId,
+    [...new Set(nonTravelSets.map(s => s.workoutId))],
+    resolver,
+  );
 
   // Prefer the most recent session at the requested location; fall back to the most
   // recent session anywhere when the exercise has never been done there.
   // When AT the travel gym, we intentionally skip same-location matching so the
   // user sees their regular-gym numbers as the reference.
   let pool = nonTravelSets;
-  let isSameLocation = true;
-  if (preferLocationId === TRAVEL_LOCATION_ID) {
-    isSameLocation = false; // reference weights are from a regular gym
-  } else if (preferLocationId) {
+  let locationMatch: LocationMatch = 'same';
+  if (target === TRAVEL_LOCATION_ID) {
+    locationMatch = 'different'; // reference weights are from a regular gym
+  } else if (target) {
     const sameLocation = nonTravelSets.filter(
-      s => locationByWorkoutId.get(s.workoutId) === preferLocationId
+      s => resolver.forWorkout(s.workoutId) === target
     );
     if (sameLocation.length > 0) {
       pool = sameLocation;
-      isSameLocation = true;
+      locationMatch = 'same';
     } else {
-      isSameLocation = false; // showing history from a different gym
+      // No match here — but only say so when every past session has a KNOWN
+      // location. Any location-less session means this exercise may well have
+      // been done here before we started recording gyms.
+      locationMatch = classifyLocationMatch(
+        nonTravelSets.map(s => s.workoutId),
+        preferLocationId,
+        resolver,
+      );
     }
   }
 
@@ -118,8 +144,8 @@ export async function getLastWorkoutForExercise(
   return {
     date: lastWorkoutSets[0].loggedAt,
     sets: lastWorkoutSets,
-    fromLocationId: locationByWorkoutId.get(lastWorkoutId),
-    isSameLocation,
+    fromLocationId: resolver.forWorkout(lastWorkoutId),
+    locationMatch,
   };
 }
 
@@ -148,9 +174,10 @@ export async function getExerciseHistory(
     workoutMap.get(set.workoutId)!.push(set);
   }
 
-  // Location per workout (so travel sessions can be tagged in the UI)
-  const workouts = await getWorkouts();
-  const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+  // Location per workout (so travel sessions can be tagged in the UI), canonicalized
+  // so the history screen labels agree with the per-gym matching everywhere else.
+  const [workouts, locations] = await Promise.all([getWorkouts(), getLocations()]);
+  const resolver = buildLocationResolver(workouts, locations);
 
   // Convert to array of workout sessions
   const sessions: WorkoutSessionSets[] = [];
@@ -159,7 +186,7 @@ export async function getExerciseHistory(
       workoutId,
       date: workoutSets[0].loggedAt,
       sets: workoutSets,
-      locationId: locationByWorkoutId.get(workoutId),
+      locationId: resolver.forWorkout(workoutId),
     });
   }
 

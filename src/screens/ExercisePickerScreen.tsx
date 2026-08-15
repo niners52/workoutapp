@@ -12,12 +12,13 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { SearchBar, Button } from '../components/common';
+import { SearchBar, Button, FavoriteStar, FavoritesFilter } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { Exercise, MUSCLE_GROUP_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { matchesAllWords } from '../utils/search';
+import { countFavorites } from '../services/favorites';
 import { useKeyboardHeight } from '../utils/useKeyboardHeight';
 
 type ExercisePickerRouteProp = RouteProp<RootStackParamList, 'ExercisePicker'>;
@@ -31,6 +32,8 @@ export function ExercisePickerScreen() {
   const keyboardHeight = useKeyboardHeight();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const favoriteCount = useMemo(() => countFavorites(exercises), [exercises]);
 
   // Helper to get primary muscles display
   const getPrimaryMusclesText = (exercise: Exercise): string => {
@@ -41,16 +44,17 @@ export function ExercisePickerScreen() {
   };
 
   const filteredExercises = useMemo(() => {
-    if (!searchQuery) return exercises;
+    const pool = showFavoritesOnly ? exercises.filter(e => e.isFavorite) : exercises;
+    if (!searchQuery) return pool;
 
     // Every query word must appear somewhere in name/baseName/muscles
-    return exercises.filter(e =>
+    return pool.filter(e =>
       matchesAllWords(
         `${e.name} ${e.baseName ?? ''} ${getPrimaryMusclesText(e)}`,
         searchQuery,
       )
     );
-  }, [exercises, searchQuery]);
+  }, [exercises, searchQuery, showFavoritesOnly]);
 
   // Group by first primary muscle group
   const groupedExercises = useMemo(() => {
@@ -93,7 +97,10 @@ export function ExercisePickerScreen() {
         activeOpacity={0.7}
       >
         <View style={styles.exerciseInfo}>
-          <Text style={styles.exerciseName}>{exercise.name}</Text>
+          <View style={styles.exerciseNameRow}>
+            <Text style={styles.exerciseName}>{exercise.name}</Text>
+            {exercise.isFavorite && <FavoriteStar isFavorite size={13} />}
+          </View>
           <Text style={styles.exerciseDetail}>
             {getPrimaryMusclesText(exercise)} • {equipmentText}
           </Text>
@@ -131,6 +138,13 @@ export function ExercisePickerScreen() {
             placeholder="Search exercises..."
           />
         </View>
+
+        {/* Favorites Filter */}
+        <FavoritesFilter
+          showFavoritesOnly={showFavoritesOnly}
+          onChange={setShowFavoritesOnly}
+          favoriteCount={favoriteCount}
+        />
 
         {/* Create Custom Exercise Button */}
         <TouchableOpacity
@@ -209,6 +223,10 @@ const styles = StyleSheet.create({
   },
   exerciseInfo: {
     flex: 1,
+  },
+  exerciseNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   exerciseName: {
     fontSize: typography.size.md,

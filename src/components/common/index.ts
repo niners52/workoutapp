@@ -4,3 +4,5 @@ export { ListItem } from './ListItem';
 export { ProgressBar } from './ProgressBar';
 export { SearchBar } from './SearchBar';
 export { NumberInput } from './NumberInput';
+export { FavoriteStar } from './FavoriteStar';
+export { FavoritesFilter } from './FavoritesFilter';

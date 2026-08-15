@@ -17,7 +17,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { SearchBar } from '../components/common';
+import { SearchBar, FavoriteStar, FavoritesFilter } from '../components/common';
+import { countFavorites, getFavoritesCoverage } from '../services/favorites';
 import { useData } from '../contexts/DataContext';
 import { Exercise, Template, DAY_NAMES, PrimaryMuscleGroup, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
@@ -80,6 +81,7 @@ export function RoutineEditorScreen() {
   // Add-exercise picker state
   const [pickerForDay, setPickerForDay] = useState<number | null>(null);
   const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerFavoritesOnly, setPickerFavoritesOnly] = useState(false);
 
   // Sets/reps editor state
   const [editingTargets, setEditingTargets] = useState<{ exerciseId: string } | null>(null);
@@ -253,9 +255,21 @@ export function RoutineEditorScreen() {
 
   const pickerExercises = useMemo(() => {
     return exercises
+      .filter(e => !pickerFavoritesOnly || e.isFavorite)
       .filter(e => matchesAllWords(e.name, pickerSearch))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [exercises, pickerSearch]);
+  }, [exercises, pickerSearch, pickerFavoritesOnly]);
+
+  const favoriteCount = useMemo(() => countFavorites(exercises), [exercises]);
+
+  // Same pre-save check as the builder: are all the must-do exercises still in
+  // the routine after this round of edits?
+  const favoritesCoverage = useMemo(() => {
+    const placed = items
+      .filter((i): i is Extract<typeof i, { kind: 'exercise' }> => i.kind === 'exercise')
+      .map(i => i.exerciseId);
+    return getFavoritesCoverage(exercises, placed);
+  }, [items, exercises]);
 
   // ─── Live weekly volume per muscle group ──────────────────────────────────
   // Recomputed from the DRAFT state (items + unsaved target edits) so totals
@@ -410,6 +424,27 @@ export function RoutineEditorScreen() {
             )}
           </View>
         )}
+        {volumePanelOpen && favoritesCoverage.total > 0 && (
+          <View style={styles.favoritesCoverage}>
+            <View style={styles.favoritesCoverageHeader}>
+              <Ionicons
+                name={favoritesCoverage.missing.length === 0 ? 'star' : 'star-outline'}
+                size={13}
+                color={favoritesCoverage.missing.length === 0 ? colors.success : colors.warning}
+              />
+              <Text style={styles.favoritesCoverageTitle}>
+                Favorites: {favoritesCoverage.includedCount} of {favoritesCoverage.total} included
+              </Text>
+            </View>
+            {favoritesCoverage.missing.length > 0 ? (
+              <Text style={styles.favoritesCoverageMissing}>
+                Missing: {favoritesCoverage.missing.map(e => e.name).join(', ')}
+              </Text>
+            ) : (
+              <Text style={styles.favoritesCoverageComplete}>All favorites are in this routine</Text>
+            )}
+          </View>
+        )}
       </View>
 
       <DraggableFlatList
@@ -441,6 +476,12 @@ export function RoutineEditorScreen() {
               onChangeText={setPickerSearch}
               placeholder="Search exercises..."
             />
+            <FavoritesFilter
+              showFavoritesOnly={pickerFavoritesOnly}
+              onChange={setPickerFavoritesOnly}
+              favoriteCount={favoriteCount}
+              style={styles.pickerFavoritesFilter}
+            />
             <FlatList
               data={pickerExercises}
               keyExtractor={e => e.id}
@@ -448,10 +489,18 @@ export function RoutineEditorScreen() {
               style={styles.pickerList}
               renderItem={({ item: ex }) => (
                 <TouchableOpacity style={styles.pickerRow} onPress={() => handleAddExercise(ex)}>
-                  <Text style={styles.pickerRowText}>{ex.name}</Text>
+                  <Text style={styles.pickerRowText} numberOfLines={1}>{ex.name}</Text>
+                  {ex.isFavorite && <FavoriteStar isFavorite size={13} />}
                   <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
                 </TouchableOpacity>
               )}
+              ListEmptyComponent={
+                <Text style={styles.pickerEmptyText}>
+                  {pickerFavoritesOnly
+                    ? 'No favorites match your search.'
+                    : 'No exercises match your search.'}
+                </Text>
+              }
             />
             <TouchableOpacity style={styles.pickerCancel} onPress={() => setPickerForDay(null)}>
               <Text style={styles.pickerCancelText}>Cancel</Text>
@@ -598,6 +647,39 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: typography.size.sm,
     paddingBottom: spacing.sm,
+  },
+  favoritesCoverage: {
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+  },
+  favoritesCoverageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  favoritesCoverageTitle: {
+    color: colors.text,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+  },
+  favoritesCoverageMissing: {
+    color: colors.warning,
+    fontSize: typography.size.xs,
+    marginTop: 2,
+  },
+  favoritesCoverageComplete: {
+    color: colors.success,
+    fontSize: typography.size.xs,
+    marginTop: 2,
+  },
+  pickerFavoritesFilter: { paddingHorizontal: 0, marginTop: spacing.sm },
+  pickerEmptyText: {
+    color: colors.textTertiary,
+    fontSize: typography.size.sm,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
   },
   dayHeader: {
     flexDirection: 'row',

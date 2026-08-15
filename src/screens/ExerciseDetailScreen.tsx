@@ -12,7 +12,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { Button, Card, ListItem } from '../components/common';
+import { Button, Card, ListItem, FavoriteStar } from '../components/common';
 import { ExerciseHistoryChart } from '../components/ExerciseHistoryChart';
 import { useData } from '../contexts/DataContext';
 import { calculateExercisePRs, ExercisePRs } from '../services/personalRecords';
@@ -47,7 +47,7 @@ export function ExerciseDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ExerciseDetailRouteProp>();
   const { exerciseId } = route.params;
-  const { exercises, deleteExercise, locations, workouts, userSettings, sets: allContextSets } = useData();
+  const { exercises, deleteExercise, locations, workouts, userSettings, sets: allContextSets, toggleExerciseFavorite } = useData();
 
   const [exercisePRs, setExercisePRs] = useState<ExercisePRs | null>(null);
   const [allSets, setAllSets] = useState<WorkoutSet[]>([]);
@@ -175,7 +175,19 @@ export function ExerciseDetailScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>{exercise.name}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{exercise.name}</Text>
+            <FavoriteStar
+              isFavorite={!!exercise.isFavorite}
+              exerciseName={exercise.name}
+              size={26}
+              onToggle={() => {
+                toggleExerciseFavorite(exercise.id).catch(e =>
+                  console.log('Favorite toggle failed:', e)
+                );
+              }}
+            />
+          </View>
           {exercise.isCustom && (
             <Text style={styles.customBadge}>Custom Exercise</Text>
           )}
@@ -417,7 +429,14 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: spacing.lg,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   title: {
+    flex: 1,
     fontSize: typography.size.xxl,
     fontWeight: typography.weight.bold,
     color: colors.text,

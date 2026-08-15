@@ -301,6 +301,7 @@ export interface Exercise {
   location?: ExerciseLocation; // Deprecated: kept for backward compatibility
   locationIds?: string[]; // References WorkoutLocation.id - exercises available at these locations
   isCustom?: boolean;
+  isFavorite?: boolean; // Starred "must-do" exercise — drives the Favorites filter, routine-builder coverage, and the weekly not-yet-hit list
   isUnilateral?: boolean; // Single-limb exercise — doubles target sets, halves volume credit
   notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
   targetSets?: number; // Per-exercise default target set count; falls back to UserSettings.defaultTargetSets (doubled if unilateral) when undefined

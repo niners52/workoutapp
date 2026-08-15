@@ -4,7 +4,9 @@ import {
   WorkoutSet,
   Exercise,
   UserSettings,
+  TRAVEL_LOCATION_ID,
 } from '../types';
+import { buildLocationResolver } from './locationMatch';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,8 +55,12 @@ function buildWorkoutDateMap(workouts: Workout[]): Map<string, Date> {
   return map;
 }
 
+// Canonicalized so trend comparisons don't split one gym across id-casing variants
+// (see locationMatch.ts). The location list isn't available here, so this normalizes
+// ids only — enough to keep same-gym sessions in one bucket.
 function buildWorkoutLocationMap(workouts: Workout[]): Map<string, string | undefined> {
-  return new Map(workouts.map(w => [w.id, w.locationId]));
+  const resolver = buildLocationResolver(workouts);
+  return new Map(workouts.map(w => [w.id, resolver.forWorkout(w.id)]));
 }
 
 /**
@@ -70,7 +76,7 @@ function buildWorkoutLocationMap(workouts: Workout[]): Map<string, string | unde
  *   location, which implements "not enough history at this gym → no comparison".
  */
 function filterToComparableLocation(sessions: ExerciseSession[]): ExerciseSession[] {
-  const nonTravel = sessions.filter(s => s.locationId !== 'travel');
+  const nonTravel = sessions.filter(s => s.locationId !== TRAVEL_LOCATION_ID);
   if (nonTravel.length === 0) return [];
   const focusLocation = nonTravel[0].locationId;
   return nonTravel.filter(s => s.locationId === focusLocation);

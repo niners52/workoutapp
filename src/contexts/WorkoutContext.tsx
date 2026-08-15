@@ -611,8 +611,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       };
     });
 
-    // Load last session data
-    getLastSetsForExercise(exerciseId).then(lastSets => {
+    // Load last session data, preferring history from the gym we're actually at
+    getLastSetsForExercise(exerciseId, 5, activeWorkout.workout.locationId).then(lastSets => {
       setLastSessionData({ exerciseId, sets: lastSets });
     });
   }, [activeWorkout]);
@@ -728,8 +728,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       };
     });
 
-    // Load last session data for the new exercise
-    getLastSetsForExercise(newExerciseId).then(lastSets => {
+    // Load last session data for the new exercise, from this gym when available
+    getLastSetsForExercise(newExerciseId, 5, activeWorkout.workout.locationId).then(lastSets => {
       setLastSessionData({ exerciseId: newExerciseId, sets: lastSets });
     });
   }, [activeWorkout]);
@@ -878,9 +878,13 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const refreshLastSessionData = useCallback(async () => {
     if (!activeWorkout?.currentExerciseId) return;
 
-    const lastSets = await getLastSetsForExercise(activeWorkout.currentExerciseId);
+    const lastSets = await getLastSetsForExercise(
+      activeWorkout.currentExerciseId,
+      5,
+      activeWorkout.workout.locationId,
+    );
     setLastSessionData({ exerciseId: activeWorkout.currentExerciseId, sets: lastSets });
-  }, [activeWorkout?.currentExerciseId]);
+  }, [activeWorkout?.currentExerciseId, activeWorkout?.workout.locationId]);
 
   const getSetsForExercise = useCallback((exerciseId: string): WorkoutSet[] => {
     if (!activeWorkout) return [];

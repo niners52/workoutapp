@@ -36,6 +36,7 @@ import {
 import {
   calculateWeeklyShortfalls,
   MuscleGroupShortfall,
+  getWeeklyVolume,
 } from '../services/analytics';
 import {
   getWorkouts,
@@ -58,7 +59,7 @@ import {
   setSleepFallbackDismissed,
 } from '../services/storage';
 import { getSleepData as getCachedSleepData, clearCacheForDate, getSleepAverage } from '../services/healthKitCache';
-import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES, Supplement } from '../types';
+import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES, Supplement, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
@@ -69,8 +70,9 @@ import { getCachedInsights, insightToCoachSuggestion } from '../services/insight
 import { CoachSuggestionsCard } from '../components/coach';
 import { syncManager } from '../services/syncService';
 import { todaysModality, markRecoveryComplete } from '../services/modalityActions';
-import { requestCalendarFocus } from '../services/calendarFocus';
+import { requestCalendarFocus, requestProgressTab } from '../services/calendarFocus';
 import { getWorkouts as getWorkoutsFromStorage } from '../services/storage';
+import { getFavoritesNotHitThisWeek } from '../services/favorites';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -91,6 +93,7 @@ export function HomeScreen() {
     getExerciseById,
     exerciseSwaps,
     refreshExerciseSwaps,
+    sets,
   } = useData();
   const { isWorkoutActive, recoveredWorkout, dismissRecovery } = useWorkout();
   const workoutBarPadding = useWorkoutBarPadding();
@@ -116,6 +119,13 @@ export function HomeScreen() {
   } | null>(null);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [shortfalls, setShortfalls] = useState<MuscleGroupShortfall[]>([]);
+  // Weekly Sets card: completed vs required across all targeted muscle groups,
+  // plus the per-group remaining breakdown ("what could I knock out today").
+  const [weeklySetsSummary, setWeeklySetsSummary] = useState<{
+    completed: number;
+    required: number;
+    remaining: { mg: string; name: string; left: number }[];
+  } | null>(null);
   const [coachSuggestions, setCoachSuggestions] = useState<CoachSuggestion[]>([]);
 
   // Challenge widget state
@@ -174,6 +184,13 @@ export function HomeScreen() {
         currentName: getExerciseById(s.currentExerciseId)?.name ?? 'Unknown',
       }));
   }, [exerciseSwaps, userSettings?.weekStartDay, getExerciseById]);
+
+  // Favorites with no set logged yet this training week — the nudge for must-do
+  // exercises that would otherwise slip past Sunday unnoticed.
+  const favoritesNotHit = useMemo(
+    () => getFavoritesNotHitThisWeek(exercises, sets, userSettings?.weekStartDay),
+    [exercises, sets, userSettings?.weekStartDay]
+  );
 
   // Check if we should show weekly summary (once per app session)
   useEffect(() => {
@@ -330,6 +347,32 @@ export function HomeScreen() {
         }
       } catch (e) {
         console.error('[HomeScreen] Shortfalls error:', e);
+      }
+
+      // Phase 2.1: Weekly Sets summary (completed vs required + remaining list).
+      // getWeeklyVolume respects unilateral half-counting and week-start settings.
+      try {
+        const weekVolume = await getWeeklyVolume(new Date());
+        const targeted = weekVolume.muscleGroups.filter(mg => mg.target > 0);
+        const required = targeted.reduce((sum, mg) => sum + mg.target, 0);
+        // Cap per-group completed at target so the header, bar, and remaining
+        // list reconcile (15/12 chest counts as 12 toward the weekly total).
+        const completed = targeted.reduce((sum, mg) => sum + Math.min(mg.sets, mg.target), 0);
+        const remaining = targeted
+          .map(mg => ({
+            mg: mg.muscleGroup as string,
+            name: (MUSCLE_GROUP_DISPLAY_NAMES as Record<string, string>)[mg.muscleGroup] ?? mg.muscleGroup,
+            left: Math.max(0, Math.round((mg.target - mg.sets) * 10) / 10),
+          }))
+          .filter(x => x.left > 0)
+          .sort((a, b) => b.left - a.left);
+        setWeeklySetsSummary({
+          completed: Math.round(completed * 10) / 10,
+          required,
+          remaining,
+        });
+      } catch (e) {
+        console.error('[HomeScreen] Weekly sets summary error:', e);
       }
 
       // Phase 2.5: Generate coach suggestions
@@ -680,6 +723,67 @@ export function HomeScreen() {
           <Card style={styles.loadingCard}>
             <Text style={styles.loadingText}>Loading weekly totals...</Text>
           </Card>
+        )}
+
+        {/* Weekly Sets Summary */}
+        {weeklySetsSummary && weeklySetsSummary.required > 0 && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                requestProgressTab('analytics');
+                navigation.navigate('MainTabs', { screen: 'Progress' });
+              }}
+            >
+              <Card>
+                <View style={styles.weeklySetsHeader}>
+                  <Text style={styles.weeklySetsTitle}>
+                    Weekly Sets: {weeklySetsSummary.completed}/{weeklySetsSummary.required}
+                  </Text>
+                  <Text style={styles.chevron}>›</Text>
+                </View>
+                <ProgressBar
+                  progress={(weeklySetsSummary.completed / weeklySetsSummary.required) * 100}
+                  height={8}
+                  color={weeklySetsSummary.completed >= weeklySetsSummary.required ? colors.success : colors.primary}
+                  style={styles.weeklySetsBar}
+                />
+                {weeklySetsSummary.remaining.length > 0 ? (
+                  <>
+                    <Text style={styles.weeklySetsRemainingTitle}>
+                      Remaining this week ({Math.round((weeklySetsSummary.required - weeklySetsSummary.completed) * 10) / 10} sets):
+                    </Text>
+                    {weeklySetsSummary.remaining.map(item => (
+                      <View key={item.mg} style={styles.weeklySetsRemainingRow}>
+                        <Text style={styles.weeklySetsRemainingName}>{item.name}</Text>
+                        <Text style={styles.weeklySetsRemainingCount}>{item.left} left</Text>
+                      </View>
+                    ))}
+                  </>
+                ) : (
+                  <Text style={styles.weeklySetsDone}>All weekly targets hit 🎉</Text>
+                )}
+              </Card>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Favorites not yet hit this week. Only rendered once the user has
+            favorites — and it disappears entirely once they're all done. */}
+        {favoritesNotHit.length > 0 && (
+          <View style={styles.section}>
+            <Card>
+              <View style={styles.favoritesTodoHeader}>
+                <Ionicons name="star-outline" size={16} color={colors.primary} />
+                <Text style={styles.favoritesTodoTitle}>
+                  Favorites not yet hit ({favoritesNotHit.length})
+                </Text>
+              </View>
+              <Text style={styles.favoritesTodoNames}>
+                {favoritesNotHit.map(e => e.name).join(', ')}
+              </Text>
+            </Card>
+          </View>
         )}
 
         {/* Weekly Shortfalls */}
@@ -1310,6 +1414,60 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
     textAlign: 'center',
+  },
+  weeklySetsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  weeklySetsTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  favoritesTodoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  favoritesTodoTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  favoritesTodoNames: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  weeklySetsBar: {
+    marginTop: spacing.sm,
+  },
+  weeklySetsRemainingTitle: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  weeklySetsRemainingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+  },
+  weeklySetsRemainingName: {
+    fontSize: typography.size.sm,
+    color: colors.text,
+  },
+  weeklySetsRemainingCount: {
+    fontSize: typography.size.sm,
+    color: colors.warning,
+    fontWeight: typography.weight.semibold,
+    fontVariant: ['tabular-nums'],
+  },
+  weeklySetsDone: {
+    fontSize: typography.size.sm,
+    color: colors.success,
+    marginTop: spacing.md,
   },
   swapRow: {
     flexDirection: 'row',

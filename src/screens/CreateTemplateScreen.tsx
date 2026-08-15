@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,8 @@ import * as Crypto from 'expo-crypto';
 // Generate UUID using expo-crypto (uuid library crashes on React Native)
 const generateId = () => Crypto.randomUUID();
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { Button, Card } from '../components/common';
+import { Button, Card, FavoriteStar, FavoritesFilter } from '../components/common';
+import { countFavorites } from '../services/favorites';
 import { useData } from '../contexts/DataContext';
 import {
   Template,
@@ -67,6 +68,8 @@ export function CreateTemplateScreen() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [showAllExercises, setShowAllExercises] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState('');
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const favoriteCount = useMemo(() => countFavorites(exercises), [exercises]);
 
   const handleSave = async () => {
     console.log('Save button pressed'); // Debug
@@ -150,6 +153,10 @@ export function CreateTemplateScreen() {
 
   // Filter exercises based on location and template type
   const filteredExercises = exercises.filter(e => {
+    // Favorites cut applies even in "Show All" mode — it's an explicit choice,
+    // not part of the location/type heuristics the Show All toggle bypasses.
+    if (showFavoritesOnly && !e.isFavorite) return false;
+
     // If showing all exercises, skip filtering
     if (showAllExercises) return true;
 
@@ -356,6 +363,12 @@ export function CreateTemplateScreen() {
               autoCorrect={false}
               clearButtonMode="while-editing"
             />
+            <FavoritesFilter
+              showFavoritesOnly={showFavoritesOnly}
+              onChange={setShowFavoritesOnly}
+              favoriteCount={favoriteCount}
+              style={styles.favoritesFilter}
+            />
             {filteredExercises.map(exercise => {
               const isSelected = selectedExercises.includes(exercise.id);
               return (
@@ -365,7 +378,10 @@ export function CreateTemplateScreen() {
                   onPress={() => toggleExercise(exercise.id)}
                 >
                   <View style={styles.exerciseInfo}>
-                    <Text style={styles.exerciseName}>{exercise.name}</Text>
+                    <View style={styles.exerciseNameRow}>
+                      <Text style={styles.exerciseName}>{exercise.name}</Text>
+                      {exercise.isFavorite && <FavoriteStar isFavorite size={13} />}
+                    </View>
                     <Text style={styles.exerciseMuscle}>
                       {exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
                         ? exercise.primaryMuscleGroups.map(m => MUSCLE_GROUP_DISPLAY_NAMES[m]).join(', ')
@@ -532,6 +548,14 @@ const styles = StyleSheet.create({
   },
   exerciseInfo: {
     flex: 1,
+  },
+  exerciseNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  favoritesFilter: {
+    paddingHorizontal: 0,
+    marginBottom: spacing.sm,
   },
   exerciseName: {
     fontSize: typography.size.md,

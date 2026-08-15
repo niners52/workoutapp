@@ -14,7 +14,9 @@ import {
   UserSettings,
   PrimaryMuscleGroup,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  TRAVEL_LOCATION_ID,
 } from '../types';
+import { buildLocationResolver } from './locationMatch';
 import { MuscleGroupShortfall } from './analytics';
 import { analyzeFatigue } from './fatigueDetection';
 
@@ -732,14 +734,16 @@ function generatePositiveInsights(
       // different weight scales, so cross-gym comparisons are meaningless.
       // Travel sessions never participate. Focus location = the exercise's
       // most recent non-travel session.
-      const locationByWorkoutId = new Map(workouts.map(w => [w.id, w.locationId]));
+      // Canonical matching (locationMatch.ts) so id casing drift can't split one
+      // gym's history into two incomparable buckets.
+      const resolver = buildLocationResolver(workouts);
       const exSets = workingSets
         .filter(s => s.exerciseId === exId)
-        .filter(s => locationByWorkoutId.get(s.workoutId) !== 'travel')
+        .filter(s => resolver.forWorkout(s.workoutId) !== TRAVEL_LOCATION_ID)
         .sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
-      const focusLocation = exSets[0] ? locationByWorkoutId.get(exSets[0].workoutId) : undefined;
+      const focusLocation = exSets[0] ? resolver.forWorkout(exSets[0].workoutId) : undefined;
       const sameLocationSets = exSets.filter(
-        s => locationByWorkoutId.get(s.workoutId) === focusLocation
+        s => resolver.forWorkout(s.workoutId) === focusLocation
       );
       const recent = sameLocationSets.filter(s => {
         const d = workoutDateById.get(s.workoutId)!;

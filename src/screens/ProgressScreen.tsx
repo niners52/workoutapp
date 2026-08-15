@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { consumeProgressTab } from '../services/calendarFocus';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { CalendarScreen } from './CalendarScreen';
 import { AnalyticsScreen } from './AnalyticsScreen';
@@ -23,6 +25,15 @@ const TABS: { key: ProgressTab; label: string }[] = [
 
 export function ProgressScreen() {
   const [activeTab, setActiveTab] = useState<ProgressTab>('calendar');
+
+  // Another screen may have asked us to open on a specific segment
+  // (e.g. Home's Weekly Sets card → Analytics)
+  useFocusEffect(
+    useCallback(() => {
+      const pending = consumeProgressTab();
+      if (pending) setActiveTab(pending);
+    }, [])
+  );
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>

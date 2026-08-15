@@ -22,6 +22,7 @@ import {
   SupplementIntake,
   Routine,
 } from '../types';
+import { upsertTolerant } from './schemaTolerance';
 
 const MIGRATION_KEY = 'supabase_migration_complete';
 
@@ -161,11 +162,10 @@ export async function migrateLocalDataToSupabase(): Promise<{
           machine_weight_type: ex.machineWeightType || null,
           location_ids: ex.locationIds || [],
           is_custom: ex.isCustom ?? true,
+          is_favorite: ex.isFavorite ?? false,
         }));
 
-        const { error } = await supabase
-          .from('exercises')
-          .upsert(exerciseRows, { onConflict: 'id' });
+        const { error } = await upsertTolerant('exercises', exerciseRows, ['is_favorite']);
 
         if (error) {
           console.error('Exercise migration error:', error);
@@ -257,11 +257,17 @@ export async function migrateLocalDataToSupabase(): Promise<{
           template_id: w.templateId || null,
           started_at: w.startedAt,
           completed_at: w.completedAt || null,
+          skipped_exercise_ids: w.skippedExerciseIds || [],
+          // Per-gym history depends on these surviving the upload.
+          location_id: w.locationId || null,
+          is_deload: w.isDeload ?? false,
         }));
 
-        const { error } = await supabase
-          .from('workouts')
-          .upsert(workoutRows, { onConflict: 'id' });
+        const { error } = await upsertTolerant('workouts', workoutRows, [
+          'skipped_exercise_ids',
+          'location_id',
+          'is_deload',
+        ]);
 
         if (error) {
           console.error('Workout migration error:', error);

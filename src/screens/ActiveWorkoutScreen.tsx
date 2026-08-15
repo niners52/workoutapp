@@ -20,10 +20,12 @@ import { format, startOfWeek } from 'date-fns';
 import { matchesAllWords } from '../utils/search';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { Button, Card, NumberInput, SearchBar } from '../components/common';
+import { Button, Card, NumberInput, SearchBar, FavoriteStar, FavoritesFilter } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
+import { LocationMatch } from '../services/locationMatch';
+import { countFavorites } from '../services/favorites';
 import { WorkoutSet, Exercise, Equipment, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem, TRAVEL_LOCATION_ID, TRAVEL_LOCATION } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
@@ -54,10 +56,12 @@ interface ExerciseHistory {
   exerciseId: string;
   sets: WorkoutSet[];
   date: string | null;
-  // Location the history came from + whether it matches the current workout's location.
-  // Drives the "Last at <gym>" vs "First time at this gym — last at <gym>" labels.
+  // Location the history came from + how it relates to the current workout's location.
+  // Drives the "Last at <gym>" vs "First time here — last at <gym>" labels.
+  // 'unknown' means some past sessions predate location tracking, so we show a
+  // neutral "Last time" rather than wrongly claiming this is a first visit.
   fromLocationId?: string;
-  isSameLocation?: boolean;
+  locationMatch?: LocationMatch;
 }
 
 export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
@@ -91,6 +95,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [swapModalVisible, setSwapModalVisible] = useState(false);
   const [exerciseToSwap, setExerciseToSwap] = useState<Exercise | null>(null);
   const [swapSearchQuery, setSwapSearchQuery] = useState('');
+  const [swapFavoritesOnly, setSwapFavoritesOnly] = useState(false);
   const [showAllExercises, setShowAllExercises] = useState(false);
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestStep, setSuggestStep] = useState<'location' | 'exercises'>('location');
@@ -120,6 +125,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   // Get units from settings
   const units = userSettings?.units || 'imperial';
 
+  const favoriteCount = useMemo(() => countFavorites(exercises), [exercises]);
+
   // Load history for all exercises when workout starts
   useEffect(() => {
     const loadHistories = async () => {
@@ -144,7 +151,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           sets: lastWorkout?.sets || [],
           date: lastWorkout?.date || null,
           fromLocationId: lastWorkout?.fromLocationId,
-          isSameLocation: lastWorkout?.isSameLocation ?? true,
+          locationMatch: lastWorkout?.locationMatch ?? 'same',
         };
       }
       setExerciseHistories(histories);
@@ -521,6 +528,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const handleOpenSwapModal = (exercise: Exercise) => {
     setExerciseToSwap(exercise);
     setSwapSearchQuery('');
+    setSwapFavoritesOnly(false);
     setShowAllExercises(false);
     setSwapModalVisible(true);
   };
@@ -688,7 +696,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         sets: lastWorkout?.sets || [],
         date: lastWorkout?.date || null,
         fromLocationId: lastWorkout?.fromLocationId,
-        isSameLocation: lastWorkout?.isSameLocation ?? true,
+        locationMatch: lastWorkout?.locationMatch ?? 'same',
       },
     }));
 
@@ -1195,6 +1203,12 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                 />
               </View>
 
+              <FavoritesFilter
+                showFavoritesOnly={swapFavoritesOnly}
+                onChange={setSwapFavoritesOnly}
+                favoriteCount={favoriteCount}
+              />
+
               <ScrollView
                 style={styles.swapList}
                 keyboardShouldPersistTaps="handled"
@@ -1203,25 +1217,48 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                 {exerciseToSwap && (() => {
                   const sections = getSwapSections(exerciseToSwap);
 
-                  // When searching, flatten all sections and filter by name.
-                  // All query words must appear anywhere in the name, any order.
-                  if (swapSearchQuery) {
-                    const allExercises = sections.flatMap(s => s.exercises);
-                    const filtered = allExercises.filter(e =>
-                      matchesAllWords(e.name, swapSearchQuery)
-                    );
-                    return filtered.map(exercise => (
-                      <TouchableOpacity
-                        key={exercise.id}
-                        style={styles.swapOption}
-                        onPress={() => handleSwapExercise(exercise)}
-                      >
+                  const renderSwapOption = (exercise: Exercise) => (
+                    <TouchableOpacity
+                      key={exercise.id}
+                      style={styles.swapOption}
+                      onPress={() => handleSwapExercise(exercise)}
+                    >
+                      <View style={styles.swapOptionNameRow}>
                         <Text style={styles.swapOptionName}>{exercise.name}</Text>
-                        <Text style={styles.swapOptionEquipment}>
-                          {EQUIPMENT_DISPLAY_NAMES[exercise.equipment] || exercise.equipment}
+                        {exercise.isFavorite && <FavoriteStar isFavorite size={13} />}
+                      </View>
+                      <Text style={styles.swapOptionEquipment}>
+                        {EQUIPMENT_DISPLAY_NAMES[exercise.equipment] || exercise.equipment}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+
+                  // Favorites filter and search both collapse the smart sections into
+                  // one flat list — the section headings ("Same muscle", "Same
+                  // equipment") describe a ranking that a filtered subset no longer has.
+                  if (swapFavoritesOnly || swapSearchQuery) {
+                    const seen = new Set<string>();
+                    const flattened = sections
+                      .flatMap(s => s.exercises)
+                      .filter(e => {
+                        if (seen.has(e.id)) return false;
+                        seen.add(e.id);
+                        return true;
+                      });
+                    const filtered = flattened
+                      .filter(e => !swapFavoritesOnly || e.isFavorite)
+                      .filter(e => !swapSearchQuery || matchesAllWords(e.name, swapSearchQuery));
+
+                    if (filtered.length === 0) {
+                      return (
+                        <Text style={styles.swapEmptyText}>
+                          {swapFavoritesOnly
+                            ? 'No favorites match this swap.'
+                            : 'No exercises match your search.'}
                         </Text>
-                      </TouchableOpacity>
-                    ));
+                      );
+                    }
+                    return filtered.map(renderSwapOption);
                   }
 
                   // Sectioned view
@@ -1238,18 +1275,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                           </Text>
                         </TouchableOpacity>
                       ) : (
-                        section.exercises.map(exercise => (
-                          <TouchableOpacity
-                            key={exercise.id}
-                            style={styles.swapOption}
-                            onPress={() => handleSwapExercise(exercise)}
-                          >
-                            <Text style={styles.swapOptionName}>{exercise.name}</Text>
-                            <Text style={styles.swapOptionEquipment}>
-                              {EQUIPMENT_DISPLAY_NAMES[exercise.equipment] || exercise.equipment}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
+                        section.exercises.map(renderSwapOption)
                       )}
                     </View>
                   ));
@@ -1587,8 +1613,12 @@ function PreviousSetIndicator({ currentSets, history, units, isOnDeload, deloadP
     if (atTravelGym && fromLocationName) {
       // Traveling: show the regular gym's numbers as a neutral reference
       lastLabel = `At ${fromLocationName}${datePart}:`;
-    } else if (history?.isSameLocation === false && fromLocationName) {
+    } else if (history?.locationMatch === 'different' && fromLocationName) {
       lastLabel = `First time here — last at ${fromLocationName}${datePart}:`;
+    } else if (history?.locationMatch === 'unknown') {
+      // Some past sessions have no gym recorded, so we can't rule out that this
+      // exercise was done here before. Stay neutral instead of claiming a first visit.
+      lastLabel = `Last time${datePart}:`;
     } else if (fromLocationName) {
       lastLabel = `Last at ${fromLocationName}${datePart}:`;
     } else {
@@ -2454,16 +2484,27 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
   },
+  swapOptionNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   swapOptionName: {
     fontSize: typography.size.md,
     color: colors.text,
     fontWeight: typography.weight.medium,
-    flex: 1,
+    flexShrink: 1,
   },
   swapOptionEquipment: {
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginLeft: spacing.sm,
+  },
+  swapEmptyText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: spacing.lg,
   },
   cancelSwapButton: {
     marginTop: spacing.md,

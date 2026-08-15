@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
-import { SearchBar, Button } from '../components/common';
+import { SearchBar, Button, FavoriteStar, FavoritesFilter } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
 import { useData } from '../contexts/DataContext';
 import {
@@ -33,6 +33,7 @@ import { RootStackParamList } from '../navigation/types';
 import { getExercisePRSummaries, ExercisePRs } from '../services/personalRecords';
 import { getSets } from '../services/storage';
 import { matchesAllWords } from '../utils/search';
+import { countFavorites } from '../services/favorites';
 import { useKeyboardHeight } from '../utils/useKeyboardHeight';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -44,13 +45,16 @@ interface ExerciseSection {
 
 export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, workouts, deleteExercise, sets } = useData();
+  const { exercises, workouts, deleteExercise, sets, toggleExerciseFavorite } = useData();
   const workoutBarPadding = useWorkoutBarPadding();
   const keyboardHeight = useKeyboardHeight();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<PrimaryMuscleGroup | null>(null);
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [prSummaries, setPrSummaries] = useState<Map<string, ExercisePRs>>(new Map());
+
+  const favoriteCount = useMemo(() => countFavorites(exercises), [exercises]);
 
   // Build workoutDates map for PR calculation
   const workoutDates = useMemo(() => {
@@ -139,6 +143,12 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   const filteredExercises = useMemo(() => {
     let result = exercises;
 
+    // Favorites filter — the user's must-do list, narrowed further by the
+    // muscle/equipment/search filters below
+    if (showFavoritesOnly) {
+      result = result.filter(e => e.isFavorite);
+    }
+
     // Filter by selected muscle group
     if (selectedMuscle) {
       result = result.filter(e => {
@@ -165,7 +175,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
     }
 
     return result;
-  }, [exercises, searchQuery, selectedMuscle, selectedEquipment]);
+  }, [exercises, searchQuery, selectedMuscle, selectedEquipment, showFavoritesOnly]);
 
   // Group by first primary muscle group — or a single flat list when sorting
   // by last-performed (cleanup mode).
@@ -220,6 +230,14 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
       [
         { text: 'Cancel', style: 'cancel' },
         {
+          text: exercise.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+          onPress: () => {
+            toggleExerciseFavorite(exercise.id).catch(e =>
+              console.log('Favorite toggle failed:', e)
+            );
+          },
+        },
+        {
           text: 'Delete Exercise',
           style: 'destructive',
           onPress: () => {
@@ -242,7 +260,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         },
       ]
     );
-  }, [deleteExercise]);
+  }, [deleteExercise, toggleExerciseFavorite]);
 
   // Fixed heights for getItemLayout
   const ITEM_HEIGHT = 62; // exerciseItem height
@@ -269,6 +287,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         <View style={styles.exerciseInfo}>
           <View style={styles.exerciseNameRow}>
             <Text style={styles.exerciseName}>{exercise.name}</Text>
+            {exercise.isFavorite && <FavoriteStar isFavorite size={13} />}
             {hasPR && (
               <Text style={styles.prBadge}>PR</Text>
             )}
@@ -318,6 +337,14 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
           placeholder="Search exercises..."
         />
       </View>
+
+      {/* Favorites Filter — sits above the other filters so the must-do list is
+          the first cut, then muscle/equipment narrow within it */}
+      <FavoritesFilter
+        showFavoritesOnly={showFavoritesOnly}
+        onChange={setShowFavoritesOnly}
+        favoriteCount={favoriteCount}
+      />
 
       {/* Muscle Group Filter */}
       <ScrollView

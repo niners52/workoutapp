@@ -12,6 +12,7 @@ import {
   Routine,
   BodyMeasurement,
 } from '../types';
+import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
 
 // Storage keys for sync state
 const SYNC_KEYS = {
@@ -45,6 +46,7 @@ async function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
 
 // Max retries before an operation is dropped
 const MAX_RETRIES = 10;
+
 
 // Helper to get a dedup key for an operation
 function getOpKey(op: { table: string; operation: string; data: any }): string {
@@ -110,15 +112,16 @@ export async function syncExercise(exercise: Exercise): Promise<void> {
       machine_weight_type: exercise.machineWeightType || null,
       location_ids: exercise.locationIds || [],
       is_custom: exercise.isCustom ?? true,
+      is_favorite: exercise.isFavorite ?? false,
     };
 
-    const { error } = await supabase
-      .from('exercises')
-      .upsert(row, { onConflict: 'id' });
+    const { error, rows: syncedRow } = await upsertTolerant('exercises', row, [
+      'is_favorite',
+    ]);
 
     if (error) {
       console.log('Exercise sync failed, queuing:', error.message);
-      await addToPendingQueue({ table: 'exercises', operation: 'upsert', data: row });
+      await addToPendingQueue({ table: 'exercises', operation: 'upsert', data: syncedRow });
     } else {
       await updateLastSyncTimestamp();
     }
@@ -216,15 +219,21 @@ export async function syncWorkout(workout: Workout): Promise<void> {
       started_at: workout.startedAt,
       completed_at: workout.completedAt || null,
       skipped_exercise_ids: workout.skippedExerciseIds || [],
+      // Which gym this happened at. Previously local-only, which meant any device
+      // that restored from the cloud lost every workout's gym and then reported
+      // "first time here" for exercises the user does weekly.
+      location_id: workout.locationId || null,
+      is_deload: workout.isDeload ?? false,
     };
 
-    const { error } = await supabase
-      .from('workouts')
-      .upsert(row, { onConflict: 'id' });
+    const { error, rows: syncedRow } = await upsertTolerant('workouts', row, [
+      'location_id',
+      'is_deload',
+    ]);
 
     if (error) {
       console.log('Workout sync failed, queuing:', error.message);
-      await addToPendingQueue({ table: 'workouts', operation: 'upsert', data: row });
+      await addToPendingQueue({ table: 'workouts', operation: 'upsert', data: syncedRow });
     } else {
       await updateLastSyncTimestamp();
     }
@@ -724,9 +733,15 @@ export async function processPendingSync(
       for (const batch of batches) {
         try {
           const rows = batch.map(op => op.data);
-          const { error } = await supabase
-            .from(table)
-            .upsert(rows, { onConflict: conflictKey });
+          // Tolerant so a queued row containing a post-launch column (e.g. a
+          // workout's location_id) still lands on a database without it,
+          // instead of retrying forever until MAX_RETRIES drops the workout.
+          const { error } = await upsertTolerant(
+            table,
+            rows,
+            OPTIONAL_COLUMNS_BY_TABLE[table] || [],
+            conflictKey,
+          );
 
           if (error) {
             console.log(`[Sync] Batch upsert failed for ${table} (${batch.length} rows):`, error.message);
@@ -947,6 +962,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       machineWeightType: row.machine_weight_type,
       locationIds: row.location_ids || [],
       isCustom: row.is_custom ?? true,
+      isFavorite: row.is_favorite ?? false,
     }));
 
     const templates: Template[] = (templatesResult.data || []).map(row => ({
@@ -963,6 +979,10 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       startedAt: row.started_at,
       completedAt: row.completed_at,
       ...(row.skipped_exercise_ids?.length ? { skippedExerciseIds: row.skipped_exercise_ids } : {}),
+      // Keep the gym and deload flag on restore — dropping them here is what made
+      // restored devices treat every exercise as never-done-at-this-location.
+      ...(row.location_id ? { locationId: row.location_id } : {}),
+      ...(row.is_deload ? { isDeload: true } : {}),
     }));
 
     const sets: WorkoutSet[] = (setsResult.data || []).map(row => ({

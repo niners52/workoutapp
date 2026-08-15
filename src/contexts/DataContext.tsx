@@ -63,6 +63,7 @@ import {
 import {
   addExercise as addExerciseToStorage,
   updateExercise as updateExerciseInStorage,
+  toggleExerciseFavorite as toggleFavoriteInStorage,
   deleteExercise as deleteExerciseFromStorage,
   mergeExercise as mergeExerciseInStorage,
   addTemplate as addTemplateToStorage,
@@ -119,6 +120,7 @@ interface DataContextType {
   // Exercise CRUD
   addExercise: (exercise: Exercise) => Promise<void>;
   updateExercise: (exercise: Exercise) => Promise<void>;
+  toggleExerciseFavorite: (id: string) => Promise<void>;
   deleteExercise: (id: string) => Promise<void>;
   mergeExercise: (sourceId: string, keeperId: string) => Promise<void>;
 
@@ -464,6 +466,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     syncExercise(exercise).catch(e => console.log('Sync error:', e));
   }, [refreshExercises]);
 
+  const toggleExerciseFavorite = useCallback(async (id: string) => {
+    const updated = await toggleFavoriteInStorage(id);
+    if (!updated) return;
+    await refreshExercises();
+    // Fire-and-forget sync so the star follows the user to their other devices
+    syncExercise(updated).catch(e => console.log('Sync error:', e));
+  }, [refreshExercises]);
+
   const deleteExercise = useCallback(async (id: string) => {
     await deleteExerciseFromStorage(id);
     await refreshExercises();
@@ -791,6 +801,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     refreshAll,
     addExercise,
     updateExercise,
+    toggleExerciseFavorite,
     deleteExercise,
     mergeExercise,
     addTemplate,
