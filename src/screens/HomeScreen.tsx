@@ -125,6 +125,9 @@ export function HomeScreen() {
     completed: number;
     required: number;
     remaining: { mg: string; name: string; left: number }[];
+    // Gap to each muscle's ideal ceiling — the "where would more sets go
+    // best" list that takes over once every minimum is met.
+    idealRoom: { mg: string; name: string; room: number }[];
   } | null>(null);
   const [coachSuggestions, setCoachSuggestions] = useState<CoachSuggestion[]>([]);
 
@@ -366,10 +369,20 @@ export function HomeScreen() {
           }))
           .filter(x => x.left > 0)
           .sort((a, b) => b.left - a.left);
+        const idealRoom = targeted
+          .filter(mg => mg.targetMax != null)
+          .map(mg => ({
+            mg: mg.muscleGroup as string,
+            name: (MUSCLE_GROUP_DISPLAY_NAMES as Record<string, string>)[mg.muscleGroup] ?? mg.muscleGroup,
+            room: Math.max(0, Math.round((mg.targetMax! - mg.sets) * 10) / 10),
+          }))
+          .filter(x => x.room > 0)
+          .sort((a, b) => b.room - a.room);
         setWeeklySetsSummary({
           completed: Math.round(completed * 10) / 10,
           required,
           remaining,
+          idealRoom,
         });
       } catch (e) {
         console.error('[HomeScreen] Weekly sets summary error:', e);
@@ -757,6 +770,19 @@ export function HomeScreen() {
                       <View key={item.mg} style={styles.weeklySetsRemainingRow}>
                         <Text style={styles.weeklySetsRemainingName}>{item.name}</Text>
                         <Text style={styles.weeklySetsRemainingCount}>{item.left} left</Text>
+                      </View>
+                    ))}
+                  </>
+                ) : weeklySetsSummary.idealRoom.length > 0 ? (
+                  <>
+                    <Text style={styles.weeklySetsDone}>All minimums hit 🎉</Text>
+                    <Text style={styles.weeklySetsRemainingTitle}>
+                      Room to ideal max:
+                    </Text>
+                    {weeklySetsSummary.idealRoom.map(item => (
+                      <View key={item.mg} style={styles.weeklySetsRemainingRow}>
+                        <Text style={styles.weeklySetsRemainingName}>{item.name}</Text>
+                        <Text style={styles.weeklySetsIdealCount}>+{item.room} ideal</Text>
                       </View>
                     ))}
                   </>
@@ -1468,6 +1494,12 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.success,
     marginTop: spacing.md,
+  },
+  weeklySetsIdealCount: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+    fontVariant: ['tabular-nums'],
   },
   swapRow: {
     flexDirection: 'row',
