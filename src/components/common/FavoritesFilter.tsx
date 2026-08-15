@@ -8,6 +8,12 @@ interface FavoritesFilterProps {
   onChange: (showFavoritesOnly: boolean) => void;
   /** Number of favorites available in the current list; hides the control at 0. */
   favoriteCount: number;
+  /**
+   * Keep the control visible at 0 favorites. Used on the library screen, where
+   * rows have tappable stars — the filter doubles as a running count while
+   * mass-favoriting, so hiding it there would be confusing rather than tidy.
+   */
+  showWhenEmpty?: boolean;
   style?: ViewStyle;
 }
 
@@ -22,9 +28,10 @@ export function FavoritesFilter({
   showFavoritesOnly,
   onChange,
   favoriteCount,
+  showWhenEmpty = false,
   style,
 }: FavoritesFilterProps) {
-  if (favoriteCount === 0) return null;
+  if (favoriteCount === 0 && !showWhenEmpty) return null;
 
   return (
     <View style={[styles.container, style]}>

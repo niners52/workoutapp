@@ -287,7 +287,6 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         <View style={styles.exerciseInfo}>
           <View style={styles.exerciseNameRow}>
             <Text style={styles.exerciseName}>{exercise.name}</Text>
-            {exercise.isFavorite && <FavoriteStar isFavorite size={13} />}
             {hasPR && (
               <Text style={styles.prBadge}>PR</Text>
             )}
@@ -307,10 +306,22 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         {exercise.isCustom && (
           <Text style={styles.customBadge}>Custom</Text>
         )}
+        {/* Right-aligned tap target on every row so favorites can be assigned
+            in one pass down the list, not one long-press menu at a time */}
+        <FavoriteStar
+          isFavorite={!!exercise.isFavorite}
+          onToggle={() =>
+            toggleExerciseFavorite(exercise.id).catch(e =>
+              console.log('Favorite toggle failed:', e)
+            )
+          }
+          exerciseName={exercise.name}
+          style={styles.rowStar}
+        />
         <Text style={styles.chevron}>›</Text>
       </TouchableOpacity>
     );
-  }, [handleExercisePress, handleLongPress, prSummaries, exerciseSetCounts, duplicateNames, lastPerformed]);
+  }, [handleExercisePress, handleLongPress, prSummaries, exerciseSetCounts, duplicateNames, lastPerformed, toggleExerciseFavorite]);
 
   const renderSectionHeader = useCallback(({ section }: { section: ExerciseSection }) => (
     <View style={styles.sectionHeader}>
@@ -344,6 +355,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
         showFavoritesOnly={showFavoritesOnly}
         onChange={setShowFavoritesOnly}
         favoriteCount={favoriteCount}
+        showWhenEmpty
       />
 
       {/* Muscle Group Filter */}
@@ -580,6 +592,9 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginTop: 2,
     fontStyle: 'italic',
+  },
+  rowStar: {
+    marginRight: spacing.xs,
   },
   customBadge: {
     fontSize: typography.size.xs,
