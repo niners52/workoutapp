@@ -13,7 +13,7 @@ interface MuscleMapProps {
 }
 
 const VB_W = 200;
-const VB_H = 500;
+const VB_H = 460;
 
 const BODY_FILL = '#16304F';
 const BODY_STROKE = '#3D5A80';
@@ -24,7 +24,7 @@ const ELITE_RING = '#FFF6D6';
 export function MuscleMapFront({ muscleColors, onMusclePress, width, height }: MuscleMapProps) {
   return (
     <Svg width={width} height={height} viewBox={`0 0 ${VB_W} ${VB_H}`}>
-      <Ellipse cx="100" cy="29" rx="16" ry="21" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1" />
+      <Ellipse cx="100" cy="27.5" rx="19.5" ry="21.5" fill={BODY_FILL} stroke={BODY_STROKE} strokeWidth="1" />
       <Path
         d={BODY_SILHOUETTE}
         fill={BODY_FILL}

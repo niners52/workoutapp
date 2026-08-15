@@ -31,7 +31,7 @@ type ViewMode = 'front' | 'back';
 type Snapshot = 'now' | 'start';
 
 const MAP_WIDTH = Dimensions.get('window').width - spacing.base * 6;
-const MAP_HEIGHT = MAP_WIDTH * 2.2; // Maintain ~200:440 aspect ratio
+const MAP_HEIGHT = MAP_WIDTH * 2.3; // Maintain 200:460 viewBox aspect ratio
 
 const LEGEND_LEVELS: StrengthLevel[] = ['beginner', 'novice', 'intermediate', 'advanced', 'elite'];
 
