@@ -45,6 +45,7 @@ const healthKitPermissions = {
       'Carbohydrates',
       'FatTotal',
       'EnergyConsumed',
+      'Sodium',
       'Weight',
       'BodyFatPercentage',
       'Height',
@@ -396,12 +397,15 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     });
   };
 
-  // Fetch all nutrition data in parallel using specific getter methods
-  const [protein, carbs, fat, calories] = await Promise.all([
+  // Fetch all nutrition data in parallel using specific getter methods.
+  // getSodiumSamples only exists in builds with the patched library —
+  // fetchNutritionSample resolves 0 when the method is missing.
+  const [protein, carbs, fat, calories, sodium] = await Promise.all([
     fetchNutritionSample('getProteinSamples'),
     fetchNutritionSample('getCarbohydratesSamples'),
     fetchNutritionSample('getTotalFatSamples'),
     fetchNutritionSample('getEnergyConsumedSamples'),
+    fetchNutritionSample('getSodiumSamples'),
   ]);
 
   // Only return data if we have at least some nutrition logged
@@ -415,6 +419,7 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     protein,
     carbs,
     fat,
+    sodium: sodium > 0 ? sodium : undefined,
   };
 }
 
@@ -472,6 +477,58 @@ export async function getTodayCalories(): Promise<number | null> {
     } catch (e) {
       clearTimeout(timeoutId);
       console.log('getTodayCalories exception:', e);
+      resolve(null);
+    }
+  });
+}
+
+// Get today's total sodium in mg (requires the patched-library build; resolves
+// null where getSodiumSamples doesn't exist)
+export async function getTodaySodium(): Promise<number | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit) {
+    return null;
+  }
+
+  const initialized = await initializeHealthKit();
+  if (!initialized) {
+    return null;
+  }
+
+  const options = {
+    startDate: startOfDay(new Date()).toISOString(),
+    endDate: new Date().toISOString(),
+  };
+
+  return new Promise((resolve) => {
+    if (typeof AppleHealthKit.getSodiumSamples !== 'function') {
+      console.log('getSodiumSamples not available');
+      resolve(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      console.log('getTodaySodium timed out');
+      resolve(null);
+    }, 5000);
+
+    try {
+      AppleHealthKit.getSodiumSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error fetching today sodium:', err);
+          resolve(null);
+          return;
+        }
+        if (!results || results.length === 0) {
+          resolve(0);
+          return;
+        }
+        const total = results.reduce((sum: number, sample: any) => sum + (Number(sample.value) || 0), 0);
+        resolve(Math.round(total));
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getTodaySodium exception:', e);
       resolve(null);
     }
   });
@@ -647,13 +704,14 @@ export async function getWeeklyNutritionAverage(weekEndDate: Date): Promise<{
   avgProtein: number;
   avgCarbs: number;
   avgFat: number;
+  avgSodium: number; // mg; 0 when no sodium data (unpatched build or none logged)
   days: number;
 }> {
   const startDate = subDays(weekEndDate, 6);
   const data = await getNutritionDataRange(startDate, weekEndDate);
 
   if (data.length === 0) {
-    return { avgCalories: 0, avgProtein: 0, avgCarbs: 0, avgFat: 0, days: 0 };
+    return { avgCalories: 0, avgProtein: 0, avgCarbs: 0, avgFat: 0, avgSodium: 0, days: 0 };
   }
 
   const totals = data.reduce(
@@ -662,8 +720,10 @@ export async function getWeeklyNutritionAverage(weekEndDate: Date): Promise<{
       protein: acc.protein + day.protein,
       carbs: acc.carbs + day.carbs,
       fat: acc.fat + day.fat,
+      sodium: acc.sodium + (day.sodium || 0),
+      sodiumDays: acc.sodiumDays + (day.sodium ? 1 : 0),
     }),
-    { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    { calories: 0, protein: 0, carbs: 0, fat: 0, sodium: 0, sodiumDays: 0 }
   );
 
   return {
@@ -671,6 +731,9 @@ export async function getWeeklyNutritionAverage(weekEndDate: Date): Promise<{
     avgProtein: Math.round(totals.protein / data.length),
     avgCarbs: Math.round(totals.carbs / data.length),
     avgFat: Math.round(totals.fat / data.length),
+    // Average over days that actually have sodium, so early days without the
+    // patched build don't drag the number down
+    avgSodium: totals.sodiumDays > 0 ? Math.round(totals.sodium / totals.sodiumDays) : 0,
     days: data.length,
   };
 }

@@ -1364,7 +1364,7 @@ export function SettingsScreen() {
                 />
               </View>
               {userSettings.nutritionMode === 'recomp' && (
-                <View style={[styles.settingRow, styles.settingRowLast]}>
+                <View style={styles.settingRow}>
                   <Text style={styles.settingLabel}>Tolerance %</Text>
                   <NumberInput
                     value={userSettings.calorieTolerancePercent || 10}
@@ -1375,9 +1375,16 @@ export function SettingsScreen() {
                   />
                 </View>
               )}
-              {userSettings.nutritionMode !== 'recomp' && (
-                <View style={styles.settingRowLast} />
-              )}
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <Text style={styles.settingLabel}>Sodium Limit (mg)</Text>
+                <NumberInput
+                  value={userSettings.sodiumLimitMg || 2300}
+                  onChangeValue={(value) => updateUserSettings({ sodiumLimitMg: value })}
+                  min={500}
+                  max={6000}
+                  step={100}
+                />
+              </View>
             </Card>
           )}
           <Text style={styles.hint}>

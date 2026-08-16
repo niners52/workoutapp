@@ -450,6 +450,7 @@ export interface UserSettings {
   nutritionMode: NutritionMode;
   calorieGoal: number | null;
   calorieTolerancePercent: number;
+  sodiumLimitMg?: number; // daily sodium ceiling in mg (default 2300)
   // Progress photos privacy
   progressPhotosLocked?: boolean;
   // Coach suggestions
@@ -520,6 +521,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   nutritionMode: 'recomp',
   calorieGoal: null,
   calorieTolerancePercent: 10,
+  sodiumLimitMg: 2300,
   deloadPercentage: 50,
   milestoneCelebrationsEnabled: true,
   sleepFallbackReminderEnabled: true,
@@ -533,6 +535,9 @@ export interface NutritionData {
   protein: number; // grams
   carbs: number; // grams
   fat: number; // grams
+  // Optional: requires the patched HealthKit build (getSodiumSamples) —
+  // undefined on builds that can't read it, so displays should hide, not show 0.
+  sodium?: number; // milligrams
 }
 
 export interface SleepStages {

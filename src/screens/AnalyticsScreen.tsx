@@ -32,6 +32,7 @@ import {
 import {
   getWeeklySleepAverage,
   getWeeklyNutritionAverage,
+  getTodaySodium,
   getAllBodyMeasurements,
   getWeightHistory,
   getBodyFatHistory,
@@ -100,8 +101,10 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
     avgProtein: number;
     avgCarbs: number;
     avgFat: number;
+    avgSodium: number;
     days: number;
   } | null>(null);
+  const [todaySodium, setTodaySodium] = useState<number | null>(null);
 
   // Body measurements state
   const [healthKitBodyData, setHealthKitBodyData] = useState<BodyMeasurementData | null>(null);
@@ -208,6 +211,7 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
       let calories: number | null = null;
       if (Platform.OS === 'ios') {
         calories = await getTodayCalories();
+        setTodaySodium(await getTodaySodium());
       }
       // Fall back to manual entry if HealthKit returns nothing
       if (calories === null || calories === 0) {
@@ -801,6 +805,36 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
               )}
             </View>
           )}
+
+          {/* Sodium — today + weekly average vs the daily ceiling */}
+          {(todaySodium !== null || (nutritionData && nutritionData.avgSodium > 0)) && (() => {
+            const limit = userSettings.sodiumLimitMg || 2300;
+            const over = todaySodium !== null && todaySodium > limit;
+            return (
+              <View style={styles.nutritionRow}>
+                {todaySodium !== null && (
+                  <View style={styles.nutritionItem}>
+                    <Text style={styles.nutritionLabel}>Sodium Today</Text>
+                    <Text style={[styles.nutritionValue, over && styles.sodiumOver]}>
+                      {todaySodium.toLocaleString()}mg
+                    </Text>
+                    <Text style={styles.nutritionSubtext}>
+                      {Math.round((todaySodium / limit) * 100)}% of {limit.toLocaleString()}mg limit
+                    </Text>
+                  </View>
+                )}
+                {nutritionData && nutritionData.avgSodium > 0 && (
+                  <View style={styles.nutritionItem}>
+                    <Text style={styles.nutritionLabel}>Avg Sodium</Text>
+                    <Text style={[styles.nutritionValue, nutritionData.avgSodium > limit && styles.sodiumOver]}>
+                      {nutritionData.avgSodium.toLocaleString()}mg
+                    </Text>
+                    <Text style={styles.nutritionSubtext}>7-day average</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
         </View>
 
         {/* Body Measurements */}
@@ -1377,6 +1411,14 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.semibold,
     color: colors.text,
     marginTop: 2,
+  },
+  nutritionSubtext: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: 2,
+  },
+  sodiumOver: {
+    color: colors.error,
   },
   emptyText: {
     fontSize: typography.size.base,
