@@ -53,6 +53,7 @@ import {
   setLastAppOpened,
   getWeeklySummaryDismissed,
   setWeeklySummaryDismissed,
+  getExerciseSwaps,
   getManualSleepEntry,
   saveManualSleepEntry,
   getSleepFallbackDismissed,
@@ -73,6 +74,7 @@ import { todaysModality, markRecoveryComplete } from '../services/modalityAction
 import { requestCalendarFocus, requestProgressTab } from '../services/calendarFocus';
 import { getWorkouts as getWorkoutsFromStorage } from '../services/storage';
 import { getFavoritesNotHitThisWeek } from '../services/favorites';
+import { getMissedExercisesThisWeek, MissedExercise } from '../services/missedExercises';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -130,6 +132,9 @@ export function HomeScreen() {
     idealRoom: { mg: string; name: string; room: number }[];
   } | null>(null);
   const [coachSuggestions, setCoachSuggestions] = useState<CoachSuggestion[]>([]);
+  // Catch-up list: exercises planned in a completed workout this week that never
+  // got done (skipped or swapped out) and haven't been made up since.
+  const [missedExercises, setMissedExercises] = useState<MissedExercise[]>([]);
 
   // Challenge widget state
   const { user } = useAuth();
@@ -320,6 +325,7 @@ export function HomeScreen() {
         freshExercises,
         freshPTRoutines,
         freshPTCompletions,
+        freshSwaps,
       ] = await Promise.all([
         getWorkouts(),
         getSets(),
@@ -331,11 +337,23 @@ export function HomeScreen() {
         getExercises(),
         getPTRoutines(),
         getPTCompletions(),
+        getExerciseSwaps(),
       ]);
 
       const activeSupps = freshSupplements.filter(s => s.isActive);
       const activePT = freshPTRoutines.filter(r => r.isActive);
       const currentRoutine = freshRoutines.find(r => r.isActive);
+
+      // Catch-up list (pure computation, fast)
+      setMissedExercises(
+        getMissedExercisesThisWeek(
+          freshWorkouts,
+          freshSets,
+          freshSwaps,
+          freshExercises,
+          freshSettings.weekStartDay,
+        )
+      );
 
       // Phase 2: Calculate shortfalls (no HealthKit, fast)
       let shortfallData: MuscleGroupShortfall[] = [];
@@ -791,6 +809,44 @@ export function HomeScreen() {
                 )}
               </Card>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Catch-up list: planned exercises from this week's finished workouts that
+            never got done. Skips and swap-outs both count; making the exercise up in
+            any later workout this week clears it. */}
+        {missedExercises.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Missed This Week — Catch Up</Text>
+            <Card padding="none">
+              {missedExercises.map((item, index) => (
+                <TouchableOpacity
+                  key={item.exercise.id}
+                  style={[
+                    styles.missedRow,
+                    index === 0 && styles.missedRowFirst,
+                    index === missedExercises.length - 1 && styles.missedRowLast,
+                    index < missedExercises.length - 1 && styles.missedRowBorder,
+                  ]}
+                  onPress={() => navigation.navigate('ExerciseHistory', { exerciseId: item.exercise.id })}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={item.reason === 'swapped_out' ? 'swap-horizontal-outline' : 'remove-circle-outline'}
+                    size={20}
+                    color={colors.warning}
+                    style={styles.missedIcon}
+                  />
+                  <View style={styles.missedInfo}>
+                    <Text style={styles.missedName}>{item.exercise.name}</Text>
+                    <Text style={styles.missedDetail}>
+                      {item.reason === 'swapped_out' ? 'Swapped out' : 'Skipped'} {item.dayLabel}
+                    </Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </TouchableOpacity>
+              ))}
+            </Card>
           </View>
         )}
 
@@ -1450,6 +1506,40 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
     color: colors.text,
+  },
+  missedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+  },
+  missedRowFirst: {
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
+  },
+  missedRowLast: {
+    borderBottomLeftRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
+  },
+  missedRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+  },
+  missedIcon: {
+    marginRight: spacing.sm,
+  },
+  missedInfo: {
+    flex: 1,
+  },
+  missedName: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
+  },
+  missedDetail: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   favoritesTodoHeader: {
     flexDirection: 'row',
