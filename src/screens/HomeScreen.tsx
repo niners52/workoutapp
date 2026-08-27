@@ -54,6 +54,8 @@ import {
   getWeeklySummaryDismissed,
   setWeeklySummaryDismissed,
   getExerciseSwaps,
+  getMissedExerciseDismissals,
+  dismissMissedExercise,
   getManualSleepEntry,
   saveManualSleepEntry,
   getSleepFallbackDismissed,
@@ -74,7 +76,7 @@ import { todaysModality, markRecoveryComplete } from '../services/modalityAction
 import { requestCalendarFocus, requestProgressTab } from '../services/calendarFocus';
 import { getWorkouts as getWorkoutsFromStorage } from '../services/storage';
 import { getFavoritesNotHitThisWeek } from '../services/favorites';
-import { getMissedExercisesThisWeek, MissedExercise } from '../services/missedExercises';
+import { getMissedExercisesThisWeek, getTrainingWeekStart, MissedExercise } from '../services/missedExercises';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -97,7 +99,7 @@ export function HomeScreen() {
     refreshExerciseSwaps,
     sets,
   } = useData();
-  const { isWorkoutActive, recoveredWorkout, dismissRecovery } = useWorkout();
+  const { isWorkoutActive, recoveredWorkout, dismissRecovery, startWorkout } = useWorkout();
   const workoutBarPadding = useWorkoutBarPadding();
 
   // Today's date for supplements
@@ -326,6 +328,7 @@ export function HomeScreen() {
         freshPTRoutines,
         freshPTCompletions,
         freshSwaps,
+        freshDismissals,
       ] = await Promise.all([
         getWorkouts(),
         getSets(),
@@ -338,6 +341,7 @@ export function HomeScreen() {
         getPTRoutines(),
         getPTCompletions(),
         getExerciseSwaps(),
+        getMissedExerciseDismissals(),
       ]);
 
       const activeSupps = freshSupplements.filter(s => s.isActive);
@@ -352,6 +356,7 @@ export function HomeScreen() {
           freshSwaps,
           freshExercises,
           freshSettings.weekStartDay,
+          freshDismissals,
         )
       );
 
@@ -561,6 +566,31 @@ export function HomeScreen() {
   const handleStartPlannedWorkout = (templateId: string) => {
     navigation.navigate('TemplateDetail', { templateId });
   };
+
+  // Remove a row from the catch-up list for the rest of this training week —
+  // for deliberate swaps that aren't a debt (narrow cable fly → wide is fine).
+  const handleDismissMissed = useCallback(async (exerciseId: string) => {
+    setMissedExercises(prev => prev.filter(m => m.exercise.id !== exerciseId));
+    try {
+      await dismissMissedExercise(exerciseId, getTrainingWeekStart(userSettings?.weekStartDay));
+    } catch (e) {
+      console.error('[HomeScreen] Dismiss missed exercise error:', e);
+    }
+  }, [userSettings?.weekStartDay]);
+
+  // One tap → an active workout preloaded with everything on the catch-up list.
+  const handleStartCatchUp = useCallback(async () => {
+    const ids = missedExercises.map(m => m.exercise.id);
+    if (ids.length === 0) return;
+    try {
+      // Returns null if the user chose to keep an in-progress workout.
+      const workoutId = await startWorkout(undefined, ids);
+      if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
+    } catch (e) {
+      console.error('[HomeScreen] Start catch-up workout error:', e);
+      Alert.alert('Error', 'Could not start the catch-up workout.');
+    }
+  }, [missedExercises, startWorkout, navigation]);
 
   const handleMuscleGroupPress = (muscleGroup: string) => {
     navigation.navigate('MuscleGroupDetail', {
@@ -825,7 +855,6 @@ export function HomeScreen() {
                   style={[
                     styles.missedRow,
                     index === 0 && styles.missedRowFirst,
-                    index === missedExercises.length - 1 && styles.missedRowLast,
                     index < missedExercises.length - 1 && styles.missedRowBorder,
                   ]}
                   onPress={() => navigation.navigate('ExerciseHistory', { exerciseId: item.exercise.id })}
@@ -840,12 +869,30 @@ export function HomeScreen() {
                   <View style={styles.missedInfo}>
                     <Text style={styles.missedName}>{item.exercise.name}</Text>
                     <Text style={styles.missedDetail}>
-                      {item.reason === 'swapped_out' ? 'Swapped out' : 'Skipped'} {item.dayLabel}
+                      {item.reason === 'swapped_out'
+                        ? `Swapped out ${item.dayLabel}${item.replacementName ? ` for ${item.replacementName}` : ''}`
+                        : `Skipped ${item.dayLabel}`}
                     </Text>
                   </View>
-                  <Text style={styles.chevron}>›</Text>
+                  <TouchableOpacity
+                    style={styles.missedDismiss}
+                    onPress={() => handleDismissMissed(item.exercise.id)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="close" size={18} color={colors.textTertiary} />
+                  </TouchableOpacity>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                style={styles.missedStartButton}
+                onPress={handleStartCatchUp}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="barbell-outline" size={18} color={colors.primary} />
+                <Text style={styles.missedStartText}>
+                  Start Catch-Up Workout ({missedExercises.length})
+                </Text>
+              </TouchableOpacity>
             </Card>
           </View>
         )}
@@ -1517,10 +1564,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
   },
-  missedRowLast: {
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
   missedRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.separator,
@@ -1540,6 +1583,26 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  missedDismiss: {
+    marginLeft: spacing.sm,
+    padding: spacing.xs,
+  },
+  missedStartButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+    borderBottomLeftRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
+  },
+  missedStartText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
   },
   favoritesTodoHeader: {
     flexDirection: 'row',

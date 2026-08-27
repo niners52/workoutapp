@@ -54,6 +54,7 @@ const STORAGE_KEYS = {
   MANUAL_SLEEP_ENTRIES: '@workout_tracker/manual_sleep_entries',
   SLEEP_FALLBACK_DISMISSED: '@workout_tracker/sleep_fallback_dismissed',
   EXERCISE_SWAPS: '@workout_tracker/exercise_swaps',
+  MISSED_DISMISSALS: '@workout_tracker/missed_dismissals',
 } as const;
 
 // Current migration version
@@ -1849,6 +1850,29 @@ export async function upsertExerciseSwap(swap: ExerciseSwap): Promise<void> {
   );
   const next = swap.currentExerciseId === swap.originalExerciseId ? others : [...others, swap];
   await setItem(STORAGE_KEYS.EXERCISE_SWAPS, next);
+}
+
+// ==================== MISSED-EXERCISE DISMISSALS ====================
+// Rows the user removed from the home screen's catch-up list ("I swapped narrow
+// cable fly for wide on purpose — stop nagging me"). Scoped to a training week:
+// each entry stores the week it applies to, and writes prune other weeks so the
+// list resets naturally when a new week starts.
+
+export interface MissedExerciseDismissal {
+  exerciseId: string;
+  weekStart: string; // yyyy-MM-dd of the training week's first day
+}
+
+export async function getMissedExerciseDismissals(): Promise<MissedExerciseDismissal[]> {
+  return getItem(STORAGE_KEYS.MISSED_DISMISSALS, []);
+}
+
+export async function dismissMissedExercise(exerciseId: string, weekStart: string): Promise<void> {
+  const existing = await getMissedExerciseDismissals();
+  const thisWeek = existing.filter(
+    d => d.weekStart === weekStart && d.exerciseId !== exerciseId
+  );
+  await setItem(STORAGE_KEYS.MISSED_DISMISSALS, [...thisWeek, { exerciseId, weekStart }]);
 }
 
 // ==================== SLEEP FALLBACK DISMISSAL ====================
