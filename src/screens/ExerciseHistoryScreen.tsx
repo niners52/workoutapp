@@ -14,6 +14,7 @@ import { colors, typography, spacing, borderRadius, commonStyles } from '../them
 import { Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { getExerciseHistory, getMaxWeightForExercise, WorkoutSessionSets } from '../services/workoutService';
+import { TRAVEL_LOCATION_ID } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ExerciseHistory'>;
@@ -22,7 +23,15 @@ export function ExerciseHistoryScreen() {
   const route = useRoute();
   const navigation = useNavigation<NavigationProp>();
   const { exerciseId } = route.params as { exerciseId: string };
-  const { exercises } = useData();
+  const { exercises, locations } = useData();
+
+  // Gym label for a session. Weights differ between gyms (different cable stacks,
+  // different machines), so history without the location is misleading.
+  const locationLabel = (locationId?: string): string | null => {
+    if (!locationId) return null;
+    if (locationId === TRAVEL_LOCATION_ID) return '✈️ Travel';
+    return locations.find(l => l.id === locationId)?.name ?? null;
+  };
 
   const [history, setHistory] = useState<WorkoutSessionSets[]>([]);
   const [maxWeight, setMaxWeight] = useState<number>(0);
@@ -120,10 +129,12 @@ export function ExerciseHistoryScreen() {
                 <View style={styles.sessionHeader}>
                   <Text style={styles.sessionDate}>
                     {format(new Date(session.date), 'EEEE, MMMM d, yyyy')}
-                    {session.locationId === 'travel' ? '  ✈️ Travel' : ''}
                   </Text>
                   <Text style={styles.sessionTime}>
                     {format(new Date(session.date), 'h:mm a')}
+                    {locationLabel(session.locationId)
+                      ? ` · ${locationLabel(session.locationId)}`
+                      : ''}
                   </Text>
                 </View>
                 <View style={styles.setsGrid}>

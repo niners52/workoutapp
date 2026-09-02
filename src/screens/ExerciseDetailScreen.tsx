@@ -18,10 +18,12 @@ import { useData } from '../contexts/DataContext';
 import { calculateExercisePRs, ExercisePRs } from '../services/personalRecords';
 import { formatWeight, formatWeightValue, weightUnit } from '../services/units';
 import { getSetsByExerciseId } from '../services/storage';
+import { buildLocationResolver } from '../services/locationMatch';
 import {
   Exercise,
   WorkoutSet,
   MUSCLE_GROUP_DISPLAY_NAMES,
+  TRAVEL_LOCATION_ID,
   WorkoutLocation,
   CABLE_ACCESSORY_DISPLAY_NAMES,
   MACHINE_WEIGHT_TYPE_DISPLAY_NAMES,
@@ -41,6 +43,9 @@ interface SessionData {
   maxWeight: number;
   maxReps: number;
   totalVolume: number;
+  // Gym the session happened at (null for legacy workouts without a location).
+  // Weights differ per gym, so a session line without it is misleading.
+  locationLabel: string | null;
 }
 
 export function ExerciseDetailScreen() {
@@ -92,6 +97,15 @@ export function ExerciseDetailScreen() {
       sessionMap.get(dateKey)!.push(set);
     });
 
+    // Canonicalized per-workout gym lookup, same as the per-gym matching elsewhere.
+    const resolver = buildLocationResolver(workouts, locations);
+    const labelFor = (sets: WorkoutSet[]): string | null => {
+      const locId = sets[0] ? resolver.forWorkout(sets[0].workoutId) : undefined;
+      if (!locId) return null;
+      if (locId === TRAVEL_LOCATION_ID) return '✈️ Travel';
+      return locations.find(l => l.id === locId)?.name ?? null;
+    };
+
     return Array.from(sessionMap.entries())
       .map(([date, sets]) => ({
         date,
@@ -99,9 +113,10 @@ export function ExerciseDetailScreen() {
         maxWeight: Math.max(...sets.map(s => s.weight)),
         maxReps: Math.max(...sets.map(s => s.reps)),
         totalVolume: sets.reduce((sum, s) => sum + s.weight * s.reps, 0),
+        locationLabel: labelFor(sets),
       }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [allSets]);
+  }, [allSets, workouts, locations]);
 
   const toggleSession = (date: string) => {
     const newExpanded = new Set(expandedSessions);
@@ -359,11 +374,16 @@ export function ExerciseDetailScreen() {
                     onPress={() => toggleSession(session.date)}
                   >
                     <View style={styles.sessionHeaderLeft}>
-                      <Text style={styles.sessionDate}>
-                        {format(new Date(session.date), 'MMM d, yyyy')}
-                      </Text>
-                      {isFirst && (
-                        <Text style={styles.latestBadge}>Latest</Text>
+                      <View style={styles.sessionDateRow}>
+                        <Text style={styles.sessionDate}>
+                          {format(new Date(session.date), 'MMM d, yyyy')}
+                        </Text>
+                        {isFirst && (
+                          <Text style={styles.latestBadge}>Latest</Text>
+                        )}
+                      </View>
+                      {session.locationLabel && (
+                        <Text style={styles.sessionLocation}>{session.locationLabel}</Text>
                       )}
                     </View>
                     <View style={styles.sessionHeaderRight}>
@@ -560,9 +580,17 @@ const styles = StyleSheet.create({
     borderTopColor: colors.separator,
   },
   sessionHeaderLeft: {
+    flex: 1,
+  },
+  sessionDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  sessionLocation: {
+    fontSize: typography.size.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   sessionHeaderRight: {
     flexDirection: 'row',
