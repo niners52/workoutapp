@@ -123,12 +123,15 @@ directly. Merging is simpler long term.
    - **Root Directory**: type `mcp-server` and click the check mark to save.
    - **Branch**: make sure it is `master` (or `claude/new-session-ktpdoz` if you did not
      merge).
-   Railway will now read `mcp-server/railway.json` for the build command
-   (`npm ci && npm run build`), the start command (`npm start`), and the `/health`
-   check. You do not need to type those anywhere.
-6. Still in Settings, under **Networking** → **Public Networking**, click
-   **Generate Domain**. If it asks which port the app listens on, enter `3000`. You get
-   a URL like `https://workoutapp-production-xxxx.up.railway.app`. Save it.
+6. Railway has deprecated its config-as-code file, so `railway.json` may be ignored on
+   new services. Set the same three things in the UI, further down the Settings page:
+   - **Build** → **Custom Build Command**: `npm ci && npm run build`
+   - **Deploy** → **Custom Start Command**: `npm start`
+   - **Deploy** → **Healthcheck Path**: `/health`
+7. Still in Settings, under **Networking** → **Public Networking**, click
+   **Generate Domain**. Railway guesses a port (often `8081`); click the domain's edit
+   control, set **Target port** to `3000`, and click **Update**. You get a URL like
+   `https://workoutapp-production-xxxx.up.railway.app`. Save it.
 
 ### 4. Add the environment variables
 
