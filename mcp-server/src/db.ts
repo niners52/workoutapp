@@ -33,8 +33,9 @@ export interface WorkoutRow {
   started_at: string;
   completed_at: string | null;
   skipped_exercise_ids: string[] | null;
-  location_id: string | null;
-  is_deload: boolean | null;
+  /** Added after launch; may be absent on older databases. */
+  location_id?: string | null;
+  is_deload?: boolean | null;
 }
 
 export interface SetRow {
@@ -63,11 +64,14 @@ export interface BodyMeasurementRow {
   synced_at: string | null;
 }
 
+/**
+ * Columns are optional because user_settings has grown over time and a given
+ * database may lack some of them. Select '*' and read what is there.
+ */
 export interface UserSettingsRow {
   user_id: string;
-  week_start_day: 'sunday' | 'monday' | null;
-  units: 'imperial' | 'metric' | null;
-  muscle_group_targets: Record<string, number> | null;
+  week_start_day?: 'sunday' | 'monday' | null;
+  muscle_group_targets?: Record<string, number> | null;
 }
 
 export interface LocationRow {
@@ -165,7 +169,9 @@ export class Db {
   }
 
   listWorkoutsByIds(ids: string[]): Promise<WorkoutRow[]> {
-    return this.byIds<WorkoutRow>('workouts', 'id,started_at,completed_at,is_deload,location_id', 'id', ids);
+    // '*' rather than a column list: location_id and is_deload were added after
+    // launch and may not exist on every database.
+    return this.byIds<WorkoutRow>('workouts', '*', 'id', ids);
   }
 
   listSetsByWorkoutIds(ids: string[]): Promise<SetRow[]> {
@@ -221,7 +227,7 @@ export class Db {
   async getUserSettings(): Promise<UserSettingsRow | null> {
     const rows = await this.run(
       'user_settings',
-      this.scoped<UserSettingsRow>('user_settings', 'user_id,week_start_day,units,muscle_group_targets').limit(1),
+      this.scoped<UserSettingsRow>('user_settings', '*').limit(1),
     );
     return rows[0] ?? null;
   }

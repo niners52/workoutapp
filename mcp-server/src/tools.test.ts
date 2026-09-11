@@ -167,6 +167,13 @@ test('get_weekly_volume: mirrors app rules (primary only, unilateral 0.5, deload
   assert.equal(wk0831.target_sets, 22);
 });
 
+test('get_weekly_volume: tolerates a user_settings row missing newer columns', async () => {
+  const { client } = createFakeSupabase({ ...tables, user_settings: [{ user_id: U, week_start_day: 'monday' }] });
+  const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });
+  assert.equal(r.week_start_day, 'monday');
+  assert.deepEqual(r.weekly_targets, {});
+});
+
 test('get_weekly_volume: defaults to Sunday weeks when settings are missing', async () => {
   const { client } = createFakeSupabase({ ...tables, user_settings: [] });
   const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: 'UTC', now: () => NOW }, { weeks_back: 1 });

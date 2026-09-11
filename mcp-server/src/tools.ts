@@ -152,7 +152,7 @@ export async function getRecentWorkouts(ctx: ToolContext, input: { limit: number
         started_at: w.started_at,
         completed_at: w.completed_at ?? undefined,
         duration_min: durationMinutes(w),
-        location: w.location_id ? locationById.get(w.location_id) ?? undefined : undefined,
+        location: w.location_id ? locationById.get(w.location_id) : undefined,
         is_deload: w.is_deload ?? false,
         total_sets: wSets.length,
         exercises: [...byExercise.entries()].map(([exerciseId, exSets]) => {
