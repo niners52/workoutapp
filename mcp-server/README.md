@@ -201,6 +201,7 @@ Weights are in pounds, as stored by the app.
 | `get_prs` | `limit` 1-300 (100) | Per exercise: heaviest set and best Epley e1RM, sorted by e1RM |
 | `get_body_weight_log` | `limit` 1-365 (30) | Body weight entries (lbs) with body-fat % and source, newest first |
 | `get_favorite_exercises` | none | Exercises starred in the app |
+| `describe_schema` | none | Live table and column listing plus any required columns that are missing. Use it when another tool reports "column does not exist". |
 
 Example calls (as the model would issue them):
 
@@ -226,11 +227,35 @@ Example calls (as the model would issue them):
   (Sunday if unset). The current week is always included.
 - `total_sets` / `target_sets` sum only muscle groups with a target, as the app does.
 
+### Bodyweight exercises
+
+Exercises with equipment `bodyweight` (or `is_bodyweight = true` where that column
+exists) store only the added weight on each set. `get_prs` and `get_exercise_history`
+add the body weight on the set's date (latest `body_measurements` entry on or before
+it) at read time and report `effective_load_lbs` with a `"+BW"` note. PRs and e1RM use
+the effective load, so a pull-up PR moves when body weight does. With no body-weight
+entries the exercise falls back to reps-only and no e1RM is estimated.
+
+Sessions whose `completed_at` trails the last set by more than three hours are
+measured to the last set (`duration_truncated_to_last_set: true`).
+
 ### Estimated 1RM
 
 `best_e1rm_epley` uses Epley, `weight × (1 + reps/30)`. The app's own PR screen uses
 Brzycki (`weight × 36 / (37 − reps)`), so that value is included as
-`e1rm_brzycki_app_lbs` for cross-checking.
+`e1rm_brzycki_app_lbs` for cross-checking. It is `null` above 15 reps, where the
+formula stops being a usable estimate; Epley remains the sort key.
+
+## Catching schema changes
+
+`npm run smoke` connects with the same env vars as the server, checks that every column
+the tools depend on exists (see `REQUIRED_COLUMNS` in `src/db.ts`), then runs each tool
+once and exits non-zero on the first failure. The GitHub Actions workflow
+`.github/workflows/mcp-server.yml` runs the unit tests on every change and the smoke
+test daily when these repository secrets are set: `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_USER_ID` (Settings → Secrets and variables →
+Actions). A renamed column then fails the workflow by name instead of surfacing as a
+tool error in a chat.
 
 ## Schema this server reads
 
