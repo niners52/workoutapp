@@ -6,7 +6,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { DbError } from './db.js';
+import { DbError, type SchemaDescription } from './db.js';
 import {
   ToolError,
   describeSchema,
@@ -26,18 +26,35 @@ function ok(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value) }] };
 }
 
+/**
+ * When a query names a column that does not exist, say what the table actually
+ * has, so the fix is one deploy away instead of a guessing game.
+ */
+async function columnHint(err: DbError, describe?: () => Promise<SchemaDescription>): Promise<string> {
+  if (!describe || !/column .* does not exist/i.test(err.message)) return '';
+  try {
+    const schema = await describe();
+    const cols = schema[err.table];
+    if (!cols) return ` Table "${err.table}" was not found in the schema.`;
+    return ` Actual columns of ${err.table}: ${Object.keys(cols).sort().join(', ')}.`;
+  } catch {
+    return '';
+  }
+}
+
 /** Turn any thrown error into a tool-level error the model can read; never crash the request. */
-function fail(toolName: string, err: unknown): CallToolResult {
+async function fail(toolName: string, err: unknown, ctx: ToolContext): Promise<CallToolResult> {
   let message: string;
   if (err instanceof ToolError) message = err.message;
-  else if (err instanceof DbError) message = `Database query failed (${err.message}). Check the table exists and the service role key is valid.`;
-  else if (err instanceof Error) message = `Unexpected error: ${err.message}`;
+  else if (err instanceof DbError) {
+    message = `Database query failed (${err.message}).${await columnHint(err, ctx.describeSchema)} Check the table exists and the service role key is valid.`;
+  } else if (err instanceof Error) message = `Unexpected error: ${err.message}`;
   else message = 'Unexpected error';
   console.error(`[tool:${toolName}]`, err instanceof Error ? err.message : err);
   return { isError: true, content: [{ type: 'text', text: message }] };
 }
 
-function guarded<I>(toolName: string, fn: (input: I) => Promise<unknown>) {
+function guarded<I>(toolName: string, fn: (input: I) => Promise<unknown>, ctx: ToolContext) {
   return async (input: I): Promise<CallToolResult> => {
     const started = Date.now();
     try {
@@ -45,7 +62,7 @@ function guarded<I>(toolName: string, fn: (input: I) => Promise<unknown>) {
       console.log(`[tool:${toolName}] ok ${Date.now() - started}ms`);
       return ok(result);
     } catch (err) {
-      return fail(toolName, err);
+      return fail(toolName, err, ctx);
     }
   };
 }
@@ -62,7 +79,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: { limit: z.number().int().min(1).max(50).default(10).describe('How many sessions (1-50)') },
       annotations: READ_ONLY,
     },
-    guarded('get_recent_workouts', input => getRecentWorkouts(ctx, input)),
+    guarded('get_recent_workouts', input => getRecentWorkouts(ctx, input), ctx),
   );
 
   server.registerTool(
@@ -77,7 +94,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
       annotations: READ_ONLY,
     },
-    guarded('get_exercise_history', input => getExerciseHistory(ctx, input)),
+    guarded('get_exercise_history', input => getExerciseHistory(ctx, input), ctx),
   );
 
   server.registerTool(
@@ -92,7 +109,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
       annotations: READ_ONLY,
     },
-    guarded('search_exercises', input => searchExercises(ctx, input)),
+    guarded('search_exercises', input => searchExercises(ctx, input), ctx),
   );
 
   server.registerTool(
@@ -104,7 +121,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: { weeks_back: z.number().int().min(1).max(26).default(4).describe('Number of weeks (1-26)') },
       annotations: READ_ONLY,
     },
-    guarded('get_weekly_volume', input => getWeeklyVolume(ctx, input)),
+    guarded('get_weekly_volume', input => getWeeklyVolume(ctx, input), ctx),
   );
 
   server.registerTool(
@@ -116,7 +133,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: { limit: z.number().int().min(1).max(300).default(100).describe('Max exercises to return') },
       annotations: READ_ONLY,
     },
-    guarded('get_prs', input => getPrs(ctx, input)),
+    guarded('get_prs', input => getPrs(ctx, input), ctx),
   );
 
   server.registerTool(
@@ -127,7 +144,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: { limit: z.number().int().min(1).max(365).default(30) },
       annotations: READ_ONLY,
     },
-    guarded('get_body_weight_log', input => getBodyWeightLog(ctx, input)),
+    guarded('get_body_weight_log', input => getBodyWeightLog(ctx, input), ctx),
   );
 
   server.registerTool(
@@ -138,7 +155,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: {},
       annotations: READ_ONLY,
     },
-    guarded('get_favorite_exercises', () => getFavoriteExercises(ctx)),
+    guarded('get_favorite_exercises', () => getFavoriteExercises(ctx), ctx),
   );
 
   server.registerTool(
@@ -150,7 +167,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: {},
       annotations: READ_ONLY,
     },
-    guarded('describe_schema', () => describeSchema(ctx)),
+    guarded('describe_schema', () => describeSchema(ctx), ctx),
   );
 
   return server;

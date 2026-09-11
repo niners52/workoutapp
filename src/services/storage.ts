@@ -29,6 +29,7 @@ import { SEED_EXERCISES } from '../data/exercises';
 import { SEED_TEMPLATES } from '../data/templates';
 import { IMPORTED_EXERCISES } from '../data/importedExercises';
 import { IMPORTED_WORKOUTS, IMPORTED_SETS } from '../data/importedWorkouts';
+import { effectiveCompletedAt } from './sessionTimeout';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -54,10 +55,11 @@ const STORAGE_KEYS = {
   MANUAL_SLEEP_ENTRIES: '@workout_tracker/manual_sleep_entries',
   SLEEP_FALLBACK_DISMISSED: '@workout_tracker/sleep_fallback_dismissed',
   EXERCISE_SWAPS: '@workout_tracker/exercise_swaps',
+  MIGRATION_RESYNC: '@workout_tracker/migration_resync',
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 13;
+const CURRENT_MIGRATION_VERSION = 14;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -163,6 +165,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 13) {
     await migrateToV13();
+  }
+
+  if (currentVersion < 14) {
+    await migrateToV14();
   }
 
   // Update migration version
@@ -574,6 +580,97 @@ async function migrateToV13(): Promise<void> {
     await setItem(STORAGE_KEYS.WORKOUTS, updated);
   }
   console.log(`Migration to V13 complete - canonicalized ${rewritten} workout locations`);
+}
+
+// Migration V14: data-quality repairs.
+// - Hip machines: the push-out machine is abduction (glutes), the push-in machine is
+//   adduction (new 'adductors' group). Names and mappings were crossed.
+// - "Leg press machine" credited four primary groups, so each set counted 4x in
+//   weekly volume; make it quads-only like the plate-loaded version.
+// - Bodyweight exercises get isBodyweight so PR math can add body weight at read time.
+// - Workouts "finished" hours after their last set get completed_at = last set time.
+// Rows changed here are queued for re-sync (see flushMigrationResync in syncService),
+// because the cloud only ever receives pushes from the device.
+const V14_EXERCISE_REPAIRS: Record<string, Partial<Exercise>> = {
+  'import-hip-adduction': {
+    name: 'Hip Abduction (push out)',
+    primaryMuscleGroup: 'glutes',
+    primaryMuscleGroups: ['glutes'],
+  },
+  'hip-abduction-machine': {
+    name: 'Hip Adduction (push in)',
+    primaryMuscleGroup: 'adductors',
+    primaryMuscleGroups: ['adductors'],
+  },
+  '29bcb169-528c-4f61-910f-66d52c1d6fd1': {
+    primaryMuscleGroup: 'quads',
+    primaryMuscleGroups: ['quads'],
+    secondaryMuscleGroups: ['hamstrings', 'glutes', 'calves'],
+  },
+};
+
+export interface MigrationResync {
+  exerciseIds: string[];
+  workoutIds: string[];
+}
+
+export async function getPendingMigrationResync(): Promise<MigrationResync | null> {
+  return getItem<MigrationResync | null>(STORAGE_KEYS.MIGRATION_RESYNC, null);
+}
+
+export async function clearPendingMigrationResync(): Promise<void> {
+  await AsyncStorage.removeItem(STORAGE_KEYS.MIGRATION_RESYNC);
+}
+
+async function migrateToV14(): Promise<void> {
+  console.log('Running migration to V14 - data-quality repairs...');
+
+  const [exercises, workouts, sets] = await Promise.all([
+    getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []),
+    getItem<Workout[]>(STORAGE_KEYS.WORKOUTS, []),
+    getItem<WorkoutSet[]>(STORAGE_KEYS.SETS, []),
+  ]);
+
+  const changedExercises: string[] = [];
+  const repairedExercises = exercises.map(e => {
+    let next: Exercise = e;
+    const repair = V14_EXERCISE_REPAIRS[e.id];
+    if (repair) next = { ...next, ...repair };
+    if (next.equipment === 'bodyweight' && next.isBodyweight === undefined) {
+      next = { ...next, isBodyweight: true };
+    }
+    if (next !== e) changedExercises.push(e.id);
+    return next;
+  });
+
+  const setsByWorkout = new Map<string, WorkoutSet[]>();
+  for (const s of sets) {
+    const list = setsByWorkout.get(s.workoutId) ?? [];
+    list.push(s);
+    setsByWorkout.set(s.workoutId, list);
+  }
+  const changedWorkouts: string[] = [];
+  const repairedWorkouts = workouts.map(w => {
+    if (!w.completedAt) return w;
+    const fixed = effectiveCompletedAt(w.startedAt, setsByWorkout.get(w.id) ?? [], w.completedAt);
+    if (fixed === w.completedAt) return w;
+    changedWorkouts.push(w.id);
+    console.log(`V14: workout ${w.id} completed_at ${w.completedAt} -> ${fixed}`);
+    return { ...w, completedAt: fixed };
+  });
+
+  if (changedExercises.length > 0) await setItem(STORAGE_KEYS.EXERCISES, repairedExercises);
+  if (changedWorkouts.length > 0) await setItem(STORAGE_KEYS.WORKOUTS, repairedWorkouts);
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...changedExercises])],
+    workoutIds: [...new Set([...(previous?.workoutIds ?? []), ...changedWorkouts])],
+  });
+
+  console.log(
+    `Migration to V14 complete - ${changedExercises.length} exercises, ${changedWorkouts.length} workouts repaired`,
+  );
 }
 
 // Reset storage (for debugging/testing)

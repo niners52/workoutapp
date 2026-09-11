@@ -339,6 +339,30 @@ test('MCP: invalid input is rejected by zod, not by a crash', async () => {
   }
 });
 
+test('get_prs survives an unreadable body-weight table', async () => {
+  const r = await getPrs(makeCtx({ failing: { body_measurements: 'column body_measurements.weight does not exist' } }), { limit: 10 });
+  assert.match(r.body_weight_basis, /could not be read/);
+  assert.ok(r.prs.some(p => p.exercise_id === 'e1'), 'weighted exercises still ranked');
+  const pullUp = r.prs.find(p => p.exercise_id === 'e6')!;
+  assert.equal(pullUp.load_basis, 'reps_only');
+});
+
+test('MCP: a missing-column error names the actual columns', async () => {
+  const ctx = {
+    ...makeCtx({ failing: { body_measurements: 'column body_measurements.weight does not exist' } }),
+    describeSchema: async () => ({ body_measurements: { id: 'uuid', user_id: 'uuid', date: 'date', weight_lbs: 'numeric' } }),
+  };
+  const { client, close } = await connectClient(ctx);
+  try {
+    const result = await client.callTool({ name: 'get_body_weight_log', arguments: {} });
+    assert.equal(result.isError, true);
+    const text = (result.content as Array<{ text: string }>)[0]!.text;
+    assert.match(text, /Actual columns of body_measurements: date, id, user_id, weight_lbs/);
+  } finally {
+    await close();
+  }
+});
+
 test('MCP: database failure becomes a helpful tool error', async () => {
   const { client, close } = await connectClient(makeCtx({ failing: { workout_sets: 'relation "workout_sets" does not exist' } }));
   try {

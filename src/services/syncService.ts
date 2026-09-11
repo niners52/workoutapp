@@ -13,6 +13,12 @@ import {
   BodyMeasurement,
 } from '../types';
 import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
+import {
+  clearPendingMigrationResync,
+  getExerciseById,
+  getPendingMigrationResync,
+  getWorkoutById,
+} from './storage';
 
 // Storage keys for sync state
 const SYNC_KEYS = {
@@ -113,10 +119,12 @@ export async function syncExercise(exercise: Exercise): Promise<void> {
       location_ids: exercise.locationIds || [],
       is_custom: exercise.isCustom ?? true,
       is_favorite: exercise.isFavorite ?? false,
+      is_bodyweight: exercise.isBodyweight ?? exercise.equipment === 'bodyweight',
     };
 
     const { error, rows: syncedRow } = await upsertTolerant('exercises', row, [
       'is_favorite',
+      'is_bodyweight',
     ]);
 
     if (error) {
@@ -963,6 +971,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       locationIds: row.location_ids || [],
       isCustom: row.is_custom ?? true,
       isFavorite: row.is_favorite ?? false,
+      ...(typeof row.is_bodyweight === 'boolean' ? { isBodyweight: row.is_bodyweight } : {}),
     }));
 
     const templates: Template[] = (templatesResult.data || []).map(row => ({
@@ -1094,6 +1103,31 @@ export async function clearPendingSyncQueue(): Promise<void> {
   const count = existing ? JSON.parse(existing).length : 0;
   await AsyncStorage.removeItem(SYNC_KEYS.PENDING_OPERATIONS);
   console.log(`[Sync] Pending sync queue cleared (${count} operations removed)`);
+}
+
+/**
+ * Push rows that a local storage migration rewrote. The cloud only ever receives
+ * pushes from the device, so without this a migration would fix the phone and
+ * leave the cloud (and the MCP connector) showing the old values.
+ */
+export async function flushMigrationResync(): Promise<void> {
+  const pending = await getPendingMigrationResync();
+  if (!pending) return;
+  const userId = await getUserId();
+  if (!userId) return; // stays queued until a signed-in launch
+
+  for (const id of pending.exerciseIds) {
+    const exercise = await getExerciseById(id);
+    if (exercise) await syncExercise(exercise);
+  }
+  for (const id of pending.workoutIds) {
+    const workout = await getWorkoutById(id);
+    if (workout) await syncWorkout(workout);
+  }
+  await clearPendingMigrationResync();
+  console.log(
+    `[Sync] Re-synced ${pending.exerciseIds.length} exercises and ${pending.workoutIds.length} workouts after migration`,
+  );
 }
 
 export async function getLastCloudPull(): Promise<string | null> {

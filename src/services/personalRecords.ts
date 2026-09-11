@@ -12,7 +12,7 @@
  */
 
 import { WorkoutSet, Exercise, UnitSystem } from '../types';
-import { estimated1RM } from './units';
+import { estimated1RMOrNull } from './units';
 
 export interface PersonalRecord {
   type: 'weight' | 'reps' | 'volume' | 'e1rm';
@@ -78,7 +78,7 @@ export function calculateExercisePRs(
   for (const set of exerciseSets) {
     const date = workoutDates.get(set.workoutId) || set.loggedAt || '';
     const volume = set.weight * set.reps;
-    const e1rm = estimated1RM(set.weight, set.reps);
+    const e1rm = estimated1RMOrNull(set.weight, set.reps);
 
     // Weight PR - heaviest weight
     if (!weightPR || set.weight > weightPR.value) {
@@ -119,8 +119,8 @@ export function calculateExercisePRs(
       };
     }
 
-    // Estimated 1RM PR
-    if (!e1rmPR || e1rm > e1rmPR.value) {
+    // Estimated 1RM PR (only for sets in the formula's usable rep range)
+    if (e1rm !== null && (!e1rmPR || e1rm > e1rmPR.value)) {
       e1rmPR = {
         type: 'e1rm',
         value: e1rm,
@@ -149,7 +149,7 @@ export function checkForPR(
   const currentPRs = calculateExercisePRs(newSet.exerciseId, previousSets, workoutDates);
 
   const newVolume = newSet.weight * newSet.reps;
-  const newE1rm = estimated1RM(newSet.weight, newSet.reps);
+  const newE1rm = estimated1RMOrNull(newSet.weight, newSet.reps) ?? 0;
   const now = new Date().toISOString();
 
   const records: PersonalRecord[] = [];
@@ -334,7 +334,7 @@ export function checkForMilestone(
   if (prResult.isE1rmPR) {
     const currentPRs = calculateExercisePRs(newSet.exerciseId, previousSets, workoutDates);
     const previousBestE1rm = currentPRs.e1rmPR?.value || 0;
-    const newE1rm = estimated1RM(newSet.weight, newSet.reps);
+    const newE1rm = estimated1RMOrNull(newSet.weight, newSet.reps) ?? 0;
     const e1rmDelta = newE1rm - previousBestE1rm;
     if (e1rmDelta >= 5) {
       return {

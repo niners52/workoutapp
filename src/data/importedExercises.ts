@@ -308,7 +308,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   },
   {
     "id": "import-hip-adduction",
-    "name": "Hip Adduction",
+    "name": "Hip Abduction (push out)",
     "primaryMuscleGroup": "glutes",
     "secondaryMuscleGroups": [],
     "equipment": "machine",
