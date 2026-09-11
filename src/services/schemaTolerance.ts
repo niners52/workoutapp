@@ -23,7 +23,7 @@ const knownMissingColumns = new Set<string>();
  */
 export const OPTIONAL_COLUMNS_BY_TABLE: Record<string, string[]> = {
   workouts: ['location_id', 'is_deload', 'skipped_exercise_ids'],
-  exercises: ['is_favorite', 'notes', 'is_unilateral'],
+  exercises: ['is_favorite', 'notes', 'is_unilateral', 'is_bodyweight'],
 };
 
 /** Columns proven missing this session, as "table.column" — for diagnostics. */

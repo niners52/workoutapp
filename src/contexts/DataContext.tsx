@@ -55,6 +55,7 @@ import {
   syncDeleteBodyMeasurement,
   syncUserSettings,
   syncManager,
+  flushMigrationResync,
   pullFromCloud,
   getLastCloudPull,
   setLastCloudPull,
@@ -290,6 +291,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         if (authenticated) {
           // Start sync manager (processes queue immediately + every 30s)
           syncManager.start();
+          // Push anything a storage migration rewrote so the cloud matches the phone
+          flushMigrationResync().catch(e => console.log('Migration resync failed:', e));
 
           // Check if we need to pull from cloud (new device or empty local data)
           const lastPull = await getLastCloudPull();

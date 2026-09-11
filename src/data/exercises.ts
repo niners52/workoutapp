@@ -135,9 +135,10 @@ export const SEED_EXERCISES: Exercise[] = [
     location: 'gym',
   },
   {
+    // Historical id kept for set history; this is the push-in (adduction) machine.
     id: 'hip-abduction-machine',
-    name: 'Hip Abduction Machine',
-    primaryMuscleGroup: 'glutes',
+    name: 'Hip Adduction (push in)',
+    primaryMuscleGroup: 'adductors',
     secondaryMuscleGroups: [],
     equipment: 'machine',
     location: 'gym',

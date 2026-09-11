@@ -54,6 +54,7 @@ import {
   upsertExerciseSwap,
 } from '../services/storage';
 import { saveWorkoutToHealthKit } from '../services/healthKit';
+import { effectiveCompletedAt, isStaleSession } from '../services/sessionTimeout';
 import {
   syncWorkout,
   syncSet,
@@ -178,6 +179,22 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
         }
 
         const sets = await getSetsByWorkoutId(saved.workout.id);
+
+        // Left open with no sets for hours (phone put away, app killed): close it at
+        // its last set instead of resuming a session that ended yesterday.
+        if (isStaleSession(workout.startedAt, sets)) {
+          const closed: Workout = {
+            ...workout,
+            completedAt: effectiveCompletedAt(workout.startedAt, sets, new Date().toISOString()),
+          };
+          await updateWorkout(closed);
+          syncWorkout(closed).catch(e => console.log('Sync error:', e));
+          await clearActiveWorkoutState();
+          await liveActivityService.endAllActivities();
+          console.log(`Auto-closed stale workout ${closed.id} at ${closed.completedAt}`);
+          return;
+        }
+
         setActiveWorkout({
           workout,
           sets,
@@ -553,9 +570,15 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const finishWorkout = useCallback(async (skippedExerciseIds?: string[]) => {
     if (!activeWorkout) return;
 
+    // If the last set was hours ago, the session ended then, not now.
+    const completedAt = effectiveCompletedAt(
+      activeWorkout.workout.startedAt,
+      activeWorkout.sets,
+      new Date().toISOString(),
+    );
     const completedWorkout: Workout = {
       ...activeWorkout.workout,
-      completedAt: new Date().toISOString(),
+      completedAt,
       ...(skippedExerciseIds?.length ? { skippedExerciseIds } : {}),
     };
 
@@ -573,7 +596,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     // Save to Apple Health
     try {
       const startDate = new Date(activeWorkout.workout.startedAt);
-      const endDate = new Date();
+      const endDate = new Date(completedAt);
       // Estimate calories: rough estimate of 5 calories per set
       const estimatedCalories = activeWorkout.sets.length * 5;
       await saveWorkoutToHealthKit(startDate, endDate, estimatedCalories);

@@ -134,6 +134,18 @@ export function estimated1RM(weightLbs: number, reps: number): number {
   return Math.round(weightLbs * (36 / (37 - reps)));
 }
 
+/** Brzycki stops being a usable estimate past this many reps (undefined past 36). */
+export const E1RM_MAX_REPS = 15;
+
+/**
+ * Brzycki e1RM, or null when the set is too high-rep for the formula to mean
+ * anything. PR tracking uses this so a 45-rep set never becomes an "e1RM PR".
+ */
+export function estimated1RMOrNull(weightLbs: number, reps: number): number | null {
+  if (reps <= 0 || reps > E1RM_MAX_REPS || weightLbs <= 0) return null;
+  return estimated1RM(weightLbs, reps);
+}
+
 // ============== HEIGHT CONVERSIONS ==============
 
 /**

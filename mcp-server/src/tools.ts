@@ -244,6 +244,20 @@ async function loadBodyWeights(db: Db): Promise<BodyWeightLog> {
   return new BodyWeightLog(await db.listAllBodyWeights());
 }
 
+/**
+ * PRs for weighted exercises must not disappear because the body-weight table is
+ * unreadable; bodyweight exercises then fall back to reps-only and the response
+ * says why.
+ */
+async function loadBodyWeightsOrEmpty(db: Db): Promise<{ log: BodyWeightLog; error?: string }> {
+  try {
+    return { log: await loadBodyWeights(db) };
+  } catch (err) {
+    console.error('[body weights]', err instanceof Error ? err.message : err);
+    return { log: new BodyWeightLog([]), error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // ─── tools ──────────────────────────────────────────────────────────────────
 
 export async function getRecentWorkouts(ctx: ToolContext, input: { limit: number }) {
@@ -304,10 +318,10 @@ export async function getRecentWorkouts(ctx: ToolContext, input: { limit: number
 export async function getExerciseHistory(ctx: ToolContext, input: { exercise_name: string; limit: number }) {
   const { exercise, score, alternatives } = await resolveExercise(ctx.db, input.exercise_name);
   const bodyweight = isBodyweightExercise(exercise);
-  const [recent, all, bw] = await Promise.all([
+  const [recent, all, { log: bw, error: bwError }] = await Promise.all([
     ctx.db.listRecentSetsForExercise(exercise.id, input.limit),
     ctx.db.listAllSetsForExercise(exercise.id),
-    bodyweight ? loadBodyWeights(ctx.db) : Promise.resolve(new BodyWeightLog([])),
+    bodyweight ? loadBodyWeightsOrEmpty(ctx.db) : Promise.resolve<{ log: BodyWeightLog; error?: string }>({ log: new BodyWeightLog([]) }),
   ]);
   return {
     exercise: exerciseSummary(exercise),
@@ -319,9 +333,11 @@ export async function getExerciseHistory(ctx: ToolContext, input: { exercise_nam
     ...bestSets(all, bodyweight, bw),
     ...(bodyweight
       ? {
-          note: bw.isEmpty
-            ? 'Bodyweight exercise with no body-weight log: loads are added weight only and no e1RM is estimated.'
-            : 'Bodyweight exercise: effective_load_lbs = body weight on that date + added weight (weight_lbs). PRs and e1RM use the effective load.',
+          note: bwError
+            ? `Bodyweight exercise, but the body-weight log could not be read (${bwError}): loads are added weight only and no e1RM is estimated.`
+            : bw.isEmpty
+              ? 'Bodyweight exercise with no body-weight log: loads are added weight only and no e1RM is estimated.'
+              : 'Bodyweight exercise: effective_load_lbs = body weight on that date + added weight (weight_lbs). PRs and e1RM use the effective load.',
         }
       : {}),
   };
@@ -417,10 +433,10 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
 }
 
 export async function getPrs(ctx: ToolContext, input: { limit: number }) {
-  const [sets, exercises, bw] = await Promise.all([
+  const [sets, exercises, { log: bw, error: bwError }] = await Promise.all([
     ctx.db.listAllSets(),
     ctx.db.listExercises(),
-    loadBodyWeights(ctx.db),
+    loadBodyWeightsOrEmpty(ctx.db),
   ]);
   const byExercise = new Map<string, SetSummaryRow[]>();
   for (const s of sets) {
@@ -453,9 +469,11 @@ export async function getPrs(ctx: ToolContext, input: { limit: number }) {
   return {
     exercise_count: prs.length,
     truncated: prs.length > input.limit,
-    body_weight_basis: bw.isEmpty
-      ? 'No body-weight log; bodyweight exercises are ranked by reps only.'
-      : `Bodyweight exercises use body weight on the set date plus added weight (latest body weight ${bw.latest} lbs); marked load_note "+BW".`,
+    body_weight_basis: bwError
+      ? `Body-weight log could not be read (${bwError}); bodyweight exercises are ranked by reps only.`
+      : bw.isEmpty
+        ? 'No body-weight log; bodyweight exercises are ranked by reps only.'
+        : `Bodyweight exercises use body weight on the set date plus added weight (latest body weight ${bw.latest} lbs); marked load_note "+BW".`,
     brzycki_note: `e1rm_brzycki_app_lbs is null above ${BRZYCKI_MAX_REPS} reps, where the formula is not a usable estimate.`,
     prs: prs.slice(0, input.limit),
   };

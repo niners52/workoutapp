@@ -117,6 +117,7 @@ export type PrimaryMuscleGroup =
   | 'calves'
   | 'abs'
   | 'glutes'
+  | 'adductors'
   | 'lower_back'
   | 'miscellaneous';
 
@@ -130,6 +131,7 @@ export type StandaloneMuscleGroup =
   | 'quads'
   | 'hamstrings'
   | 'glutes'
+  | 'adductors'
   | 'calves'
   | 'abs'
   | 'forearms'
@@ -151,7 +153,7 @@ export const ANALYTICS_CATEGORIES: AnalyticsCategoryConfig[] = [
   { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps'] },
   { category: 'chest', name: 'Chest', muscleGroups: ['chest'] },
   { category: 'arms', name: 'Arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
-  { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'calves'] },
+  { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'adductors', 'calves'] },
   { category: 'core', name: 'Core', muscleGroups: ['abs'] },
 ];
 
@@ -173,6 +175,7 @@ export const STANDALONE_MUSCLE_GROUPS: StandaloneMuscleGroup[] = [
   'quads',
   'hamstrings',
   'glutes',
+  'adductors',
   'calves',
   'abs',
   'forearms',
@@ -192,6 +195,7 @@ export const ALL_TRACKABLE_MUSCLE_GROUPS: (PrimaryMuscleGroup)[] = [
   'quads',
   'hamstrings',
   'glutes',
+  'adductors',
   'calves',
   'abs',
   'forearms',
@@ -222,6 +226,7 @@ export const MUSCLE_GROUP_DISPLAY_NAMES: Record<MuscleGroup, string> = {
   calves: 'Calves',
   abs: 'Abs',
   glutes: 'Glutes',
+  adductors: 'Adductors',
   lower_back: 'Lower Back',
   miscellaneous: 'Miscellaneous',
 };
@@ -303,6 +308,7 @@ export interface Exercise {
   isCustom?: boolean;
   isFavorite?: boolean; // Starred "must-do" exercise — drives the Favorites filter, routine-builder coverage, and the weekly not-yet-hit list
   isUnilateral?: boolean; // Single-limb exercise — doubles target sets, halves volume credit
+  isBodyweight?: boolean; // Load is body weight plus any added weight; `weight` on sets stores only the added part. Defaults from equipment === 'bodyweight'.
   notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
   targetSets?: number; // Per-exercise default target set count; falls back to UserSettings.defaultTargetSets (doubled if unilateral) when undefined
   targetReps?: string; // Display target, e.g. "8" or "8-15". Informational — not enforced by the logger.
