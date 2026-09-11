@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { Db, asMinimal } from './db.js';
+import { Db, asMinimal, fetchSchemaDescription } from './db.js';
 import { createMcpServer } from './server.js';
 import { secretPathAuth } from './auth.js';
 import { createRateLimiter } from './rateLimit.js';
@@ -37,7 +37,11 @@ if (!USER_ID) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const ctx = { db: new Db(asMinimal(supabase), USER_ID), timeZone: TIMEZONE };
+const ctx = {
+  db: new Db(asMinimal(supabase), USER_ID),
+  timeZone: TIMEZONE,
+  describeSchema: () => fetchSchemaDescription(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY),
+};
 const limiter = createRateLimiter(RATE_LIMIT);
 
 const app = express();

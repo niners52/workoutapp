@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { DbError } from './db.js';
 import {
   ToolError,
+  describeSchema,
   getBodyWeightLog,
   getExerciseHistory,
   getFavoriteExercises,
@@ -69,7 +70,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Exercise history',
       description:
-        'Recent sets (date, weight in lbs, reps) for one exercise plus its all-time heaviest set and best estimated 1RM (Epley; the app\'s Brzycki figure is included for comparison). Exercise names are matched fuzzily; use search_exercises first when unsure.',
+        'Recent sets (date, weight in lbs, reps) for one exercise plus its all-time heaviest set and best estimated 1RM (Epley; the app\'s Brzycki figure is included for comparison and is null above 15 reps). Bodyweight exercises report effective_load_lbs = body weight on that date + added weight, marked "+BW". Exercise names are matched fuzzily; use search_exercises first when unsure.',
       inputSchema: {
         exercise_name: z.string().trim().min(1).max(120).describe('Exercise name, ideally as returned by search_exercises'),
         limit: z.number().int().min(1).max(200).default(30).describe('How many recent sets (1-200)'),
@@ -111,7 +112,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Personal records',
       description:
-        'Best set per exercise across all history: heaviest weight and best estimated 1RM (Epley, with the app\'s Brzycki value alongside). Sorted by estimated 1RM, descending.',
+        'Best set per exercise across all history: heaviest load and best estimated 1RM (Epley, with the app\'s Brzycki value alongside, null above 15 reps). Bodyweight exercises are ranked by effective load (body weight on the set date + added weight, marked "+BW"). Sorted by estimated 1RM, descending.',
       inputSchema: { limit: z.number().int().min(1).max(300).default(100).describe('Max exercises to return') },
       annotations: READ_ONLY,
     },
@@ -138,6 +139,18 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       annotations: READ_ONLY,
     },
     guarded('get_favorite_exercises', () => getFavoriteExercises(ctx)),
+  );
+
+  server.registerTool(
+    'describe_schema',
+    {
+      title: 'Describe database schema',
+      description:
+        'Live table and column listing from the database, plus any columns this server requires that are missing. Use it to diagnose "column does not exist" errors from other tools.',
+      inputSchema: {},
+      annotations: READ_ONLY,
+    },
+    guarded('describe_schema', () => describeSchema(ctx)),
   );
 
   return server;

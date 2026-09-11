@@ -1,0 +1,43 @@
+name: mcp-server
+
+on:
+  push:
+    paths: ['mcp-server/**', '.github/workflows/mcp-server.yml']
+  pull_request:
+    paths: ['mcp-server/**', '.github/workflows/mcp-server.yml']
+  schedule:
+    # Daily, so a schema change in Supabase is noticed even without a code push.
+    - cron: '23 12 * * *'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+      - run: npm ci
+      - name: Unit tests (fake database)
+        run: npm test
+      - name: Check for database secrets
+        id: secrets
+        env:
+          HAS: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}
+        run: echo "present=$HAS" >> "$GITHUB_OUTPUT"
+      - name: Smoke test against the real schema
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          TIMEZONE: America/Chicago
+        run: npm run smoke
+      - name: Smoke test skipped
+        if: steps.secrets.outputs.present != 'true'
+        run: echo "Add SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_USER_ID as repository secrets to run the smoke test."

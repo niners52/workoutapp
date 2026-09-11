@@ -23,6 +23,8 @@ export interface ExerciseRow {
   is_favorite: boolean | null;
   /** Added after launch; may be absent on older databases. */
   is_unilateral?: boolean | null;
+  /** Explicit bodyweight flag; when absent, equipment === 'bodyweight' decides. */
+  is_bodyweight?: boolean | null;
   notes?: string | null;
 }
 
@@ -232,6 +234,15 @@ export class Db {
     return rows[0] ?? null;
   }
 
+  /** Every body-weight entry, newest first, for as-of-date lookups. */
+  listAllBodyWeights(): Promise<BodyMeasurementRow[]> {
+    return this.runAll('body_measurements', () =>
+      this.scoped<BodyMeasurementRow>('body_measurements', '*')
+        .not('weight', 'is', null)
+        .order('date', { ascending: false }),
+    );
+  }
+
   listBodyWeights(limit: number): Promise<BodyMeasurementRow[]> {
     return this.run(
       'body_measurements',
@@ -246,4 +257,56 @@ export class Db {
     if (ids.length === 0) return Promise.resolve([]);
     return this.byIds<LocationRow>('workout_locations', 'id,name', 'id', ids);
   }
+}
+
+/** table -> column -> PostgREST/OpenAPI type string, e.g. { workouts: { id: 'string', ... } } */
+export type SchemaDescription = Record<string, Record<string, string>>;
+
+/**
+ * Read the live table/column list from PostgREST's OpenAPI document. Used by the
+ * describe_schema tool and the smoke test so a renamed column is reported by name
+ * instead of surfacing as a failed query later.
+ */
+export async function fetchSchemaDescription(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<SchemaDescription> {
+  const res = await fetchImpl(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/`, {
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+  });
+  if (!res.ok) throw new DbError('schema', `OpenAPI request failed with HTTP ${res.status}`);
+  const doc = (await res.json()) as {
+    definitions?: Record<string, { properties?: Record<string, { type?: string; format?: string }> }>;
+  };
+  const out: SchemaDescription = {};
+  for (const [table, def] of Object.entries(doc.definitions ?? {})) {
+    out[table] = Object.fromEntries(
+      Object.entries(def.properties ?? {}).map(([col, p]) => [col, p.format ?? p.type ?? 'unknown']),
+    );
+  }
+  return out;
+}
+
+/** Columns each tool depends on. The smoke test fails loudly if any is missing. */
+export const REQUIRED_COLUMNS: Record<string, string[]> = {
+  exercises: ['id', 'user_id', 'name', 'primary_muscle_groups', 'equipment'],
+  workouts: ['id', 'user_id', 'started_at', 'completed_at'],
+  workout_sets: ['id', 'user_id', 'workout_id', 'exercise_id', 'weight', 'reps', 'logged_at'],
+  body_measurements: ['id', 'user_id', 'date', 'weight'],
+  user_settings: ['user_id'],
+  workout_locations: ['id', 'user_id', 'name'],
+};
+
+export function missingColumns(schema: SchemaDescription): string[] {
+  const missing: string[] = [];
+  for (const [table, cols] of Object.entries(REQUIRED_COLUMNS)) {
+    const have = schema[table];
+    if (!have) {
+      missing.push(`${table} (table not found)`);
+      continue;
+    }
+    for (const c of cols) if (!(c in have)) missing.push(`${table}.${c}`);
+  }
+  return missing;
 }
