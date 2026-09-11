@@ -266,7 +266,7 @@ Discovered from `src/services/syncService.ts` and `supabase/migrations/`:
 | `exercises` | `id, user_id, name, base_name, primary_muscle_groups[], secondary_muscle_groups[], equipment, is_favorite, is_unilateral?` |
 | `workouts` | `id, user_id, started_at, completed_at, location_id, is_deload` |
 | `workout_sets` | `id, user_id, workout_id, exercise_id, weight, reps, logged_at` |
-| `body_measurements` | `id, user_id, date, weight, body_fat_percentage, source` (rows with `weight` null are girth measurements and are skipped) |
+| `body_measurements` | `id, user_id, date, weight, body_fat_percentage, source` (rows with `weight` null are girth measurements and are skipped). If the table has no `weight` column, rows with `type` in `weight`/`body_weight` are read instead; apply `supabase/migrations/20260911000001_body_measurements_columns.sql` to add the columns the app writes. |
 | `user_settings` | `user_id, week_start_day, units, muscle_group_targets` |
 | `workout_locations` | `id, user_id, name` |
 
