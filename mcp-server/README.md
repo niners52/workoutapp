@@ -125,7 +125,7 @@ directly. Merging is simpler long term.
      merge).
 6. Railway has deprecated its config-as-code file, so `railway.json` may be ignored on
    new services. Set the same three things in the UI, further down the Settings page:
-   - **Build** → **Custom Build Command**: `npm ci && npm run build`
+   - **Build** → **Custom Build Command**: `npm run build` (Nixpacks already runs `npm ci`; running it again fails on the mounted cache)
    - **Deploy** → **Custom Start Command**: `npm start`
    - **Deploy** → **Healthcheck Path**: `/health`
 7. Still in Settings, under **Networking** → **Public Networking**, click
