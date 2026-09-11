@@ -12,10 +12,13 @@ export interface FakeOptions {
   failing?: Record<string, string>;
   /** Simulate PostgREST's max-rows cap so paging gets exercised. */
   pageSize?: number;
+  /** Columns that do not exist per table; referencing one in a filter or order fails like PostgREST. */
+  missingColumns?: Record<string, string[]>;
 }
 
 class FakeBuilder implements QueryBuilder<Row> {
   private filters: Filter[] = [];
+  private referenced: string[] = [];
   private columns = '*';
   private ordering: { column: string; ascending: boolean } | null = null;
   private limitCount: number | null = null;
@@ -34,24 +37,29 @@ class FakeBuilder implements QueryBuilder<Row> {
     return this;
   }
   eq(column: string, value: unknown) {
+    this.referenced.push(column);
     this.filters.push(r => r[column] === value);
     return this;
   }
   in(column: string, values: unknown[]) {
+    this.referenced.push(column);
     const set = new Set(values);
     this.filters.push(r => set.has(r[column]));
     return this;
   }
   gte(column: string, value: unknown) {
+    this.referenced.push(column);
     this.filters.push(r => String(r[column]) >= String(value));
     return this;
   }
   not(column: string, operator: string, value: unknown) {
+    this.referenced.push(column);
     if (operator !== 'is' || value !== null) throw new Error(`fake supports only not(col, 'is', null); got ${operator}`);
     this.filters.push(r => r[column] !== null && r[column] !== undefined);
     return this;
   }
   order(column: string, opts?: { ascending?: boolean }) {
+    this.referenced.push(column);
     this.ordering = { column, ascending: opts?.ascending ?? true };
     return this;
   }
@@ -69,6 +77,8 @@ class FakeBuilder implements QueryBuilder<Row> {
     this.log.push(this.table);
     const failure = this.opts.failing?.[this.table];
     if (failure) return { data: null, error: { message: failure } };
+    const missing = this.referenced.find(c => this.opts.missingColumns?.[this.table]?.includes(c));
+    if (missing) return { data: null, error: { message: `column ${this.table}.${missing} does not exist` } };
 
     let out = this.rows.filter(r => this.filters.every(f => f(r)));
     if (this.ordering) {

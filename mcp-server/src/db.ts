@@ -89,6 +89,9 @@ export class DbError extends Error {
   }
 }
 
+/** `type` values a hand-made body_measurements table might use for body weight. */
+const BODY_WEIGHT_TYPES = ['weight', 'body_weight', 'bodyweight', 'weight_lbs'];
+
 /** PostgREST returns at most 1000 rows per request by default. */
 const PAGE_SIZE = 1000;
 /** Keep `in (...)` lists short enough for a URL. */
@@ -234,23 +237,52 @@ export class Db {
     return rows[0] ?? null;
   }
 
+  // body_measurements has two shapes in the wild. The app writes a flat `weight`
+  // column; a table created by hand may only have generic (type, value) rows.
+  // Read the flat column first and fall back to typed rows if it is missing, so
+  // the tool works before and after supabase/migrations/20260911000001 is applied.
+  private bodyWeightShape: 'flat' | 'typed' | null = null;
+
+  private async bodyWeights(limit?: number): Promise<BodyMeasurementRow[]> {
+    const flat = () => {
+      const q = this.scoped<BodyMeasurementRow>('body_measurements', '*')
+        .not('weight', 'is', null)
+        .order('date', { ascending: false });
+      return limit === undefined
+        ? this.runAll('body_measurements', () => q)
+        : this.run('body_measurements', q.limit(limit));
+    };
+    const typed = async () => {
+      const q = this.scoped<BodyMeasurementRow & { type: string; value: number }>('body_measurements', '*')
+        .in('type', BODY_WEIGHT_TYPES)
+        .order('date', { ascending: false });
+      const rows = limit === undefined
+        ? await this.runAll('body_measurements', () => q)
+        : await this.run('body_measurements', q.limit(limit));
+      return rows.map(r => ({ ...r, weight: r.value, body_fat_percentage: null }));
+    };
+
+    if (this.bodyWeightShape === 'typed') return typed();
+    try {
+      const rows = await flat();
+      this.bodyWeightShape = 'flat';
+      return rows;
+    } catch (err) {
+      if (this.bodyWeightShape === null && err instanceof DbError && /column .*weight does not exist/i.test(err.message)) {
+        this.bodyWeightShape = 'typed';
+        return typed();
+      }
+      throw err;
+    }
+  }
+
   /** Every body-weight entry, newest first, for as-of-date lookups. */
   listAllBodyWeights(): Promise<BodyMeasurementRow[]> {
-    return this.runAll('body_measurements', () =>
-      this.scoped<BodyMeasurementRow>('body_measurements', '*')
-        .not('weight', 'is', null)
-        .order('date', { ascending: false }),
-    );
+    return this.bodyWeights();
   }
 
   listBodyWeights(limit: number): Promise<BodyMeasurementRow[]> {
-    return this.run(
-      'body_measurements',
-      this.scoped<BodyMeasurementRow>('body_measurements', '*')
-        .not('weight', 'is', null)
-        .order('date', { ascending: false })
-        .limit(limit),
-    );
+    return this.bodyWeights(limit);
   }
 
   listLocationsByIds(ids: string[]): Promise<LocationRow[]> {

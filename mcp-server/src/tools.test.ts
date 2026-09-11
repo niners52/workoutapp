@@ -339,6 +339,25 @@ test('MCP: invalid input is rejected by zod, not by a crash', async () => {
   }
 });
 
+test('body weights fall back to typed (type, value) rows when the weight column is missing', async () => {
+  const typedRows = [
+    { id: 't1', user_id: U, date: '2026-09-01', type: 'weight', value: 180.5, source: 'manual' },
+    { id: 't2', user_id: U, date: '2026-08-20', type: 'waist', value: 33, source: 'manual' },
+    { id: 't3', user_id: U, date: '2026-08-15', type: 'weight', value: 183, source: 'manual' },
+  ];
+  const { client, queryLog } = createFakeSupabase(
+    { ...tables, body_measurements: typedRows },
+    { missingColumns: { body_measurements: ['weight', 'body_fat_percentage'] } },
+  );
+  const db = new Db(client, U);
+  const r = await getBodyWeightLog({ db, timeZone: TZ }, { limit: 10 });
+  assert.deepEqual(r.entries.map(e => [e.date, e.weight_lbs]), [['2026-09-01', 180.5], ['2026-08-15', 183]]);
+  const before = queryLog.length;
+  const all = await db.listAllBodyWeights();
+  assert.equal(all.length, 2);
+  assert.equal(queryLog.length - before, 2, 'typed shape is remembered: one page plus the terminating empty page, no failed flat attempt');
+});
+
 test('get_prs survives an unreadable body-weight table', async () => {
   const r = await getPrs(makeCtx({ failing: { body_measurements: 'column body_measurements.weight does not exist' } }), { limit: 10 });
   assert.match(r.body_weight_basis, /could not be read/);
