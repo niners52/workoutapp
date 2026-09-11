@@ -8,6 +8,7 @@ import { createMcpServer } from './server.js';
 import {
   ToolError,
   brzycki1RM,
+  describeSchema,
   epley1RM,
   getBodyWeightLog,
   getExerciseHistory,
@@ -33,6 +34,8 @@ const tables = {
     { id: 'e3', user_id: U, name: 'DB Lateral Raise', base_name: null, primary_muscle_groups: ['side_delts'], secondary_muscle_groups: [], equipment: 'dumbbell', is_favorite: true },
     { id: 'e4', user_id: U, name: 'Bulgarian Split Squat', base_name: null, primary_muscle_groups: ['quads', 'glutes'], secondary_muscle_groups: ['hamstrings'], equipment: 'dumbbell', is_favorite: false, is_unilateral: true },
     { id: 'e5', user_id: OTHER, name: 'Bench Press (someone else)', base_name: null, primary_muscle_groups: ['chest'], secondary_muscle_groups: [], equipment: 'barbell', is_favorite: true },
+    { id: 'e6', user_id: U, name: 'Pull-Up', base_name: null, primary_muscle_groups: ['lats'], secondary_muscle_groups: [], equipment: 'bodyweight', is_favorite: false },
+    { id: 'e7', user_id: U, name: 'Face Pull', base_name: null, primary_muscle_groups: ['rear_delts'], secondary_muscle_groups: [], equipment: 'cable', is_favorite: false },
   ],
   workouts: [
     { id: 'w1', user_id: U, template_id: null, started_at: '2026-09-02T15:00:00Z', completed_at: '2026-09-02T16:05:00Z', location_id: 'l1', is_deload: false },
@@ -41,6 +44,8 @@ const tables = {
     // Sunday Aug 30, 9pm Denver == Monday Aug 31 03:00Z: belongs to the *previous* week in Denver.
     { id: 'w4', user_id: U, template_id: null, started_at: '2026-08-31T03:00:00Z', completed_at: '2026-08-31T03:30:00Z', location_id: null, is_deload: false },
     { id: 'w9', user_id: OTHER, template_id: null, started_at: '2026-09-03T15:00:00Z', completed_at: null, location_id: null, is_deload: false },
+    // Left open overnight and "finished" the next morning: 10h on paper, 40 min of lifting.
+    { id: 'w5', user_id: U, template_id: null, started_at: '2026-09-03T00:45:00Z', completed_at: '2026-09-03T11:00:00Z', location_id: null, is_deload: false },
   ],
   workout_sets: [
     { id: 's1', user_id: U, workout_id: 'w1', exercise_id: 'e1', weight: 185, reps: 8, logged_at: '2026-09-02T15:10:00Z' },
@@ -53,6 +58,10 @@ const tables = {
     { id: 's8', user_id: U, workout_id: 'w3', exercise_id: 'e2', weight: 450, reps: 6, logged_at: '2026-08-19T15:15:00Z' },
     { id: 's9', user_id: U, workout_id: 'w4', exercise_id: 'e3', weight: 20, reps: 15, logged_at: '2026-08-31T03:05:00Z' },
     { id: 's10', user_id: OTHER, workout_id: 'w9', exercise_id: 'e5', weight: 500, reps: 1, logged_at: '2026-09-03T15:10:00Z' },
+    { id: 's11', user_id: U, workout_id: 'w5', exercise_id: 'e6', weight: 0, reps: 10, logged_at: '2026-09-03T00:55:00Z' },
+    { id: 's12', user_id: U, workout_id: 'w5', exercise_id: 'e6', weight: 25, reps: 6, logged_at: '2026-09-03T01:10:00Z' },
+    { id: 's13', user_id: U, workout_id: 'w5', exercise_id: 'e7', weight: 40, reps: 15, logged_at: '2026-09-03T01:25:00Z' },
+    { id: 's14', user_id: U, workout_id: 'w1', exercise_id: 'e7', weight: 45, reps: 45, logged_at: '2026-09-02T15:50:00Z' },
   ],
   body_measurements: [
     { id: 'b1', user_id: U, date: '2026-09-01', weight: 181.2, body_fat_percentage: 17.5, source: 'healthkit' },
@@ -78,26 +87,34 @@ function makeUnscopedCtx(): ToolContext {
   return { db: new Db(client), timeZone: TZ, now: () => NOW };
 }
 
-test('formulas match the app and the Epley definition', () => {
+test('formulas: Epley as defined, Brzycki as the app computes it but null past 15 reps', () => {
   assert.equal(epley1RM(225, 1), 225);
   assert.equal(epley1RM(200, 6), 240);
+  assert.equal(epley1RM(110, 45), 275);
   assert.equal(brzycki1RM(200, 6), Math.round(200 * (36 / 31)));
-  assert.equal(brzycki1RM(100, 40), 100); // app returns the weight beyond 36 reps
+  assert.equal(brzycki1RM(200, 15), Math.round(200 * (36 / 22)));
+  assert.equal(brzycki1RM(110, 16), null);
+  assert.equal(brzycki1RM(110, 45), null, 'the app would report the raw weight here; that is not an estimate');
 });
 
 test('get_recent_workouts: newest first, user-scoped, grouped by exercise', async () => {
   const r = await getRecentWorkouts(makeCtx(), { limit: 10 });
-  assert.deepEqual(r.workouts.map(w => w.id), ['w1', 'w4', 'w2', 'w3']);
-  const w1 = r.workouts[0]!;
+  assert.deepEqual(r.workouts.map(w => w.id), ['w5', 'w1', 'w4', 'w2', 'w3']);
+  const byId = new Map(r.workouts.map(w => [w.id, w]));
+  const w1 = byId.get('w1')!;
   assert.equal(w1.duration_min, 65);
   assert.equal(w1.location, 'Planet Fitness');
-  assert.equal(w1.total_sets, 5);
+  assert.equal(w1.total_sets, 6);
   assert.deepEqual(
     w1.exercises.map(e => [e.name, e.sets, e.top_set?.weight_lbs, e.top_set?.reps]),
-    [['Barbell Bench Press', 3, 225, 1], ['Bulgarian Split Squat', 2, 40, 10]],
+    [['Barbell Bench Press', 3, 225, 1], ['Bulgarian Split Squat', 2, 40, 10], ['Face Pull', 1, 45, 45]],
   );
-  assert.equal(r.workouts[3]!.duration_min, undefined, 'open workout has no duration');
-  assert.equal(r.workouts[2]!.is_deload, true);
+  assert.equal(byId.get('w3')!.duration_min, undefined, 'open workout has no duration');
+  assert.equal(byId.get('w2')!.is_deload, true);
+  const stale = byId.get('w5')!;
+  assert.equal(stale.duration_min, 40, 'measured to the last set, not to the next-morning completed_at');
+  assert.equal(stale.duration_truncated_to_last_set, true);
+  assert.equal(stale.exercises[0]!.top_set?.load_note, '+BW');
 });
 
 test('get_recent_workouts: respects limit', async () => {
@@ -127,6 +144,43 @@ test('get_exercise_history: heaviest set is the single; deload sets still count 
   assert.equal(r.best_e1rm_epley?.e1rm_lbs, 239.2);
 });
 
+test('get_exercise_history: bodyweight exercise adds body weight as of the set date', async () => {
+  const r = await getExerciseHistory(makeCtx(), { exercise_name: 'Pull-Up', limit: 5 });
+  assert.equal(r.exercise.is_bodyweight, true);
+  assert.equal(r.load_basis, 'body_weight_plus_added');
+  assert.equal(r.recent_sets[0]!.weight_lbs, 25);
+  assert.equal(r.recent_sets[0]!.effective_load_lbs, 206.2);
+  assert.equal(r.recent_sets[0]!.body_weight_lbs, 181.2);
+  assert.equal(r.heaviest_set?.effective_load_lbs, 206.2);
+  assert.equal(r.best_e1rm_epley?.e1rm_lbs, epley1RM(206.2, 6));
+  assert.match(r.note ?? '', /effective_load_lbs/);
+});
+
+test('get_exercise_history: bodyweight exercise with no body-weight log falls back to reps only', async () => {
+  const { client } = createFakeSupabase({ ...tables, body_measurements: [] });
+  const r = await getExerciseHistory({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { exercise_name: 'Pull-Up', limit: 5 });
+  assert.equal(r.load_basis, 'reps_only');
+  assert.equal(r.best_e1rm_epley, null);
+  assert.equal(r.most_reps_set?.reps, 10);
+  assert.equal(r.recent_sets[0]!.effective_load_lbs, undefined);
+});
+
+test('describe_schema reports the columns the tools need', async () => {
+  const ctx = { ...makeCtx(), describeSchema: async () => ({
+    exercises: { id: 'uuid', user_id: 'uuid', name: 'text', primary_muscle_groups: 'text[]', equipment: 'text' },
+    workouts: { id: 'uuid', user_id: 'uuid', started_at: 'timestamptz', completed_at: 'timestamptz' },
+    workout_sets: { id: 'uuid', user_id: 'uuid', workout_id: 'uuid', exercise_id: 'text', weight: 'numeric', reps: 'integer', logged_at: 'timestamptz' },
+    body_measurements: { id: 'uuid', user_id: 'uuid', date: 'date', weight_lbs: 'numeric' },
+    user_settings: { user_id: 'uuid' },
+    workout_locations: { id: 'text', user_id: 'uuid', name: 'text' },
+    profiles: { id: 'uuid' },
+  }) };
+  const r = await describeSchema(ctx);
+  assert.deepEqual(r.missing_required_columns, ['body_measurements.weight']);
+  assert.deepEqual(r.other_tables, ['profiles']);
+  assert.equal(r.tables.body_measurements!.weight_lbs, 'numeric');
+});
+
 test('get_exercise_history: unknown name is a readable error with suggestions', async () => {
   await assert.rejects(
     getExerciseHistory(makeCtx(), { exercise_name: 'zzz kettlebell juggling', limit: 5 }),
@@ -154,6 +208,10 @@ test('get_weekly_volume: mirrors app rules (primary only, unilateral 0.5, deload
   assert.equal(wk0831.sets_by_muscle_group.quads, 1);
   assert.equal(wk0831.sets_by_muscle_group.glutes, 1);
   assert.equal(wk0831.sets_by_muscle_group.triceps, 0, 'secondary muscles earn no credit');
+  assert.equal(wk0831.sets_by_muscle_group.upper_back, 2, 'legacy rear_delts credits upper_back, as the app does since V10');
+  assert.equal(wk0831.sets_by_muscle_group.lats, 2, 'bodyweight sets count like any other set');
+  assert.equal(r.weeks[3]!.sets_by_category.legs, 2);
+  assert.equal((r as { unrecognized_muscle_groups?: string[] }).unrecognized_muscle_groups, undefined);
   assert.equal(wk0831.sets_by_muscle_group.side_delts, 0, 'Sunday-night Denver set is not in this week');
   assert.equal(wk0824.sets_by_muscle_group.side_delts, 1, 'it lands in the prior week');
   assert.equal(wk0824.sets_by_muscle_group.chest, 0, 'deload sets excluded');
@@ -191,7 +249,19 @@ test('weekStartKey handles time zones', () => {
 
 test('get_prs: one entry per exercise with history, sorted by Epley 1RM', async () => {
   const r = await getPrs(makeCtx(), { limit: 100 });
-  assert.deepEqual(r.prs.map(p => p.exercise_id), ['e2', 'e1', 'e4', 'e3']);
+  assert.deepEqual(r.prs.map(p => p.exercise_id), ['e2', 'e6', 'e1', 'e7', 'e4', 'e3']);
+  const pullUp = r.prs.find(p => p.exercise_id === 'e6')!;
+  assert.equal(pullUp.is_bodyweight, true);
+  assert.equal(pullUp.load_basis, 'body_weight_plus_added');
+  // 25 lb added + 181.2 lb body weight (entry dated 2026-09-01, the latest on or before 2026-09-03)
+  assert.equal(pullUp.heaviest_set?.effective_load_lbs, 206.2);
+  assert.equal(pullUp.heaviest_set?.body_weight_lbs, 181.2);
+  assert.equal(pullUp.heaviest_set?.load_note, '+BW');
+  assert.equal(pullUp.best_e1rm_epley?.e1rm_lbs, epley1RM(206.2, 6));
+  const facePull = r.prs.find(p => p.exercise_id === 'e7')!;
+  assert.equal(facePull.best_e1rm_epley?.reps, 45);
+  assert.equal(facePull.best_e1rm_epley?.e1rm_brzycki_app_lbs, null, 'no Brzycki above 15 reps');
+  assert.deepEqual(facePull.primary_muscle_groups, ['upper_back'], 'legacy rear_delts reads as upper_back');
   const bench = r.prs.find(p => p.exercise_id === 'e1')!;
   assert.equal(bench.heaviest_set?.weight_lbs, 225);
   assert.equal(bench.best_e1rm_epley?.e1rm_lbs, 239.2);
@@ -217,8 +287,8 @@ test('get_favorite_exercises: only this user\'s starred exercises', async () => 
 test('paging: full-history scans keep fetching past the PostgREST row cap', async () => {
   const ctx = makeCtx({ pageSize: 2 });
   const sets = await ctx.db.listAllSets();
-  assert.equal(sets.length, 9);
-  assert.equal(ctx.queryLog.filter(t => t === 'workout_sets').length, 6, '5 pages of 2 plus the terminating empty page');
+  assert.equal(sets.length, 13);
+  assert.equal(ctx.queryLog.filter(t => t === 'workout_sets').length, 8, '7 pages of 2 (last one short) plus the terminating empty page');
 });
 
 test('without SUPABASE_USER_ID every user\'s rows are visible', async () => {
@@ -243,7 +313,7 @@ test('MCP: lists all tools as read-only and executes one', async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map(t => t.name).sort(),
-      ['get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_prs', 'get_recent_workouts', 'get_weekly_volume', 'search_exercises'],
+      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_prs', 'get_recent_workouts', 'get_weekly_volume', 'search_exercises'],
     );
     assert.ok(tools.every(t => t.annotations?.readOnlyHint === true));
 
@@ -251,7 +321,7 @@ test('MCP: lists all tools as read-only and executes one', async () => {
     assert.notEqual(result.isError, true);
     const content = result.content as Array<{ type: string; text: string }>;
     const parsed = JSON.parse(content[0]!.text) as { workouts: Array<{ id: string }> };
-    assert.equal(parsed.workouts[0]!.id, 'w1');
+    assert.equal(parsed.workouts[0]!.id, 'w5');
   } finally {
     await close();
   }

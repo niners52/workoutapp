@@ -22,6 +22,7 @@ export const PRIMARY_MUSCLE_GROUPS = [
   'quads',
   'hamstrings',
   'glutes',
+  'adductors',
   'calves',
   'abs',
   'forearms',
@@ -43,12 +44,28 @@ export const ANALYTICS_CATEGORIES: ReadonlyArray<{
   { category: 'shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps'] },
   { category: 'chest', muscleGroups: ['chest'] },
   { category: 'arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
-  { category: 'legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'calves'] },
+  { category: 'legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'adductors', 'calves'] },
   { category: 'core', muscleGroups: ['abs'] },
 ];
 
+/**
+ * Groups the app retired via local migrations. Cloud rows written before those
+ * migrations can still carry the old name, so read them as their successor.
+ * Mirrors src/services/storage.ts migrateToV10 (rear_delts -> upper_back).
+ */
+const LEGACY_ALIASES: Record<string, PrimaryMuscleGroup> = {
+  rear_delts: 'upper_back',
+};
+
 export function isPrimaryMuscleGroup(value: unknown): value is PrimaryMuscleGroup {
   return typeof value === 'string' && (PRIMARY_MUSCLE_GROUPS as readonly string[]).includes(value);
+}
+
+/** Resolve a stored muscle-group string to a current group, or null if unknown. */
+export function canonicalMuscleGroup(value: unknown): PrimaryMuscleGroup | null {
+  if (isPrimaryMuscleGroup(value)) return value;
+  if (typeof value === 'string' && value in LEGACY_ALIASES) return LEGACY_ALIASES[value]!;
+  return null;
 }
 
 /** Set credit an exercise earns per logged set, mirroring the app. */
