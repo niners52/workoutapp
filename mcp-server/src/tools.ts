@@ -7,6 +7,7 @@ import {
   missingColumns,
   type BodyMeasurementRow,
   type ExerciseRow,
+  type NutritionDayRow,
   type SchemaDescription,
   type SetRow,
   type SetSummaryRow,
@@ -23,7 +24,7 @@ import {
   setCredit,
   type PrimaryMuscleGroup,
 } from './muscles.js';
-import { lowerBoundIso, recentWeekStarts, weekEndKey, weekStartKey, type WeekStartDay } from './dates.js';
+import { addDays, lowerBoundIso, recentWeekStarts, toLocalDate, weekEndKey, weekStartKey, ymd, type WeekStartDay } from './dates.js';
 
 export interface ToolContext {
   db: Db;
@@ -510,10 +511,130 @@ export async function getFavoriteExercises(ctx: ToolContext) {
 export async function describeSchema(ctx: ToolContext) {
   if (!ctx.describeSchema) throw new ToolError('Schema description is not configured on this server.');
   const schema = await ctx.describeSchema();
-  const wanted = ['exercises', 'workouts', 'workout_sets', 'body_measurements', 'user_settings', 'workout_locations'];
   return {
-    tables: Object.fromEntries(wanted.filter(t => schema[t]).map(t => [t, schema[t]])),
-    other_tables: Object.keys(schema).filter(t => !wanted.includes(t)).sort(),
+    tables: Object.fromEntries(Object.keys(schema).sort().map(t => [t, schema[t]])),
     missing_required_columns: missingColumns(schema),
+  };
+}
+
+// ─── nutrition ──────────────────────────────────────────────────────────────
+
+const MACRO_COLUMNS = ['calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g'] as const;
+const MICRO_COLUMNS = ['iron_mg', 'vitamin_b12_mcg', 'vitamin_d_iu', 'calcium_mg', 'zinc_mg', 'sodium_mg'] as const;
+type NutrientColumn = (typeof MACRO_COLUMNS)[number] | (typeof MICRO_COLUMNS)[number];
+
+/** Today's YYYY-MM-DD in the configured time zone, and the first day of a trailing window. */
+function windowDates(ctx: ToolContext, daysBack: number): { today: string; since: string } {
+  const now = (ctx.now ?? (() => new Date()))();
+  const local = toLocalDate(now, ctx.timeZone);
+  const today = ymd(local);
+  const since = ymd(addDays(local, -(daysBack - 1)));
+  return { today, since };
+}
+
+/** Mean over rows whose value is a number; null when no row has one. */
+function averageOf(rows: NutritionDayRow[], column: NutrientColumn): { avg: number | null; days: number } {
+  const values = rows.map(r => r[column]).filter((v): v is number => typeof v === 'number');
+  if (values.length === 0) return { avg: null, days: 0 };
+  return { avg: round1(values.reduce((a, b) => a + b, 0) / values.length), days: values.length };
+}
+
+export async function getNutritionLog(ctx: ToolContext, input: { days_back: number }) {
+  const { today, since } = windowDates(ctx, input.days_back);
+  // Only days that have HealthKit samples count as logged. A day absent from the
+  // table, or present with sample_count 0, is "no data", never zero calories.
+  const rows = (await ctx.db.listNutritionDays(since))
+    .filter(r => r.sample_count > 0)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const complete = rows.filter(r => r.date !== today);
+  const macros = {} as Record<(typeof MACRO_COLUMNS)[number], number | null>;
+  for (const c of MACRO_COLUMNS) macros[c] = averageOf(complete, c).avg;
+  const micros = {} as Record<(typeof MICRO_COLUMNS)[number], { avg: number | null; days_with_data: number }>;
+  for (const c of MICRO_COLUMNS) {
+    const { avg, days } = averageOf(complete, c);
+    micros[c] = { avg, days_with_data: days };
+  }
+  const unreadable = [...MACRO_COLUMNS, ...MICRO_COLUMNS].filter(c => rows.length > 0 && rows.every(r => r[c] === null));
+
+  return {
+    window: { since, through: today, days: input.days_back, time_zone: ctx.timeZone },
+    summary: {
+      logged_days: rows.length,
+      complete_days: complete.length,
+      averages_exclude_partial_day: true,
+      daily_averages: macros,
+      micro_averages: micros,
+      ...(unreadable.length ? { unreadable_in_current_app_build: unreadable } : {}),
+    },
+    days: rows.map(r => ({
+      date: r.date,
+      ...(r.date === today ? { partial: true as const } : {}),
+      calories: r.calories,
+      protein_g: r.protein_g,
+      carbs_g: r.carbs_g,
+      fat_g: r.fat_g,
+      fiber_g: r.fiber_g,
+      iron_mg: r.iron_mg,
+      vitamin_b12_mcg: r.vitamin_b12_mcg,
+      vitamin_d_iu: r.vitamin_d_iu,
+      calcium_mg: r.calcium_mg,
+      zinc_mg: r.zinc_mg,
+      sodium_mg: r.sodium_mg,
+      sample_count: r.sample_count,
+      synced_at: r.synced_at ?? undefined,
+    })),
+    note: 'Source: Cronometer via Apple Health. Days without samples are omitted rather than shown as zero; null means the app build could not read that nutrient.',
+  };
+}
+
+// ─── supplements ────────────────────────────────────────────────────────────
+
+export async function getSupplementLog(ctx: ToolContext, input: { days_back: number }) {
+  const { today, since } = windowDates(ctx, input.days_back);
+  const [supplements, intakes] = await Promise.all([
+    ctx.db.listSupplements(),
+    ctx.db.listSupplementIntakes(since),
+  ]);
+  const nameById = new Map(supplements.map(s => [s.id, s.name]));
+
+  const daysBySupplement = new Map<string, Set<string>>();
+  const byDate = new Map<string, Set<string>>();
+  for (const i of intakes) {
+    if (i.date > today) continue;
+    const days = daysBySupplement.get(i.supplement_id) ?? new Set<string>();
+    days.add(i.date);
+    daysBySupplement.set(i.supplement_id, days);
+    const names = byDate.get(i.date) ?? new Set<string>();
+    names.add(nameById.get(i.supplement_id) ?? i.supplement_id);
+    byDate.set(i.date, names);
+  }
+
+  const daysInWindow = input.days_back;
+  const adherence = supplements
+    .filter(s => s.is_active !== false || daysBySupplement.has(s.id))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+    .map(s => {
+      const days = daysBySupplement.get(s.id) ?? new Set<string>();
+      const sorted = [...days].sort();
+      return {
+        id: s.id,
+        name: s.name,
+        is_active: s.is_active ?? true,
+        days_taken: days.size,
+        days_in_window: daysInWindow,
+        adherence_pct: Math.round((days.size / daysInWindow) * 100),
+        taken_today: days.has(today),
+        last_taken: sorted.at(-1),
+      };
+    });
+
+  return {
+    window: { since, through: today, days: daysInWindow, time_zone: ctx.timeZone },
+    supplements: adherence,
+    intakes_by_day: [...byDate.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, names]) => ({ date, ...(date === today ? { partial: true as const } : {}), taken: [...names].sort() })),
+    note: 'The app stores supplement names and daily check-offs only; doses are not recorded.',
   };
 }

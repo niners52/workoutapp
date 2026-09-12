@@ -76,6 +76,43 @@ export interface UserSettingsRow {
   muscle_group_targets?: Record<string, number> | null;
 }
 
+/** One device-local day of Apple Health nutrition. null = the app build could not read that nutrient. */
+export interface NutritionDayRow {
+  id: string;
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  iron_mg: number | null;
+  vitamin_b12_mcg: number | null;
+  vitamin_d_iu: number | null;
+  calcium_mg: number | null;
+  zinc_mg: number | null;
+  sodium_mg: number | null;
+  sample_count: number;
+  source: string | null;
+  synced_at: string | null;
+}
+
+export interface SupplementRow {
+  id: string;
+  user_id: string;
+  name: string;
+  sort_order: number | null;
+  is_active: boolean | null;
+}
+
+export interface SupplementIntakeRow {
+  id: string;
+  user_id: string;
+  supplement_id: string;
+  date: string; // YYYY-MM-DD
+  taken_at: string | null;
+}
+
 export interface LocationRow {
   id: string;
   user_id: string;
@@ -285,6 +322,28 @@ export class Db {
     return this.bodyWeights(limit);
   }
 
+  /** Nutrition days on or after `sinceDate` (YYYY-MM-DD), newest first. */
+  listNutritionDays(sinceDate: string): Promise<NutritionDayRow[]> {
+    return this.runAll('nutrition_days', () =>
+      this.scoped<NutritionDayRow>('nutrition_days', '*')
+        .gte('date', sinceDate)
+        .order('date', { ascending: false }),
+    );
+  }
+
+  listSupplements(): Promise<SupplementRow[]> {
+    return this.runAll('supplements', () => this.scoped<SupplementRow>('supplements', '*').order('name'));
+  }
+
+  /** Supplement intakes on or after `sinceDate` (YYYY-MM-DD), newest first. */
+  listSupplementIntakes(sinceDate: string): Promise<SupplementIntakeRow[]> {
+    return this.runAll('supplement_intakes', () =>
+      this.scoped<SupplementIntakeRow>('supplement_intakes', '*')
+        .gte('date', sinceDate)
+        .order('date', { ascending: false }),
+    );
+  }
+
   listLocationsByIds(ids: string[]): Promise<LocationRow[]> {
     if (ids.length === 0) return Promise.resolve([]);
     return this.byIds<LocationRow>('workout_locations', 'id,name', 'id', ids);
@@ -328,6 +387,13 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   body_measurements: ['id', 'user_id', 'date', 'weight'],
   user_settings: ['user_id'],
   workout_locations: ['id', 'user_id', 'name'],
+  nutrition_days: [
+    'id', 'user_id', 'date', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g',
+    'iron_mg', 'vitamin_b12_mcg', 'vitamin_d_iu', 'calcium_mg', 'zinc_mg', 'sodium_mg',
+    'sample_count', 'source', 'synced_at',
+  ],
+  supplements: ['id', 'user_id', 'name', 'is_active'],
+  supplement_intakes: ['id', 'user_id', 'supplement_id', 'date', 'taken_at'],
 };
 
 export function missingColumns(schema: SchemaDescription): string[] {

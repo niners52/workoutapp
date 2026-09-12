@@ -11,6 +11,8 @@ import {
   ToolError,
   describeSchema,
   getBodyWeightLog,
+  getNutritionLog,
+  getSupplementLog,
   getExerciseHistory,
   getFavoriteExercises,
   getPrs,
@@ -156,6 +158,30 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       annotations: READ_ONLY,
     },
     guarded('get_favorite_exercises', () => getFavoriteExercises(ctx), ctx),
+  );
+
+  server.registerTool(
+    'get_nutrition_log',
+    {
+      title: 'Nutrition log',
+      description:
+        'Daily nutrition from Cronometer via Apple Health: calories, protein/carbs/fat/fiber (g), iron/calcium/zinc/sodium (mg), vitamin B12 (mcg), vitamin D (IU), newest first, with averages over complete logged days. Days with no samples are omitted, never shown as zero; today is flagged partial.',
+      inputSchema: { days_back: z.number().int().min(1).max(90).default(14).describe('Trailing window in days (1-90)') },
+      annotations: READ_ONLY,
+    },
+    guarded('get_nutrition_log', input => getNutritionLog(ctx, input), ctx),
+  );
+
+  server.registerTool(
+    'get_supplement_log',
+    {
+      title: 'Supplement log',
+      description:
+        'Supplements tracked in the app with per-supplement adherence over a trailing window (days taken / days in window, taken today, last taken) and the daily check-off history.',
+      inputSchema: { days_back: z.number().int().min(1).max(90).default(14).describe('Trailing window in days (1-90)') },
+      annotations: READ_ONLY,
+    },
+    guarded('get_supplement_log', input => getSupplementLog(ctx, input), ctx),
   );
 
   server.registerTool(

@@ -8,6 +8,8 @@ import { Db, asMinimal, fetchSchemaDescription, missingColumns } from './db.js';
 import {
   describeSchema,
   getBodyWeightLog,
+  getNutritionLog,
+  getSupplementLog,
   getExerciseHistory,
   getFavoriteExercises,
   getPrs,
@@ -71,6 +73,8 @@ await step('get_weekly_volume', () => getWeeklyVolume(ctx, { weeks_back: 2 }));
 await step('get_prs', () => getPrs(ctx, { limit: 5 }));
 await step('get_body_weight_log', () => getBodyWeightLog(ctx, { limit: 3 }));
 await step('get_favorite_exercises', () => getFavoriteExercises(ctx));
+await step('get_nutrition_log', () => getNutritionLog(ctx, { days_back: 14 }));
+await step('get_supplement_log', () => getSupplementLog(ctx, { days_back: 14 }));
 
 if (failures) {
   console.error(`smoke: ${failures} failure(s)`);

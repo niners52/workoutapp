@@ -201,6 +201,8 @@ Weights are in pounds, as stored by the app.
 | `get_prs` | `limit` 1-300 (100) | Per exercise: heaviest set and best Epley e1RM, sorted by e1RM |
 | `get_body_weight_log` | `limit` 1-365 (30) | Body weight entries (lbs) with body-fat % and source, newest first |
 | `get_favorite_exercises` | none | Exercises starred in the app |
+| `get_nutrition_log` | `days_back` 1-90 (14) | Daily nutrition from Cronometer via Apple Health (kcal, g, mg, mcg, IU), newest first, with averages over complete logged days. Days without samples are omitted; today is `partial` |
+| `get_supplement_log` | `days_back` 1-90 (14) | Supplements with adherence (days taken / days in window, taken today, last taken) and daily check-off history |
 | `describe_schema` | none | Live table and column listing plus any required columns that are missing. Use it when another tool reports "column does not exist". |
 
 Example calls (as the model would issue them):
@@ -270,5 +272,8 @@ Discovered from `src/services/syncService.ts` and `supabase/migrations/`:
 | `body_measurements` | `id, user_id, date, weight, body_fat_percentage, source` (rows with `weight` null are girth measurements and are skipped). If the table has no `weight` column, rows with `type` in `weight`/`body_weight` are read instead; apply `supabase/migrations/20260911000001_body_measurements_columns.sql` to add the columns the app writes. |
 | `user_settings` | `user_id, week_start_day, units, muscle_group_targets` |
 | `workout_locations` | `id, user_id, name` |
+| `nutrition_days` | `id, user_id, date, calories, protein_g, carbs_g, fat_g, fiber_g, iron_mg, vitamin_b12_mcg, vitamin_d_iu, calcium_mg, zinc_mg, sodium_mg, sample_count, source, synced_at` (created by `supabase/migrations/20260913000000_nutrition_days.sql`; filled by the app from Apple Health) |
+| `supplements` | `id, user_id, name, sort_order, is_active` |
+| `supplement_intakes` | `id, user_id, supplement_id, date, taken_at` |
 
 `is_unilateral` is optional in the schema; it is read when present.

@@ -1,20 +1,25 @@
 diff --git a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.h b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.h
-index fba0f76..5026480 100644
+index fba0f76..b48346f 100644
 --- a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.h
 +++ b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.h
-@@ -18,6 +18,7 @@
+@@ -18,6 +18,12 @@
  
  - (void)dietary_getEnergyConsumedSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
  - (void)dietary_getProteinSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
 +- (void)dietary_getSodiumSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
++- (void)dietary_getIronSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
++- (void)dietary_getVitaminB12Samples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
++- (void)dietary_getVitaminDSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
++- (void)dietary_getCalciumSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
++- (void)dietary_getZincSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
  - (void)dietary_getFiberSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
  - (void)dietary_getTotalFatSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
  @end
 diff --git a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m
-index 9d532ee..8320a5a 100644
+index 9d532ee..7ed7342 100644
 --- a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m
 +++ b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m
-@@ -108,6 +108,37 @@
+@@ -108,6 +108,192 @@
      }];
  }
  
@@ -49,20 +54,200 @@ index 9d532ee..8320a5a 100644
 +    }];
 +}
 +
++- (void)dietary_getIronSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
++{
++    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryIron];
++    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit unitFromString:@"mg"]];
++    NSUInteger limit = [RCTAppleHealthKit uintFromOptions:input key:@"limit" withDefault:HKObjectQueryNoLimit];
++    BOOL ascending = [RCTAppleHealthKit boolFromOptions:input key:@"ascending" withDefault:false];
++    NSDate *startDate = [RCTAppleHealthKit dateFromOptions:input key:@"startDate" withDefault:nil];
++    NSDate *endDate = [RCTAppleHealthKit dateFromOptions:input key:@"endDate" withDefault:[NSDate date]];
++    if(startDate == nil){
++        callback(@[RCTMakeError(@"startDate is required in options", nil, nil)]);
++        return;
++    }
++    NSPredicate * predicate = [RCTAppleHealthKit predicateForSamplesBetweenDates:startDate endDate:endDate];
++
++    [self fetchQuantitySamplesOfType:quantityType
++                                unit:unit
++                           predicate:predicate
++                           ascending:ascending
++                               limit:limit
++                          completion:^(NSArray *results, NSError *error) {
++        if(results){
++            callback(@[[NSNull null], results]);
++            return;
++        } else {
++            NSLog(@"An error occured while retrieving the iron sample %@. The error was: ", error);
++            callback(@[RCTMakeError(@"An error occured while retrieving the iron sample", error, nil)]);
++            return;
++        }
++    }];
++}
++
++- (void)dietary_getVitaminB12Samples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
++{
++    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryVitaminB12];
++    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit unitFromString:@"mcg"]];
++    NSUInteger limit = [RCTAppleHealthKit uintFromOptions:input key:@"limit" withDefault:HKObjectQueryNoLimit];
++    BOOL ascending = [RCTAppleHealthKit boolFromOptions:input key:@"ascending" withDefault:false];
++    NSDate *startDate = [RCTAppleHealthKit dateFromOptions:input key:@"startDate" withDefault:nil];
++    NSDate *endDate = [RCTAppleHealthKit dateFromOptions:input key:@"endDate" withDefault:[NSDate date]];
++    if(startDate == nil){
++        callback(@[RCTMakeError(@"startDate is required in options", nil, nil)]);
++        return;
++    }
++    NSPredicate * predicate = [RCTAppleHealthKit predicateForSamplesBetweenDates:startDate endDate:endDate];
++
++    [self fetchQuantitySamplesOfType:quantityType
++                                unit:unit
++                           predicate:predicate
++                           ascending:ascending
++                               limit:limit
++                          completion:^(NSArray *results, NSError *error) {
++        if(results){
++            callback(@[[NSNull null], results]);
++            return;
++        } else {
++            NSLog(@"An error occured while retrieving the vitamin B12 sample %@. The error was: ", error);
++            callback(@[RCTMakeError(@"An error occured while retrieving the vitamin B12 sample", error, nil)]);
++            return;
++        }
++    }];
++}
++
++- (void)dietary_getVitaminDSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
++{
++    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryVitaminD];
++    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit internationalUnit]];
++    NSUInteger limit = [RCTAppleHealthKit uintFromOptions:input key:@"limit" withDefault:HKObjectQueryNoLimit];
++    BOOL ascending = [RCTAppleHealthKit boolFromOptions:input key:@"ascending" withDefault:false];
++    NSDate *startDate = [RCTAppleHealthKit dateFromOptions:input key:@"startDate" withDefault:nil];
++    NSDate *endDate = [RCTAppleHealthKit dateFromOptions:input key:@"endDate" withDefault:[NSDate date]];
++    if(startDate == nil){
++        callback(@[RCTMakeError(@"startDate is required in options", nil, nil)]);
++        return;
++    }
++    NSPredicate * predicate = [RCTAppleHealthKit predicateForSamplesBetweenDates:startDate endDate:endDate];
++
++    [self fetchQuantitySamplesOfType:quantityType
++                                unit:unit
++                           predicate:predicate
++                           ascending:ascending
++                               limit:limit
++                          completion:^(NSArray *results, NSError *error) {
++        if(results){
++            callback(@[[NSNull null], results]);
++            return;
++        } else {
++            NSLog(@"An error occured while retrieving the vitamin D sample %@. The error was: ", error);
++            callback(@[RCTMakeError(@"An error occured while retrieving the vitamin D sample", error, nil)]);
++            return;
++        }
++    }];
++}
++
++- (void)dietary_getCalciumSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
++{
++    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryCalcium];
++    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit unitFromString:@"mg"]];
++    NSUInteger limit = [RCTAppleHealthKit uintFromOptions:input key:@"limit" withDefault:HKObjectQueryNoLimit];
++    BOOL ascending = [RCTAppleHealthKit boolFromOptions:input key:@"ascending" withDefault:false];
++    NSDate *startDate = [RCTAppleHealthKit dateFromOptions:input key:@"startDate" withDefault:nil];
++    NSDate *endDate = [RCTAppleHealthKit dateFromOptions:input key:@"endDate" withDefault:[NSDate date]];
++    if(startDate == nil){
++        callback(@[RCTMakeError(@"startDate is required in options", nil, nil)]);
++        return;
++    }
++    NSPredicate * predicate = [RCTAppleHealthKit predicateForSamplesBetweenDates:startDate endDate:endDate];
++
++    [self fetchQuantitySamplesOfType:quantityType
++                                unit:unit
++                           predicate:predicate
++                           ascending:ascending
++                               limit:limit
++                          completion:^(NSArray *results, NSError *error) {
++        if(results){
++            callback(@[[NSNull null], results]);
++            return;
++        } else {
++            NSLog(@"An error occured while retrieving the calcium sample %@. The error was: ", error);
++            callback(@[RCTMakeError(@"An error occured while retrieving the calcium sample", error, nil)]);
++            return;
++        }
++    }];
++}
++
++- (void)dietary_getZincSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
++{
++    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryZinc];
++    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit unitFromString:@"mg"]];
++    NSUInteger limit = [RCTAppleHealthKit uintFromOptions:input key:@"limit" withDefault:HKObjectQueryNoLimit];
++    BOOL ascending = [RCTAppleHealthKit boolFromOptions:input key:@"ascending" withDefault:false];
++    NSDate *startDate = [RCTAppleHealthKit dateFromOptions:input key:@"startDate" withDefault:nil];
++    NSDate *endDate = [RCTAppleHealthKit dateFromOptions:input key:@"endDate" withDefault:[NSDate date]];
++    if(startDate == nil){
++        callback(@[RCTMakeError(@"startDate is required in options", nil, nil)]);
++        return;
++    }
++    NSPredicate * predicate = [RCTAppleHealthKit predicateForSamplesBetweenDates:startDate endDate:endDate];
++
++    [self fetchQuantitySamplesOfType:quantityType
++                                unit:unit
++                           predicate:predicate
++                           ascending:ascending
++                               limit:limit
++                          completion:^(NSArray *results, NSError *error) {
++        if(results){
++            callback(@[[NSNull null], results]);
++            return;
++        } else {
++            NSLog(@"An error occured while retrieving the zinc sample %@. The error was: ", error);
++            callback(@[RCTMakeError(@"An error occured while retrieving the zinc sample", error, nil)]);
++            return;
++        }
++    }];
++}
++
  - (void)dietary_getFiberSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
  {
      HKQuantityType *fiberType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryFiber];
 diff --git a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m
-index e8ddce1..9b882aa 100644
+index e8ddce1..d061ebf 100644
 --- a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m
 +++ b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m
-@@ -335,6 +335,11 @@ RCT_EXPORT_METHOD(getProteinSamples:(NSDictionary *)input callback:(RCTResponseS
+@@ -335,6 +335,36 @@ RCT_EXPORT_METHOD(getProteinSamples:(NSDictionary *)input callback:(RCTResponseS
     [self dietary_getProteinSamples:input callback:callback];
  }
  
 +RCT_EXPORT_METHOD(getSodiumSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)
 +{
 +   [self dietary_getSodiumSamples:input callback:callback];
++}
++
++RCT_EXPORT_METHOD(getIronSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)
++{
++   [self dietary_getIronSamples:input callback:callback];
++}
++
++RCT_EXPORT_METHOD(getVitaminB12Samples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)
++{
++   [self dietary_getVitaminB12Samples:input callback:callback];
++}
++
++RCT_EXPORT_METHOD(getVitaminDSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)
++{
++   [self dietary_getVitaminDSamples:input callback:callback];
++}
++
++RCT_EXPORT_METHOD(getCalciumSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)
++{
++   [self dietary_getCalciumSamples:input callback:callback];
++}
++
++RCT_EXPORT_METHOD(getZincSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)
++{
++   [self dietary_getZincSamples:input callback:callback];
 +}
 +
  RCT_EXPORT_METHOD(getFiberSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback)

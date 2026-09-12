@@ -46,6 +46,13 @@ const healthKitPermissions = {
       'FatTotal',
       'EnergyConsumed',
       'Sodium',
+      // Nutrition sync (Cronometer -> HealthKit -> nutrition_days)
+      'Fiber',
+      'Iron',
+      'VitaminB12',
+      'VitaminD',
+      'Calcium',
+      'Zinc',
       'Weight',
       'BodyFatPercentage',
       'Height',
@@ -421,6 +428,46 @@ export async function getNutritionData(date: Date): Promise<NutritionData | null
     fat,
     sodium: sodium > 0 ? sodium : undefined,
   };
+}
+
+/**
+ * Raw dietary samples for one getter over a date range, for nutritionSync.
+ * Returns null when this build's HealthKit library lacks the getter (the
+ * micronutrient getters come from patches/react-native-health and need a native
+ * build), so callers can tell "unreadable" from "nothing logged".
+ */
+export async function fetchNutritionSamples(
+  methodName: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<Array<{ value: number; startDate: string }> | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) return null;
+  if (typeof AppleHealthKit[methodName] !== 'function') return null;
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = { startDate: startDate.toISOString(), endDate: endDate.toISOString(), ascending: true };
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log(`${methodName} (range) timed out`);
+      resolve([]);
+    }, 15000);
+    try {
+      AppleHealthKit[methodName](options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log(`Error fetching ${methodName} range:`, err);
+          resolve([]);
+          return;
+        }
+        resolve((results || []).map((s: any) => ({ value: Number(s.value) || 0, startDate: String(s.startDate) })));
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log(`${methodName} range exception:`, e);
+      resolve([]);
+    }
+  });
 }
 
 // Get today's total calories consumed (for calorie ring)
