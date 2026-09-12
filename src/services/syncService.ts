@@ -17,12 +17,16 @@ import {
   clearPendingMigrationResync,
   getBodyMeasurementById,
   getExerciseById,
+  getExercises,
   getPendingMigrationResync,
+  getSets,
   getWorkoutById,
+  getWorkouts,
 } from './storage';
 
 // Storage keys for sync state
 const SYNC_KEYS = {
+  LAST_RECONCILE: '@workout_tracker/sync_last_reconcile',
   PENDING_OPERATIONS: '@workout_tracker/pending_sync_operations',
   LAST_CLOUD_PULL: '@workout_tracker/last_cloud_pull',
   LAST_SYNC_TIMESTAMP: '@workout_tracker/last_sync_timestamp',
@@ -100,6 +104,130 @@ function chunkArray<T>(array: T[], size: number): T[][] {
   return chunks;
 }
 
+// ==================== ROW BUILDERS ====================
+// One place that knows the cloud column names, shared by the per-item sync
+// functions and by reconcileCloud().
+
+function exerciseRow(exercise: Exercise, userId: string) {
+  return {
+    id: exercise.id,
+    user_id: userId,
+    name: exercise.name,
+    base_name: exercise.baseName || null,
+    primary_muscle_groups: exercise.primaryMuscleGroups || [],
+    secondary_muscle_groups: exercise.secondaryMuscleGroups || [],
+    equipment: exercise.equipment,
+    cable_accessory: exercise.cableAccessory || null,
+    machine_weight_type: exercise.machineWeightType || null,
+    location_ids: exercise.locationIds || [],
+    is_custom: exercise.isCustom ?? true,
+    is_favorite: exercise.isFavorite ?? false,
+    is_bodyweight: exercise.isBodyweight ?? exercise.equipment === 'bodyweight',
+  };
+}
+
+function workoutRow(workout: Workout, userId: string) {
+  return {
+    id: workout.id,
+    user_id: userId,
+    template_id: workout.templateId || null,
+    started_at: workout.startedAt,
+    completed_at: workout.completedAt || null,
+    skipped_exercise_ids: workout.skippedExerciseIds || [],
+    // Which gym this happened at. Previously local-only, which meant any device
+    // that restored from the cloud lost every workout's gym and then reported
+    // "first time here" for exercises the user does weekly.
+    location_id: workout.locationId || null,
+    is_deload: workout.isDeload ?? false,
+  };
+}
+
+function setRow(set: WorkoutSet, userId: string) {
+  return {
+    id: set.id,
+    user_id: userId,
+    workout_id: set.workoutId,
+    exercise_id: set.exerciseId,
+    reps: set.reps,
+    weight: set.weight,
+    logged_at: set.loggedAt || new Date().toISOString(),
+  };
+}
+
+// ==================== CLOUD RECONCILIATION ====================
+
+/** PostgREST caps a response at 1000 rows; page through everything. */
+async function selectAllRows<T = any>(table: string, userId: string, columns: string = '*'): Promise<{ data: T[]; error: any }> {
+  const PAGE = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .eq('user_id', userId)
+      .range(from, from + PAGE - 1);
+    if (error) return { data: out, error };
+    const page = (data ?? []) as T[];
+    out.push(...page);
+    if (page.length < PAGE) return { data: out, error: null };
+  }
+}
+
+export interface ReconcileResult {
+  exercises: number;
+  workouts: number;
+  sets: number;
+  skipped?: 'signed_out' | 'already_today';
+}
+
+/**
+ * Find local rows the cloud does not have and queue them for upload.
+ *
+ * Sync is push-only and a queued row can be dropped after repeated failures,
+ * so the cloud can silently miss sets (workout c756841c had 13 sets on the
+ * phone and 12 in Supabase). Once a day, compare ids and queue the difference;
+ * the sync manager batch-uploads the queue within 30 seconds.
+ */
+export async function reconcileCloud(force: boolean = false): Promise<ReconcileResult> {
+  const userId = await getUserId();
+  if (!userId) return { exercises: 0, workouts: 0, sets: 0, skipped: 'signed_out' };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const last = await AsyncStorage.getItem(SYNC_KEYS.LAST_RECONCILE).catch(() => null);
+  if (!force && last === today) return { exercises: 0, workouts: 0, sets: 0, skipped: 'already_today' };
+
+  const [localExercises, localWorkouts, localSets] = await Promise.all([
+    getExercises(),
+    getWorkouts(),
+    getSets(),
+  ]);
+  const [cloudExercises, cloudWorkouts, cloudSets] = await Promise.all([
+    selectAllRows<{ id: string }>('exercises', userId, 'id'),
+    selectAllRows<{ id: string }>('workouts', userId, 'id'),
+    selectAllRows<{ id: string }>('workout_sets', userId, 'id'),
+  ]);
+  if (cloudExercises.error || cloudWorkouts.error || cloudSets.error) {
+    console.log('[Sync] Reconcile skipped, cloud read failed:',
+      (cloudExercises.error || cloudWorkouts.error || cloudSets.error)?.message);
+    return { exercises: 0, workouts: 0, sets: 0 };
+  }
+
+  const have = (rows: { id: string }[]) => new Set(rows.map(r => r.id));
+  const missingExercises = localExercises.filter(e => !have(cloudExercises.data).has(e.id));
+  const missingWorkouts = localWorkouts.filter(w => !have(cloudWorkouts.data).has(w.id));
+  const knownWorkouts = new Set(localWorkouts.map(w => w.id));
+  const missingSets = localSets.filter(s => knownWorkouts.has(s.workoutId) && !have(cloudSets.data).has(s.id));
+
+  for (const e of missingExercises) await addToPendingQueue({ table: 'exercises', operation: 'upsert', data: exerciseRow(e, userId) });
+  for (const w of missingWorkouts) await addToPendingQueue({ table: 'workouts', operation: 'upsert', data: workoutRow(w, userId) });
+  for (const st of missingSets) await addToPendingQueue({ table: 'workout_sets', operation: 'upsert', data: setRow(st, userId) });
+
+  await AsyncStorage.setItem(SYNC_KEYS.LAST_RECONCILE, today).catch(() => {});
+  const result = { exercises: missingExercises.length, workouts: missingWorkouts.length, sets: missingSets.length };
+  console.log(`[Sync] Reconcile queued ${result.exercises} exercises, ${result.workouts} workouts, ${result.sets} sets missing from the cloud`);
+  return result;
+}
+
 // ==================== EXERCISE SYNC ====================
 
 export async function syncExercise(exercise: Exercise): Promise<void> {
@@ -107,21 +235,7 @@ export async function syncExercise(exercise: Exercise): Promise<void> {
   if (!userId) return;
 
   try {
-    const row = {
-      id: exercise.id,
-      user_id: userId,
-      name: exercise.name,
-      base_name: exercise.baseName || null,
-      primary_muscle_groups: exercise.primaryMuscleGroups || [],
-      secondary_muscle_groups: exercise.secondaryMuscleGroups || [],
-      equipment: exercise.equipment,
-      cable_accessory: exercise.cableAccessory || null,
-      machine_weight_type: exercise.machineWeightType || null,
-      location_ids: exercise.locationIds || [],
-      is_custom: exercise.isCustom ?? true,
-      is_favorite: exercise.isFavorite ?? false,
-      is_bodyweight: exercise.isBodyweight ?? exercise.equipment === 'bodyweight',
-    };
+    const row = exerciseRow(exercise, userId);
 
     const { error, rows: syncedRow } = await upsertTolerant('exercises', row, [
       'is_favorite',
@@ -221,19 +335,7 @@ export async function syncWorkout(workout: Workout): Promise<void> {
   if (!userId) return;
 
   try {
-    const row = {
-      id: workout.id,
-      user_id: userId,
-      template_id: workout.templateId || null,
-      started_at: workout.startedAt,
-      completed_at: workout.completedAt || null,
-      skipped_exercise_ids: workout.skippedExerciseIds || [],
-      // Which gym this happened at. Previously local-only, which meant any device
-      // that restored from the cloud lost every workout's gym and then reported
-      // "first time here" for exercises the user does weekly.
-      location_id: workout.locationId || null,
-      is_deload: workout.isDeload ?? false,
-    };
+    const row = workoutRow(workout, userId);
 
     const { error, rows: syncedRow } = await upsertTolerant('workouts', row, [
       'location_id',
@@ -281,15 +383,7 @@ export async function syncSet(set: WorkoutSet): Promise<void> {
   if (!userId) return;
 
   try {
-    const row = {
-      id: set.id,
-      user_id: userId,
-      workout_id: set.workoutId,
-      exercise_id: set.exerciseId,
-      reps: set.reps,
-      weight: set.weight,
-      logged_at: set.loggedAt || new Date().toISOString(),
-    };
+    const row = setRow(set, userId);
 
     const { error } = await supabase
       .from('workout_sets')
@@ -947,15 +1041,17 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       bodyMeasurementsResult,
       settingsResult,
     ] = await Promise.all([
-      supabase.from('exercises').select('*').eq('user_id', userId),
-      supabase.from('templates').select('*').eq('user_id', userId),
-      supabase.from('workouts').select('*').eq('user_id', userId),
-      supabase.from('workout_sets').select('*').eq('user_id', userId),
-      supabase.from('supplements').select('*').eq('user_id', userId),
-      supabase.from('supplement_intakes').select('*').eq('user_id', userId),
-      supabase.from('routines').select('*').eq('user_id', userId),
-      supabase.from('workout_locations').select('*').eq('user_id', userId),
-      supabase.from('body_measurements').select('*').eq('user_id', userId),
+      // Paged: a single select is capped at 1000 rows, which silently truncated
+      // set history on a restore.
+      selectAllRows('exercises', userId),
+      selectAllRows('templates', userId),
+      selectAllRows('workouts', userId),
+      selectAllRows('workout_sets', userId),
+      selectAllRows('supplements', userId),
+      selectAllRows('supplement_intakes', userId),
+      selectAllRows('routines', userId),
+      selectAllRows('workout_locations', userId),
+      selectAllRows('body_measurements', userId),
       supabase.from('user_settings').select('*').eq('user_id', userId).single(),
     ]);
 
