@@ -15,6 +15,7 @@ import {
 import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
 import {
   clearPendingMigrationResync,
+  getBodyMeasurementById,
   getExerciseById,
   getPendingMigrationResync,
   getWorkoutById,
@@ -1124,9 +1125,14 @@ export async function flushMigrationResync(): Promise<void> {
     const workout = await getWorkoutById(id);
     if (workout) await syncWorkout(workout);
   }
+  for (const id of pending.bodyMeasurementIds ?? []) {
+    const measurement = await getBodyMeasurementById(id);
+    if (measurement) await syncBodyMeasurement(measurement);
+  }
   await clearPendingMigrationResync();
   console.log(
-    `[Sync] Re-synced ${pending.exerciseIds.length} exercises and ${pending.workoutIds.length} workouts after migration`,
+    `[Sync] Re-synced ${pending.exerciseIds.length} exercises, ${pending.workoutIds.length} workouts, ` +
+      `${pending.bodyMeasurementIds?.length ?? 0} body measurements after migration`,
   );
 }
 

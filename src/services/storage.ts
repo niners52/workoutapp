@@ -612,6 +612,7 @@ const V14_EXERCISE_REPAIRS: Record<string, Partial<Exercise>> = {
 export interface MigrationResync {
   exerciseIds: string[];
   workoutIds: string[];
+  bodyMeasurementIds?: string[];
 }
 
 export async function getPendingMigrationResync(): Promise<MigrationResync | null> {
@@ -625,10 +626,11 @@ export async function clearPendingMigrationResync(): Promise<void> {
 async function migrateToV14(): Promise<void> {
   console.log('Running migration to V14 - data-quality repairs...');
 
-  const [exercises, workouts, sets] = await Promise.all([
+  const [exercises, workouts, sets, measurements] = await Promise.all([
     getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []),
     getItem<Workout[]>(STORAGE_KEYS.WORKOUTS, []),
     getItem<WorkoutSet[]>(STORAGE_KEYS.SETS, []),
+    getItem<BodyMeasurement[]>(STORAGE_KEYS.BODY_MEASUREMENTS, []),
   ]);
 
   const changedExercises: string[] = [];
@@ -662,14 +664,20 @@ async function migrateToV14(): Promise<void> {
   if (changedExercises.length > 0) await setItem(STORAGE_KEYS.EXERCISES, repairedExercises);
   if (changedWorkouts.length > 0) await setItem(STORAGE_KEYS.WORKOUTS, repairedWorkouts);
 
+  // Body measurements never reached the cloud (the table lacked the columns the
+  // app writes until supabase/migrations/20260911000001); push every local one.
+  const measurementIds = measurements.map(m => m.id);
+
   const previous = await getPendingMigrationResync();
   await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
     exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...changedExercises])],
     workoutIds: [...new Set([...(previous?.workoutIds ?? []), ...changedWorkouts])],
+    bodyMeasurementIds: [...new Set([...(previous?.bodyMeasurementIds ?? []), ...measurementIds])],
   });
 
   console.log(
-    `Migration to V14 complete - ${changedExercises.length} exercises, ${changedWorkouts.length} workouts repaired`,
+    `Migration to V14 complete - ${changedExercises.length} exercises, ${changedWorkouts.length} workouts repaired, ` +
+      `${measurementIds.length} body measurements queued for re-sync`,
   );
 }
 

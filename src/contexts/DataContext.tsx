@@ -35,6 +35,7 @@ import {
   getActiveWorkoutState,
 } from '../services/storage';
 import { initializeHealthKit } from '../services/healthKit';
+import { importHealthKitBodyWeights } from '../services/bodyWeightImport';
 import { syncWeeklyPlannerReminder } from '../services/weeklyPlannerReminder';
 import { supabase } from '../services/supabase';
 import {
@@ -327,6 +328,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         initializeHealthKit().then(success => {
           if (success) {
             console.log('HealthKit initialized successfully');
+            // Bring Apple Health body weight into the measurements log (once a day)
+            importHealthKitBodyWeights()
+              .then(result => {
+                if (result.imported > 0) return refreshBodyMeasurements();
+              })
+              .catch(e => console.log('HealthKit body weight import failed:', e));
           } else {
             console.log('HealthKit not available or permission denied');
           }
