@@ -154,6 +154,55 @@ function setRow(set: WorkoutSet, userId: string) {
   };
 }
 
+// ==================== NUTRITION DAYS ====================
+
+/** One local calendar day of Apple Health nutrition; null = this build cannot read that nutrient. */
+export interface NutritionDayRow {
+  id: string; // hk-nutrition-YYYY-MM-DD
+  date: string; // 'YYYY-MM-DD'
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  iron_mg: number | null;
+  vitamin_b12_mcg: number | null;
+  vitamin_d_iu: number | null;
+  calcium_mg: number | null;
+  zinc_mg: number | null;
+  sodium_mg: number | null;
+  sample_count: number;
+  source: 'healthkit';
+  synced_at: string;
+}
+
+/**
+ * Upsert a window of nutrition days on (user_id, date). Failed batches go to the
+ * pending queue, which retries them with the same conflict key.
+ */
+export async function syncNutritionDays(rows: NutritionDayRow[]): Promise<void> {
+  const userId = await getUserId();
+  if (!userId || rows.length === 0) return;
+
+  const withUser = rows.map(r => ({ ...r, user_id: userId }));
+  for (const batch of chunkArray(withUser, 50)) {
+    try {
+      const { error } = await supabase
+        .from('nutrition_days')
+        .upsert(batch, { onConflict: 'user_id,date' });
+      if (error) {
+        console.log('Nutrition sync failed, queuing:', error.message);
+        for (const row of batch) await addToPendingQueue({ table: 'nutrition_days', operation: 'upsert', data: row });
+      } else {
+        await updateLastSyncTimestamp();
+      }
+    } catch (error) {
+      console.log('Nutrition sync error, queuing:', error);
+      for (const row of batch) await addToPendingQueue({ table: 'nutrition_days', operation: 'upsert', data: row });
+    }
+  }
+}
+
 // ==================== CLOUD RECONCILIATION ====================
 
 /** PostgREST caps a response at 1000 rows; page through everything. */
@@ -830,7 +879,8 @@ export async function processPendingSync(
 
     // Process upserts in batches of 50 per table
     for (const [table, ops] of upsertsByTable) {
-      const conflictKey = table === 'user_settings' ? 'user_id' : 'id';
+      const conflictKey =
+        table === 'user_settings' ? 'user_id' : table === 'nutrition_days' ? 'user_id,date' : 'id';
       const batches = chunkArray(ops, 50);
 
       for (const batch of batches) {

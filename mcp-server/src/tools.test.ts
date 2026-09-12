@@ -13,7 +13,9 @@ import {
   getBodyWeightLog,
   getExerciseHistory,
   getFavoriteExercises,
+  getNutritionLog,
   getPrs,
+  getSupplementLog,
   getRecentWorkouts,
   getWeeklyVolume,
   searchExercises,
@@ -74,6 +76,26 @@ const tables = {
     { user_id: U, week_start_day: 'monday', units: 'imperial', muscle_group_targets: { chest: 12, quads: 10, glutes: 0 } },
   ],
   workout_locations: [{ id: 'l1', user_id: U, name: 'Planet Fitness' }],
+  // NOW is Friday 2026-09-04 in Denver. 09-01 is absent (not logged), 08-31 has sample_count 0.
+  nutrition_days: [
+    { id: 'hk-nutrition-2026-09-04', user_id: U, date: '2026-09-04', calories: 900, protein_g: 80, carbs_g: 60, fat_g: 30, fiber_g: 10, iron_mg: null, vitamin_b12_mcg: null, vitamin_d_iu: null, calcium_mg: null, zinc_mg: null, sodium_mg: 1200, sample_count: 12, source: 'healthkit', synced_at: '2026-09-04T17:00:00Z' },
+    { id: 'hk-nutrition-2026-09-03', user_id: U, date: '2026-09-03', calories: 2400, protein_g: 200, carbs_g: 220, fat_g: 80, fiber_g: 30, iron_mg: null, vitamin_b12_mcg: null, vitamin_d_iu: null, calcium_mg: null, zinc_mg: null, sodium_mg: 3000, sample_count: 40, source: 'healthkit', synced_at: '2026-09-04T17:00:00Z' },
+    { id: 'hk-nutrition-2026-09-02', user_id: U, date: '2026-09-02', calories: 2000, protein_g: 180, carbs_g: 180, fat_g: 70, fiber_g: 20, iron_mg: 12, vitamin_b12_mcg: null, vitamin_d_iu: null, calcium_mg: null, zinc_mg: null, sodium_mg: 2600, sample_count: 35, source: 'healthkit', synced_at: '2026-09-04T17:00:00Z' },
+    { id: 'hk-nutrition-2026-08-31', user_id: U, date: '2026-08-31', calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, iron_mg: null, vitamin_b12_mcg: null, vitamin_d_iu: null, calcium_mg: null, zinc_mg: null, sodium_mg: 0, sample_count: 0, source: 'healthkit', synced_at: '2026-09-04T17:00:00Z' },
+    { id: 'hk-nutrition-2026-09-03', user_id: OTHER, date: '2026-09-03', calories: 5000, protein_g: 1, carbs_g: 1, fat_g: 1, fiber_g: 1, iron_mg: null, vitamin_b12_mcg: null, vitamin_d_iu: null, calcium_mg: null, zinc_mg: null, sodium_mg: 1, sample_count: 3, source: 'healthkit', synced_at: null },
+  ],
+  supplements: [
+    { id: 'sup1', user_id: U, name: 'Creatine', sort_order: 0, is_active: true },
+    { id: 'sup2', user_id: U, name: 'Vitamin D', sort_order: 1, is_active: true },
+    { id: 'sup3', user_id: U, name: 'Old Thing', sort_order: 2, is_active: false },
+  ],
+  supplement_intakes: [
+    { id: 'in1', user_id: U, supplement_id: 'sup1', date: '2026-09-04', taken_at: '2026-09-04T13:00:00Z' },
+    { id: 'in2', user_id: U, supplement_id: 'sup1', date: '2026-09-03', taken_at: '2026-09-03T13:00:00Z' },
+    { id: 'in3', user_id: U, supplement_id: 'sup1', date: '2026-09-02', taken_at: '2026-09-02T13:00:00Z' },
+    { id: 'in4', user_id: U, supplement_id: 'sup2', date: '2026-09-03', taken_at: '2026-09-03T13:00:00Z' },
+    { id: 'in5', user_id: U, supplement_id: 'sup1', date: '2026-08-20', taken_at: '2026-08-20T13:00:00Z' }, // outside a 7-day window
+  ],
 };
 
 function makeCtx(opts: FakeOptions = {}): ToolContext & { queryLog: string[] } {
@@ -176,8 +198,9 @@ test('describe_schema reports the columns the tools need', async () => {
     profiles: { id: 'uuid' },
   }) };
   const r = await describeSchema(ctx);
-  assert.deepEqual(r.missing_required_columns, ['body_measurements.weight']);
-  assert.deepEqual(r.other_tables, ['profiles']);
+  assert.ok(r.missing_required_columns.includes('body_measurements.weight'));
+  assert.ok(r.missing_required_columns.includes('nutrition_days (table not found)'));
+  assert.ok('profiles' in r.tables);
   assert.equal(r.tables.body_measurements!.weight_lbs, 'numeric');
 });
 
@@ -309,13 +332,59 @@ async function connectClient(ctx: ToolContext) {
   return { client, close: async () => { await client.close(); await server.close(); } };
 }
 
+test('get_nutrition_log: absent and sample_count-0 days are not zeros and do not drag averages', async () => {
+  const r = await getNutritionLog(makeCtx(), { days_back: 7 });
+  assert.deepEqual(r.days.map(d => d.date), ['2026-09-04', '2026-09-03', '2026-09-02'], '09-01 absent and 08-31 (no samples) are omitted');
+  assert.equal(r.days[0]!.partial, true, 'today is mid-logging');
+  assert.equal(r.days[1]!.partial, undefined);
+  assert.equal(r.summary.logged_days, 3);
+  assert.equal(r.summary.complete_days, 2);
+  // Averages over the two complete days only: (2400+2000)/2, (200+180)/2
+  assert.equal(r.summary.daily_averages.calories, 2200);
+  assert.equal(r.summary.daily_averages.protein_g, 190);
+  assert.equal(r.summary.micro_averages.sodium_mg.avg, 2800);
+  assert.equal(r.summary.micro_averages.iron_mg.avg, 12, 'null days do not count as zero');
+  assert.equal(r.summary.micro_averages.iron_mg.days_with_data, 1);
+  assert.equal(r.summary.micro_averages.vitamin_d_iu.avg, null);
+  assert.deepEqual(r.summary.unreadable_in_current_app_build, ['vitamin_b12_mcg', 'vitamin_d_iu', 'calcium_mg', 'zinc_mg']);
+  assert.ok(r.days.every(d => d.date >= r.window.since));
+});
+
+test('get_nutrition_log: empty table gives no days and null averages, not zeros', async () => {
+  const { client } = createFakeSupabase({ ...tables, nutrition_days: [] });
+  const r = await getNutritionLog({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { days_back: 14 });
+  assert.equal(r.days.length, 0);
+  assert.equal(r.summary.logged_days, 0);
+  assert.equal(r.summary.daily_averages.calories, null);
+});
+
+test('get_supplement_log: adherence per supplement over the window, inactive hidden unless taken', async () => {
+  const r = await getSupplementLog(makeCtx(), { days_back: 7 });
+  const creatine = r.supplements.find(s => s.name === 'Creatine')!;
+  assert.equal(creatine.days_taken, 3, 'the 08-20 intake is outside the window');
+  assert.equal(creatine.days_in_window, 7);
+  assert.equal(creatine.adherence_pct, 43);
+  assert.equal(creatine.taken_today, true);
+  assert.equal(creatine.last_taken, '2026-09-04');
+  const vitD = r.supplements.find(s => s.name === 'Vitamin D')!;
+  assert.equal(vitD.days_taken, 1);
+  assert.equal(vitD.taken_today, false);
+  assert.equal(r.supplements.some(s => s.name === 'Old Thing'), false, 'inactive with no intakes is omitted');
+  assert.deepEqual(r.intakes_by_day.map(d => [d.date, d.taken]), [
+    ['2026-09-04', ['Creatine']],
+    ['2026-09-03', ['Creatine', 'Vitamin D']],
+    ['2026-09-02', ['Creatine']],
+  ]);
+  assert.equal(r.intakes_by_day[0]!.partial, true);
+});
+
 test('MCP: lists all tools as read-only and executes one', async () => {
   const { client, close } = await connectClient(makeCtx());
   try {
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map(t => t.name).sort(),
-      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_prs', 'get_recent_workouts', 'get_weekly_volume', 'search_exercises'],
+      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_nutrition_log', 'get_prs', 'get_recent_workouts', 'get_supplement_log', 'get_weekly_volume', 'search_exercises'],
     );
     assert.ok(tools.every(t => t.annotations?.readOnlyHint === true));
 
