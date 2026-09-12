@@ -259,8 +259,10 @@ test('get_prs: one entry per exercise with history, sorted by Epley 1RM', async 
   assert.equal(pullUp.heaviest_set?.load_note, '+BW');
   assert.equal(pullUp.best_e1rm_epley?.e1rm_lbs, epley1RM(206.2, 6));
   const facePull = r.prs.find(p => p.exercise_id === 'e7')!;
-  assert.equal(facePull.best_e1rm_epley?.reps, 45);
-  assert.equal(facePull.best_e1rm_epley?.e1rm_brzycki_app_lbs, null, 'no Brzycki above 15 reps');
+  // Face pull sets: 40x15 (qualifies) and 45x45 (too many reps for any 1RM formula)
+  assert.equal(facePull.best_e1rm_epley?.reps, 15);
+  assert.equal(facePull.best_e1rm_epley?.e1rm_lbs, epley1RM(40, 15));
+  assert.equal(facePull.heaviest_set?.weight_lbs, 45, 'heaviest set still counts the 45-rep set');
   assert.deepEqual(facePull.primary_muscle_groups, ['upper_back'], 'legacy rear_delts reads as upper_back');
   const bench = r.prs.find(p => p.exercise_id === 'e1')!;
   assert.equal(bench.heaviest_set?.weight_lbs, 225);
@@ -356,6 +358,32 @@ test('body weights fall back to typed (type, value) rows when the weight column 
   const all = await db.listAllBodyWeights();
   assert.equal(all.length, 2);
   assert.equal(queryLog.length - before, 2, 'typed shape is remembered: one page plus the terminating empty page, no failed flat attempt');
+});
+
+test('get_prs: exercises with only high-rep sets rank by heaviest load, below any e1RM', async () => {
+  const rows = [
+    ...tables.workout_sets,
+    // Sit-ups: 50 lb x 28 reps only. Epley would say 96.7; not a 1RM estimate.
+    { id: 'x1', user_id: U, workout_id: 'w1', exercise_id: 'e8', weight: 50, reps: 28, logged_at: '2026-09-02T16:00:00Z' },
+    // Heavy carry: 300 lb x 20 reps only.
+    { id: 'x2', user_id: U, workout_id: 'w1', exercise_id: 'e9', weight: 300, reps: 20, logged_at: '2026-09-02T16:05:00Z' },
+  ];
+  const exercises = [
+    ...tables.exercises,
+    { id: 'e8', user_id: U, name: 'Sit Ups', base_name: null, primary_muscle_groups: ['abs'], secondary_muscle_groups: [], equipment: 'other', is_favorite: false },
+    { id: 'e9', user_id: U, name: 'Farmer Carry', base_name: null, primary_muscle_groups: ['forearms'], secondary_muscle_groups: [], equipment: 'dumbbell', is_favorite: false },
+  ];
+  const { client } = createFakeSupabase({ ...tables, workout_sets: rows, exercises });
+  const r = await getPrs({ db: new Db(client, U), timeZone: TZ }, { limit: 20 });
+  const ids = r.prs.map(p => p.exercise_id);
+  const sitUps = r.prs.find(p => p.exercise_id === 'e8')!;
+  assert.equal(sitUps.best_e1rm_epley, null);
+  assert.equal(sitUps.heaviest_set?.weight_lbs, 50);
+  // every exercise with an e1RM ranks above the high-rep-only ones
+  const lastWithE1rm = Math.max(...r.prs.map((p, i) => (p.best_e1rm_epley ? i : -1)));
+  assert.ok(ids.indexOf('e9') > lastWithE1rm && ids.indexOf('e8') > lastWithE1rm);
+  assert.ok(ids.indexOf('e9') < ids.indexOf('e8'), '300 lb carry outranks 50 lb sit-ups by load');
+  assert.match(r.e1rm_note, /15 reps or fewer/);
 });
 
 test('get_prs survives an unreadable body-weight table', async () => {

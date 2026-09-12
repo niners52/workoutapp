@@ -241,10 +241,11 @@ measured to the last set (`duration_truncated_to_last_set: true`).
 
 ### Estimated 1RM
 
-`best_e1rm_epley` uses Epley, `weight × (1 + reps/30)`. The app's own PR screen uses
-Brzycki (`weight × 36 / (37 − reps)`), so that value is included as
-`e1rm_brzycki_app_lbs` for cross-checking. It is `null` above 15 reps, where the
-formula stops being a usable estimate; Epley remains the sort key.
+`best_e1rm_epley` uses Epley, `weight × (1 + reps/30)`, computed only from sets of 15
+reps or fewer, since neither formula is a usable estimate beyond that. The app's own PR
+screen uses Brzycki (`weight × 36 / (37 − reps)`), included as `e1rm_brzycki_app_lbs` for
+cross-checking. `get_prs` sorts by Epley e1RM, then by heaviest effective load for
+exercises whose sets are all high-rep (`best_e1rm_epley` is `null` for those).
 
 ## Catching schema changes
 
