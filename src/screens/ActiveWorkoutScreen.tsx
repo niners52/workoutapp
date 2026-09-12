@@ -26,7 +26,7 @@ import { useWorkout } from '../contexts/WorkoutContext';
 import { getLastWorkoutForExercise } from '../services/workoutService';
 import { LocationMatch } from '../services/locationMatch';
 import { countFavorites } from '../services/favorites';
-import { WorkoutSet, Exercise, Equipment, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem, TRAVEL_LOCATION_ID, TRAVEL_LOCATION } from '../types';
+import { WorkoutSet, Exercise, Equipment, PrimaryMuscleGroup, ALL_TRACKABLE_MUSCLE_GROUPS, MUSCLE_GROUP_DISPLAY_NAMES, WorkoutLocation, EQUIPMENT_DISPLAY_NAMES, CABLE_ACCESSORY_DISPLAY_NAMES, UnitSystem, TRAVEL_LOCATION_ID, TRAVEL_LOCATION } from '../types';
 import { RootStackParamList } from '../navigation/types';
 import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLbs, displayWeight } from '../services/units';
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
@@ -119,6 +119,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   // the write went through (the modal closes immediately, otherwise no feedback).
   const [editSavedToast, setEditSavedToast] = useState(false);
   const [editEquipment, setEditEquipment] = useState<Equipment>('barbell');
+  // Muscle-group edits write to the exercise itself, so volume tracking, weekly
+  // targets, and analytics pick the change up everywhere immediately.
+  const [editPrimaryMuscles, setEditPrimaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
+  const [editSecondaryMuscles, setEditSecondaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
   // Per-exercise target set overrides for this workout only
   const [targetSetOverrides, setTargetSetOverrides] = useState<Record<string, number>>({});
 
@@ -550,7 +554,35 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     // want the change to stick across future workouts. Session-only is the opt-out.
     setEditTargetSetsPermanent(true);
     setEditEquipment(exercise.equipment);
+    // Support both the array field and the deprecated single field
+    setEditPrimaryMuscles(
+      exercise.primaryMuscleGroups?.length
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : []
+    );
+    setEditSecondaryMuscles(exercise.secondaryMuscleGroups ?? []);
     setEditModalVisible(true);
+  };
+
+  // Same semantics as the full-screen exercise editor: at least one primary stays
+  // selected, and a muscle can't be both primary and secondary.
+  const toggleEditPrimaryMuscle = (muscle: PrimaryMuscleGroup) => {
+    setEditPrimaryMuscles(prev => {
+      if (prev.includes(muscle)) {
+        return prev.length > 1 ? prev.filter(m => m !== muscle) : prev;
+      }
+      setEditSecondaryMuscles(sec => sec.filter(m => m !== muscle));
+      return [...prev, muscle];
+    });
+  };
+
+  const toggleEditSecondaryMuscle = (muscle: PrimaryMuscleGroup) => {
+    if (editPrimaryMuscles.includes(muscle)) return;
+    setEditSecondaryMuscles(prev =>
+      prev.includes(muscle) ? prev.filter(m => m !== muscle) : [...prev, muscle]
+    );
   };
 
   const handleSaveExerciseEdit = async () => {
@@ -563,6 +595,23 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     const unilateralChanged = editUnilateral !== (editingExercise.isUnilateral ?? false);
     const notesChanged = (editNotes.trim() || undefined) !== (editingExercise.notes || undefined);
     const equipmentChanged = editEquipment !== editingExercise.equipment;
+
+    // Muscle-group changes (compare against the same primary fallback used to seed the modal)
+    const originalPrimary = editingExercise.primaryMuscleGroups?.length
+      ? editingExercise.primaryMuscleGroups
+      : editingExercise.primaryMuscleGroup
+      ? [editingExercise.primaryMuscleGroup]
+      : [];
+    const originalSecondary = editingExercise.secondaryMuscleGroups ?? [];
+    const sameMuscles = (a: PrimaryMuscleGroup[], b: PrimaryMuscleGroup[]) =>
+      a.length === b.length && a.every(m => b.includes(m));
+    const musclesChanged =
+      !sameMuscles(editPrimaryMuscles, originalPrimary) ||
+      !sameMuscles(editSecondaryMuscles, originalSecondary);
+    if (musclesChanged && editPrimaryMuscles.length === 0) {
+      Alert.alert('Missing Muscle Group', 'Select at least one primary muscle group.');
+      return;
+    }
 
     // The "natural" default for this exercise given its (possibly just-toggled) unilateral state.
     // When the chosen target equals this, we store `undefined` so the exercise falls back to the
@@ -582,7 +631,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     // Persist exercise changes (name, unilateral, notes, equipment are always permanent;
     // targetSets only when the user opted into "permanent").
     let persisted = false;
-    if (nameChanged || unilateralChanged || notesChanged || equipmentChanged || targetSetsChanged) {
+    if (nameChanged || unilateralChanged || notesChanged || equipmentChanged || targetSetsChanged || musclesChanged) {
       const updatedExercise: Exercise = {
         ...editingExercise,
         name: nameChanged ? trimmedName : editingExercise.name,
@@ -590,6 +639,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         notes: editNotes.trim() || undefined,
         equipment: editEquipment,
         targetSets: newTargetSets,
+        primaryMuscleGroups: editPrimaryMuscles.length ? editPrimaryMuscles : editingExercise.primaryMuscleGroups,
+        // Keep the deprecated single field in sync so legacy readers agree
+        primaryMuscleGroup: editPrimaryMuscles[0] ?? editingExercise.primaryMuscleGroup,
+        secondaryMuscleGroups: editSecondaryMuscles.length ? editSecondaryMuscles : undefined,
       };
       try {
         await updateExercise(updatedExercise);
@@ -1527,6 +1580,63 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+
+              {/* Primary Muscles */}
+              <View style={styles.editMuscleSection}>
+                <Text style={styles.editLabel}>Primary Muscles</Text>
+                <Text style={styles.editHint}>Counts toward weekly volume targets</Text>
+                <View style={styles.editMuscleWrap}>
+                  {ALL_TRACKABLE_MUSCLE_GROUPS.map(mg => (
+                    <TouchableOpacity
+                      key={mg}
+                      style={[
+                        styles.editEquipmentOption,
+                        editPrimaryMuscles.includes(mg) && styles.editEquipmentOptionSelected,
+                      ]}
+                      onPress={() => toggleEditPrimaryMuscle(mg)}
+                    >
+                      <Text style={[
+                        styles.editEquipmentOptionText,
+                        editPrimaryMuscles.includes(mg) && styles.editEquipmentOptionTextSelected,
+                      ]}>
+                        {MUSCLE_GROUP_DISPLAY_NAMES[mg]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Secondary Muscles */}
+              <View style={styles.editMuscleSection}>
+                <Text style={styles.editLabel}>Secondary Muscles (optional)</Text>
+                <Text style={styles.editHint}>Informational — volume counts primaries only</Text>
+                <View style={styles.editMuscleWrap}>
+                  {ALL_TRACKABLE_MUSCLE_GROUPS.map(mg => {
+                    const isPrimary = editPrimaryMuscles.includes(mg);
+                    const isSelected = editSecondaryMuscles.includes(mg);
+                    return (
+                      <TouchableOpacity
+                        key={mg}
+                        style={[
+                          styles.editEquipmentOption,
+                          isSelected && styles.editEquipmentOptionSelected,
+                          isPrimary && styles.editMuscleOptionDisabled,
+                        ]}
+                        onPress={() => toggleEditSecondaryMuscle(mg)}
+                        disabled={isPrimary}
+                      >
+                        <Text style={[
+                          styles.editEquipmentOptionText,
+                          isSelected && styles.editEquipmentOptionTextSelected,
+                          isPrimary && styles.editMuscleOptionTextDisabled,
+                        ]}>
+                          {MUSCLE_GROUP_DISPLAY_NAMES[mg]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
 
               {/* Notes */}
               <View style={styles.editNotesSection}>
@@ -2769,6 +2879,23 @@ const styles = StyleSheet.create({
   editEquipmentOptionTextSelected: {
     color: '#fff',
     fontWeight: typography.weight.semibold,
+  },
+  editMuscleSection: {
+    paddingVertical: spacing.md,
+  },
+  // Wrap grid (not a horizontal scroll) so all 16 groups are visible at once;
+  // chips reuse the editEquipmentOption look.
+  editMuscleWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  editMuscleOptionDisabled: {
+    opacity: 0.35,
+  },
+  editMuscleOptionTextDisabled: {
+    color: colors.textTertiary,
   },
   editNameSection: {
     paddingVertical: spacing.md,
