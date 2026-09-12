@@ -11,8 +11,11 @@ import { getBodyFatHistory, getWeightHistory } from './healthKit';
 import { addBodyMeasurement, getBodyMeasurements } from './storage';
 import { syncBodyMeasurement } from './syncService';
 
-const LAST_IMPORT_KEY = '@workout_tracker/healthkit_weight_import_date';
-export const DEFAULT_IMPORT_DAYS = 90;
+// Key is versioned: widening the window must re-run once on devices that already
+// imported under the old window today.
+const LAST_IMPORT_KEY = '@workout_tracker/healthkit_weight_import_date_v2';
+/** Two years, so PRs on bodyweight exercises use the body weight of the day, not today's. */
+export const DEFAULT_IMPORT_DAYS = 730;
 
 export interface BodyWeightImportResult {
   imported: number;

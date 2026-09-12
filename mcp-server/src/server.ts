@@ -87,7 +87,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Exercise history',
       description:
-        'Recent sets (date, weight in lbs, reps) for one exercise plus its all-time heaviest set and best estimated 1RM (Epley; the app\'s Brzycki figure is included for comparison and is null above 15 reps). Bodyweight exercises report effective_load_lbs = body weight on that date + added weight, marked "+BW". Exercise names are matched fuzzily; use search_exercises first when unsure.',
+        'Recent sets (date, weight in lbs, reps) for one exercise plus its all-time heaviest set and best estimated 1RM (Epley from sets of 15 reps or fewer; the app\'s Brzycki figure is included for comparison). Bodyweight exercises report effective_load_lbs = body weight on that date + added weight, marked "+BW". Exercise names are matched fuzzily; use search_exercises first when unsure.',
       inputSchema: {
         exercise_name: z.string().trim().min(1).max(120).describe('Exercise name, ideally as returned by search_exercises'),
         limit: z.number().int().min(1).max(200).default(30).describe('How many recent sets (1-200)'),
@@ -129,7 +129,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Personal records',
       description:
-        'Best set per exercise across all history: heaviest load and best estimated 1RM (Epley, with the app\'s Brzycki value alongside, null above 15 reps). Bodyweight exercises are ranked by effective load (body weight on the set date + added weight, marked "+BW"). Sorted by estimated 1RM, descending.',
+        'Best set per exercise across all history: heaviest load and best estimated 1RM (Epley from sets of 15 reps or fewer, with the app\'s Brzycki value alongside). Bodyweight exercises use effective load (body weight on the set date + added weight, marked "+BW"). Sorted by estimated 1RM, then heaviest load for exercises with only high-rep sets.',
       inputSchema: { limit: z.number().int().min(1).max(300).default(100).describe('Max exercises to return') },
       annotations: READ_ONLY,
     },

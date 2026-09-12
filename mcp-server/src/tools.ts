@@ -38,8 +38,14 @@ export class ToolError extends Error {}
 /** A session whose last set is older than this is treated as abandoned, not ongoing. */
 export const STALE_SESSION_MS = 3 * 60 * 60 * 1000;
 
-/** Brzycki is only meaningful for low-rep sets; the app's formula is undefined past 36 reps. */
-export const BRZYCKI_MAX_REPS = 15;
+/**
+ * One-rep-max formulas stop being estimates past this many reps (Brzycki is
+ * undefined past 36; Epley extrapolates without limit). Both are applied only
+ * to sets at or below it, and PR ranking falls back to heaviest load otherwise.
+ */
+export const E1RM_MAX_REPS = 15;
+/** @deprecated use E1RM_MAX_REPS */
+export const BRZYCKI_MAX_REPS = E1RM_MAX_REPS;
 
 // ─── formulas ───────────────────────────────────────────────────────────────
 
@@ -55,7 +61,7 @@ export function epley1RM(weightLbs: number, reps: number): number {
  * rather than the app's raw-weight fallback, which is not an estimate.
  */
 export function brzycki1RM(weightLbs: number, reps: number): number | null {
-  if (reps <= 0 || reps > BRZYCKI_MAX_REPS) return null;
+  if (reps <= 0 || reps > E1RM_MAX_REPS) return null;
   if (reps === 1) return weightLbs;
   return Math.round(weightLbs * (36 / (37 - reps)));
 }
@@ -170,6 +176,7 @@ function bestSets(sets: SetSummaryRow[], bodyweight: boolean, bw: BodyWeightLog)
     const load = effectiveLoad(s, bodyweight, bw);
     if (load === null) continue;
     if (!heaviest || load > heaviest.load) heaviest = { set: s, load };
+    if (s.reps > E1RM_MAX_REPS) continue; // a 28-rep set is endurance, not a 1RM estimate
     const e1rm = epley1RM(load, s.reps);
     if (!bestE1rm || e1rm > bestE1rm.e1rm) bestE1rm = { set: s, e1rm };
   }
@@ -459,11 +466,15 @@ export async function getPrs(ctx: ToolContext, input: { limit: number }) {
       };
     })
     .filter(p => p.heaviest_set !== null || p.most_reps_set)
-    // Ranked by Epley e1RM on effective load; reps-only entries (no body-weight log) go last, by reps.
+    // Ranked by Epley e1RM (sets of E1RM_MAX_REPS or fewer), then by heaviest effective
+    // load for exercises with only high-rep sets, then by reps for reps-only entries.
     .sort((a, b) => {
       const ae = a.best_e1rm_epley?.e1rm_lbs ?? -1;
       const be = b.best_e1rm_epley?.e1rm_lbs ?? -1;
       if (ae !== be) return be - ae;
+      const al = a.heaviest_set?.effective_load_lbs ?? a.heaviest_set?.weight_lbs ?? -1;
+      const bl = b.heaviest_set?.effective_load_lbs ?? b.heaviest_set?.weight_lbs ?? -1;
+      if (al !== bl) return bl - al;
       return (b.most_reps_set?.reps ?? 0) - (a.most_reps_set?.reps ?? 0);
     });
   return {
@@ -474,7 +485,7 @@ export async function getPrs(ctx: ToolContext, input: { limit: number }) {
       : bw.isEmpty
         ? 'No body-weight log; bodyweight exercises are ranked by reps only.'
         : `Bodyweight exercises use body weight on the set date plus added weight (latest body weight ${bw.latest} lbs); marked load_note "+BW".`,
-    brzycki_note: `e1rm_brzycki_app_lbs is null above ${BRZYCKI_MAX_REPS} reps, where the formula is not a usable estimate.`,
+    e1rm_note: `Estimated 1RM (Epley and Brzycki) only uses sets of ${E1RM_MAX_REPS} reps or fewer; exercises with only higher-rep sets have best_e1rm_epley null and rank by heaviest load.`,
     prs: prs.slice(0, input.limit),
   };
 }
