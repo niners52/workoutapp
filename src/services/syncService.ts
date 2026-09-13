@@ -286,10 +286,11 @@ export async function syncExercise(exercise: Exercise): Promise<void> {
   try {
     const row = exerciseRow(exercise, userId);
 
-    const { error, rows: syncedRow } = await upsertTolerant('exercises', row, [
-      'is_favorite',
-      'is_bodyweight',
-    ]);
+    const { error, rows: syncedRow } = await upsertTolerant(
+      'exercises',
+      row,
+      OPTIONAL_COLUMNS_BY_TABLE.exercises || [],
+    );
 
     if (error) {
       console.log('Exercise sync failed, queuing:', error.message);
@@ -703,9 +704,12 @@ export async function syncUserSettings(settings: UserSettings): Promise<void> {
       creatine_supplement_id: settings.creatineSupplementId || null,
     };
 
-    const { error } = await supabase
-      .from('user_settings')
-      .upsert(row, { onConflict: 'user_id' });
+    const { error } = await upsertTolerant(
+      'user_settings',
+      row,
+      OPTIONAL_COLUMNS_BY_TABLE.user_settings || [],
+      'user_id',
+    );
 
     if (error) {
       console.log('User settings sync failed, queuing:', error.message);
