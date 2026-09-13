@@ -23,6 +23,7 @@ export const PRIMARY_MUSCLE_GROUPS = [
   'hamstrings',
   'glutes',
   'adductors',
+  'rotator_cuff',
   'calves',
   'abs',
   'forearms',
@@ -41,7 +42,7 @@ export const ANALYTICS_CATEGORIES: ReadonlyArray<{
   muscleGroups: readonly PrimaryMuscleGroup[];
 }> = [
   { category: 'back', muscleGroups: ['lats', 'upper_back', 'lower_back'] },
-  { category: 'shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps'] },
+  { category: 'shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps', 'rotator_cuff'] },
   { category: 'chest', muscleGroups: ['chest'] },
   { category: 'arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
   { category: 'legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'adductors', 'calves'] },
@@ -56,6 +57,30 @@ export const ANALYTICS_CATEGORIES: ReadonlyArray<{
 const LEGACY_ALIASES: Record<string, PrimaryMuscleGroup> = {
   rear_delts: 'upper_back',
 };
+
+/**
+ * 'miscellaneous' is a placeholder the app allows but it is not a muscle; sets
+ * on an exercise whose only group is the placeholder are unmapped and reported
+ * loudly rather than credited to a bucket.
+ */
+export const CREDITED_MUSCLE_GROUPS = PRIMARY_MUSCLE_GROUPS.filter(g => g !== 'miscellaneous') as ReadonlyArray<
+  Exclude<PrimaryMuscleGroup, 'miscellaneous'>
+>;
+export type CreditedMuscleGroup = (typeof CREDITED_MUSCLE_GROUPS)[number];
+
+/**
+ * The distinct credited groups for an exercise's stored primaries. Duplicates
+ * collapse (a duplicated entry must not earn double credit) and legacy names
+ * resolve to their successors. Empty means the exercise is unmapped.
+ */
+export function creditedPrimaries(stored: ReadonlyArray<unknown> | null | undefined): CreditedMuscleGroup[] {
+  const out = new Set<CreditedMuscleGroup>();
+  for (const raw of stored ?? []) {
+    const g = canonicalMuscleGroup(raw);
+    if (g && g !== 'miscellaneous') out.add(g);
+  }
+  return [...out];
+}
 
 export function isPrimaryMuscleGroup(value: unknown): value is PrimaryMuscleGroup {
   return typeof value === 'string' && (PRIMARY_MUSCLE_GROUPS as readonly string[]).includes(value);

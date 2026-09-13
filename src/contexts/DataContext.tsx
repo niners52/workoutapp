@@ -37,6 +37,7 @@ import {
 import { initializeHealthKit } from '../services/healthKit';
 import { importHealthKitBodyWeights } from '../services/bodyWeightImport';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
+import { syncSleepFromHealthKit } from '../services/sleepSync';
 import { syncWeeklyPlannerReminder } from '../services/weeklyPlannerReminder';
 import { supabase } from '../services/supabase';
 import {
@@ -342,6 +343,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               .catch(e => console.log('HealthKit body weight import failed:', e));
             // Cronometer -> HealthKit -> nutrition_days (trailing 30 days, throttled)
             syncNutritionFromHealthKit().catch(e => console.log('Nutrition sync failed:', e));
+            syncSleepFromHealthKit().catch(e => console.log('Sleep sync failed:', e));
           } else {
             console.log('HealthKit not available or permission denied');
           }

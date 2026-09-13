@@ -11,13 +11,16 @@ import {
   type SchemaDescription,
   type SetRow,
   type SetSummaryRow,
+  type SleepNightRow,
   type WorkoutRow,
 } from './db.js';
 import { rankMatches } from './fuzzy.js';
 import {
   ANALYTICS_CATEGORIES,
+  CREDITED_MUSCLE_GROUPS,
   PRIMARY_MUSCLE_GROUPS,
   canonicalMuscleGroup,
+  creditedPrimaries,
   emptyMuscleTotals,
   rollUpCategories,
   round1,
@@ -386,7 +389,10 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
   for (const k of weekKeys) weeks.set(k, emptyMuscleTotals());
 
   let skippedDeloadSets = 0;
-  const unknownGroups = new Set<string>();
+  // Exercises whose sets earn no credit because they have no recognised primary
+  // group (empty, unknown, or only the 'miscellaneous' placeholder). Reported
+  // loudly: a silent bucket is how 40 sets a week went missing.
+  const unmapped = new Map<string, { exercise_id: string; name: string; stored_primary_muscle_groups: string[]; sets: number }>();
   for (const s of sets) {
     const key = weekStartKey(new Date(s.logged_at), ctx.timeZone, weekStartDay);
     const totals = weeks.get(key);
@@ -398,34 +404,43 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
     const ex = exerciseById.get(s.exercise_id);
     if (!ex) continue;
     const credit = setCredit(ex.is_unilateral);
-    for (const raw of ex.primary_muscle_groups ?? []) {
-      const mg = canonicalMuscleGroup(raw);
-      if (mg) totals[mg] += credit;
-      else unknownGroups.add(String(raw));
+    const groups = creditedPrimaries(ex.primary_muscle_groups); // distinct: duplicates never double count
+    if (groups.length === 0) {
+      const entry = unmapped.get(ex.id) ?? {
+        exercise_id: ex.id,
+        name: ex.name,
+        stored_primary_muscle_groups: (ex.primary_muscle_groups ?? []).map(String),
+        sets: 0,
+      };
+      entry.sets += 1;
+      unmapped.set(ex.id, entry);
+      continue;
     }
+    for (const mg of groups) totals[mg] += credit;
   }
 
   const rawTargets = settings?.muscle_group_targets ?? {};
   const targets: Partial<Record<PrimaryMuscleGroup, number>> = {};
-  for (const mg of PRIMARY_MUSCLE_GROUPS) {
+  for (const mg of CREDITED_MUSCLE_GROUPS) {
     const t = rawTargets[mg];
     if (typeof t === 'number' && t > 0) targets[mg] = t;
   }
   const targetTotal = Object.values(targets).reduce((a, b) => a + (b ?? 0), 0);
+  const unmappedList = [...unmapped.values()].sort((a, b) => b.sets - a.sets);
 
   return {
     time_zone: ctx.timeZone,
     week_start_day: weekStartDay,
     counting_rules:
-      'Primary muscle groups only (each primary gets full credit per set); unilateral exercises count 0.5 per set; deload workouts excluded; bucketed by set logged_at. Matches the app\'s Weekly Volume panel.',
+      'Primary muscle groups only (each distinct primary gets full credit per set); unilateral exercises count 0.5 per set; deload workouts excluded; bucketed by set logged_at. Matches the app\'s Weekly Volume panel. Exercises with no recognised primary group earn nothing and are listed under unmapped_exercises.',
     weekly_targets: targets,
     categories: Object.fromEntries(ANALYTICS_CATEGORIES.map(c => [c.category, c.muscleGroups])),
     weeks: weekKeys.map(key => {
       const totals = weeks.get(key)!;
       const rounded = Object.fromEntries(
-        PRIMARY_MUSCLE_GROUPS.map(mg => [mg, round1(totals[mg])]),
+        CREDITED_MUSCLE_GROUPS.map(mg => [mg, round1(totals[mg])]),
       ) as Record<PrimaryMuscleGroup, number>;
-      const targeted = PRIMARY_MUSCLE_GROUPS.filter(mg => targets[mg]);
+      const targeted = CREDITED_MUSCLE_GROUPS.filter(mg => targets[mg]);
       return {
         week_start: key,
         week_end: weekEndKey(key),
@@ -436,7 +451,83 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
       };
     }),
     skipped_deload_sets: skippedDeloadSets,
-    ...(unknownGroups.size ? { unrecognized_muscle_groups: [...unknownGroups] } : {}),
+    ...(unmappedList.length
+      ? {
+          warning: `${unmappedList.reduce((n, u) => n + u.sets, 0)} sets in this window belong to exercises with no recognised primary muscle group and were not credited anywhere. Fix their mapping in the app.`,
+          unmapped_exercises: unmappedList,
+        }
+      : {}),
+  };
+}
+
+// ─── sleep ──────────────────────────────────────────────────────────────────
+
+/** Minutes after 18:00 local, so bedtimes around midnight average without wrapping. */
+function minutesFromSixPm(iso: string, timeZone: string): number {
+  const f = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: 'numeric', hour12: false });
+  const parts = f.formatToParts(new Date(iso));
+  const h = Number(parts.find(p => p.type === 'hour')?.value ?? '0') % 24;
+  const m = Number(parts.find(p => p.type === 'minute')?.value ?? '0');
+  return ((h * 60 + m) - 18 * 60 + 24 * 60) % (24 * 60);
+}
+
+function clockFromSixPm(minutes: number): string {
+  const total = (Math.round(minutes) + 18 * 60) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function clockOf(iso: string, timeZone: string): string {
+  return clockFromSixPm(minutesFromSixPm(iso, timeZone));
+}
+
+function meanOrNull(values: Array<number | null | undefined>): number | null {
+  const nums = values.filter((v): v is number => typeof v === 'number');
+  return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
+}
+
+export async function getSleepLog(ctx: ToolContext, input: { days_back: number }) {
+  const { today, since } = windowDates(ctx, input.days_back);
+  const rows = (await ctx.db.listSleepNights(since))
+    .filter(r => r.sample_count > 0 && r.time_asleep_min > 0)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const stages = (r: SleepNightRow) => r.deep_min !== null || r.rem_min !== null || r.core_min !== null;
+  const withStages = rows.filter(stages);
+
+  return {
+    window: { since, through: today, days: input.days_back, time_zone: ctx.timeZone },
+    summary: {
+      nights_with_data: rows.length,
+      avg_time_asleep_min: meanOrNull(rows.map(r => r.time_asleep_min)),
+      avg_time_in_bed_min: meanOrNull(rows.map(r => r.time_in_bed_min)),
+      avg_bedtime: rows.length ? clockFromSixPm(rows.reduce((a, r) => a + minutesFromSixPm(r.bedtime, ctx.timeZone), 0) / rows.length) : null,
+      avg_wake_time: rows.length ? clockFromSixPm(rows.reduce((a, r) => a + minutesFromSixPm(r.wake_time, ctx.timeZone), 0) / rows.length) : null,
+      nights_with_stages: withStages.length,
+      stage_averages_min: withStages.length
+        ? {
+            deep: meanOrNull(withStages.map(r => r.deep_min)),
+            rem: meanOrNull(withStages.map(r => r.rem_min)),
+            core: meanOrNull(withStages.map(r => r.core_min)),
+            awake: meanOrNull(withStages.map(r => r.awake_min)),
+          }
+        : null,
+    },
+    nights: rows.map(r => ({
+      date: r.date,
+      time_asleep_min: r.time_asleep_min,
+      time_in_bed_min: r.time_in_bed_min,
+      bedtime: r.bedtime,
+      wake_time: r.wake_time,
+      bedtime_local: clockOf(r.bedtime, ctx.timeZone),
+      wake_time_local: clockOf(r.wake_time, ctx.timeZone),
+      deep_min: r.deep_min,
+      rem_min: r.rem_min,
+      core_min: r.core_min,
+      awake_min: r.awake_min,
+      sample_count: r.sample_count,
+      source: r.source ?? undefined,
+    })),
+    note: 'Source: Apple Health (Watch preferred over iPhone per night; overlapping samples merged, never summed across sources). A night belongs to the morning it ends. Nights without sleep samples are omitted; null stage minutes mean the source recorded no stages.',
   };
 }
 

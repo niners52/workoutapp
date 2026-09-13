@@ -12,6 +12,7 @@ import {
   describeSchema,
   getBodyWeightLog,
   getNutritionLog,
+  getSleepLog,
   getSupplementLog,
   getExerciseHistory,
   getFavoriteExercises,
@@ -119,7 +120,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Weekly volume by muscle group',
       description:
-        'Sets per muscle group per week for the last N weeks (current week included), using the app\'s own counting rules: primary muscles only, unilateral sets count 0.5, deload workouts excluded. Includes the weekly targets from settings and the six-category roll-up (back, shoulders, chest, arms, legs, core).',
+        'Sets per muscle group per week for the last N weeks (current week included), using the app\'s own counting rules: distinct primary muscles only, unilateral sets count 0.5, deload workouts excluded. Includes the weekly targets from settings and the six-category roll-up (back, shoulders, chest, arms, legs, core). Exercises with no recognised primary group are listed under unmapped_exercises with a warning instead of being credited anywhere.',
       inputSchema: { weeks_back: z.number().int().min(1).max(26).default(4).describe('Number of weeks (1-26)') },
       annotations: READ_ONLY,
     },
@@ -182,6 +183,18 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       annotations: READ_ONLY,
     },
     guarded('get_supplement_log', input => getSupplementLog(ctx, input), ctx),
+  );
+
+  server.registerTool(
+    'get_sleep_log',
+    {
+      title: 'Sleep log',
+      description:
+        'Nights of sleep from Apple Health, newest first, keyed to the morning each ended: time asleep and in bed (min), bedtime and wake time (ISO and local clock), stage minutes when the source recorded them. Summary has nights with data, average asleep/in-bed minutes, average bedtime and wake clock times, and stage averages. Nights without samples are omitted, never zero.',
+      inputSchema: { days_back: z.number().int().min(1).max(90).default(14).describe('Trailing window in days (1-90)') },
+      annotations: READ_ONLY,
+    },
+    guarded('get_sleep_log', input => getSleepLog(ctx, input), ctx),
   );
 
   server.registerTool(

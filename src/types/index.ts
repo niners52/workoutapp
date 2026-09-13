@@ -118,6 +118,7 @@ export type PrimaryMuscleGroup =
   | 'abs'
   | 'glutes'
   | 'adductors'
+  | 'rotator_cuff'
   | 'lower_back'
   | 'miscellaneous';
 
@@ -132,6 +133,7 @@ export type StandaloneMuscleGroup =
   | 'hamstrings'
   | 'glutes'
   | 'adductors'
+  | 'rotator_cuff'
   | 'calves'
   | 'abs'
   | 'forearms'
@@ -150,7 +152,7 @@ export interface AnalyticsCategoryConfig {
 // 6 main categories for analytics display
 export const ANALYTICS_CATEGORIES: AnalyticsCategoryConfig[] = [
   { category: 'back', name: 'Back', muscleGroups: ['lats', 'upper_back', 'lower_back'] },
-  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps'] },
+  { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps', 'rotator_cuff'] },
   { category: 'chest', name: 'Chest', muscleGroups: ['chest'] },
   { category: 'arms', name: 'Arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
   { category: 'legs', name: 'Legs', muscleGroups: ['quads', 'hamstrings', 'glutes', 'adductors', 'calves'] },
@@ -176,6 +178,7 @@ export const STANDALONE_MUSCLE_GROUPS: StandaloneMuscleGroup[] = [
   'hamstrings',
   'glutes',
   'adductors',
+  'rotator_cuff',
   'calves',
   'abs',
   'forearms',
@@ -196,6 +199,7 @@ export const ALL_TRACKABLE_MUSCLE_GROUPS: (PrimaryMuscleGroup)[] = [
   'hamstrings',
   'glutes',
   'adductors',
+  'rotator_cuff',
   'calves',
   'abs',
   'forearms',
@@ -227,6 +231,7 @@ export const MUSCLE_GROUP_DISPLAY_NAMES: Record<MuscleGroup, string> = {
   abs: 'Abs',
   glutes: 'Glutes',
   adductors: 'Adductors',
+  rotator_cuff: 'Rotator Cuff',
   lower_back: 'Lower Back',
   miscellaneous: 'Miscellaneous',
 };
@@ -503,6 +508,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     chest: 10,
     lats: 10,
     upper_back: 12, // formerly 6 + 6 from rear_delts (merged in V10)
+    rotator_cuff: 12, // rehab/prehab work; keeps those sets out of "miscellaneous" and out of chest
     front_delts: 6,
     side_delts: 10,
     triceps: 6,

@@ -113,6 +113,24 @@ export interface SupplementIntakeRow {
   taken_at: string | null;
 }
 
+/** One night of Apple Health sleep, keyed to the local wake date. */
+export interface SleepNightRow {
+  id: string;
+  user_id: string;
+  date: string;
+  time_asleep_min: number;
+  time_in_bed_min: number;
+  bedtime: string;
+  wake_time: string;
+  deep_min: number | null;
+  rem_min: number | null;
+  core_min: number | null;
+  awake_min: number | null;
+  sample_count: number;
+  source: string | null;
+  synced_at: string | null;
+}
+
 export interface LocationRow {
   id: string;
   user_id: string;
@@ -331,6 +349,15 @@ export class Db {
     );
   }
 
+  /** Sleep nights with wake date on or after `sinceDate`, newest first. */
+  listSleepNights(sinceDate: string): Promise<SleepNightRow[]> {
+    return this.runAll('sleep_nights', () =>
+      this.scoped<SleepNightRow>('sleep_nights', '*')
+        .gte('date', sinceDate)
+        .order('date', { ascending: false }),
+    );
+  }
+
   listSupplements(): Promise<SupplementRow[]> {
     return this.runAll('supplements', () => this.scoped<SupplementRow>('supplements', '*').order('name'));
   }
@@ -393,6 +420,10 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
     'sample_count', 'source', 'synced_at',
   ],
   supplements: ['id', 'user_id', 'name', 'is_active'],
+  sleep_nights: [
+    'id', 'user_id', 'date', 'time_asleep_min', 'time_in_bed_min', 'bedtime', 'wake_time',
+    'deep_min', 'rem_min', 'core_min', 'awake_min', 'sample_count', 'source', 'synced_at',
+  ],
   supplement_intakes: ['id', 'user_id', 'supplement_id', 'date', 'taken_at'],
 };
 
