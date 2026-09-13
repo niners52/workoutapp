@@ -34,7 +34,7 @@ import {
 
 // Map template types to their associated muscle groups
 const TEMPLATE_TYPE_MUSCLES: Record<TemplateType, PrimaryMuscleGroup[]> = {
-  push: ['chest', 'front_delts', 'side_delts', 'triceps'],
+  push: ['chest', 'front_delts', 'side_delts', 'rotator_cuff', 'triceps'],
   pull: ['lats', 'upper_back', 'traps', 'biceps', 'forearms'],
   lower: ['quads', 'hamstrings', 'glutes', 'adductors', 'calves'],
   full_body: ['chest', 'front_delts', 'side_delts', 'triceps', 'biceps', 'forearms', 'lats', 'upper_back', 'traps', 'quads', 'hamstrings', 'glutes', 'adductors', 'calves', 'abs', 'lower_back'],

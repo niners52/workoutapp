@@ -20,6 +20,7 @@ import {
   getExercises,
   getPendingMigrationResync,
   getSets,
+  getUserSettings,
   getWorkoutById,
   getWorkouts,
 } from './storage';
@@ -123,6 +124,9 @@ function exerciseRow(exercise: Exercise, userId: string) {
     is_custom: exercise.isCustom ?? true,
     is_favorite: exercise.isFavorite ?? false,
     is_bodyweight: exercise.isBodyweight ?? exercise.equipment === 'bodyweight',
+    // Volume counting needs this (0.5 credit per set); it was never sent before.
+    is_unilateral: exercise.isUnilateral ?? false,
+    notes: exercise.notes || null,
   };
 }
 
@@ -199,6 +203,48 @@ export async function syncNutritionDays(rows: NutritionDayRow[]): Promise<void> 
     } catch (error) {
       console.log('Nutrition sync error, queuing:', error);
       for (const row of batch) await addToPendingQueue({ table: 'nutrition_days', operation: 'upsert', data: row });
+    }
+  }
+}
+
+// ==================== SLEEP NIGHTS ====================
+
+/** One night of Apple Health sleep, keyed to the local morning it ended. */
+export interface SleepNightRow {
+  id: string; // hk-sleep-YYYY-MM-DD
+  date: string; // wake date, 'YYYY-MM-DD'
+  time_asleep_min: number;
+  time_in_bed_min: number;
+  bedtime: string; // ISO
+  wake_time: string; // ISO
+  deep_min: number | null;
+  rem_min: number | null;
+  core_min: number | null;
+  awake_min: number | null;
+  sample_count: number;
+  source: string;
+  synced_at: string;
+}
+
+export async function syncSleepNights(rows: SleepNightRow[]): Promise<void> {
+  const userId = await getUserId();
+  if (!userId || rows.length === 0) return;
+
+  const withUser = rows.map(r => ({ ...r, user_id: userId }));
+  for (const batch of chunkArray(withUser, 50)) {
+    try {
+      const { error } = await supabase
+        .from('sleep_nights')
+        .upsert(batch, { onConflict: 'user_id,date' });
+      if (error) {
+        console.log('Sleep sync failed, queuing:', error.message);
+        for (const row of batch) await addToPendingQueue({ table: 'sleep_nights', operation: 'upsert', data: row });
+      } else {
+        await updateLastSyncTimestamp();
+      }
+    } catch (error) {
+      console.log('Sleep sync error, queuing:', error);
+      for (const row of batch) await addToPendingQueue({ table: 'sleep_nights', operation: 'upsert', data: row });
     }
   }
 }
@@ -884,7 +930,11 @@ export async function processPendingSync(
     // Process upserts in batches of 50 per table
     for (const [table, ops] of upsertsByTable) {
       const conflictKey =
-        table === 'user_settings' ? 'user_id' : table === 'nutrition_days' ? 'user_id,date' : 'id';
+        table === 'user_settings'
+          ? 'user_id'
+          : table === 'nutrition_days' || table === 'sleep_nights'
+            ? 'user_id,date'
+            : 'id';
       const batches = chunkArray(ops, 50);
 
       for (const batch of batches) {
@@ -1278,6 +1328,9 @@ export async function flushMigrationResync(): Promise<void> {
   for (const id of pending.bodyMeasurementIds ?? []) {
     const measurement = await getBodyMeasurementById(id);
     if (measurement) await syncBodyMeasurement(measurement);
+  }
+  if (pending.syncSettings) {
+    await syncUserSettings(await getUserSettings());
   }
   await clearPendingMigrationResync();
   console.log(

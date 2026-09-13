@@ -599,6 +599,57 @@ export async function getNutritionDataRange(
   return data;
 }
 
+/**
+ * Raw sleep samples for a range, as HealthKit stores them (one row per
+ * INBED/ASLEEP/AWAKE/CORE/DEEP/REM segment, with the writing source). null
+ * means HealthKit is unavailable, [] means readable but nothing recorded.
+ * Bucketing into nights lives in sleepNights.ts.
+ */
+export interface RawHealthKitSleepSample {
+  value: string;
+  startDate: string;
+  endDate: string;
+  sourceName?: string;
+  sourceId?: string;
+}
+
+export async function fetchSleepSamples(startDate: Date, endDate: Date): Promise<RawHealthKitSleepSample[] | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) return null;
+  const initialized = await initializeHealthKit();
+  if (!initialized) return null;
+
+  const options = { startDate: startDate.toISOString(), endDate: endDate.toISOString(), ascending: true };
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      console.log('getSleepSamples (range) timed out');
+      resolve([]);
+    }, 15000);
+    try {
+      AppleHealthKit.getSleepSamples(options, (err: string, results: any[]) => {
+        clearTimeout(timeoutId);
+        if (err) {
+          console.log('Error fetching sleep samples range:', err);
+          resolve([]);
+          return;
+        }
+        resolve(
+          (results || []).map((s: any) => ({
+            value: String(s.value ?? ''),
+            startDate: String(s.startDate),
+            endDate: String(s.endDate),
+            sourceName: s.sourceName ? String(s.sourceName) : undefined,
+            sourceId: s.sourceId ? String(s.sourceId) : undefined,
+          })),
+        );
+      });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.log('getSleepSamples range exception:', e);
+      resolve([]);
+    }
+  });
+}
+
 export async function getSleepData(date: Date): Promise<SleepData | null> {
   if (USE_MOCK_DATA) {
     return generateMockSleepData(date);

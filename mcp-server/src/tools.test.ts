@@ -17,6 +17,7 @@ import {
   getPrs,
   getSupplementLog,
   getRecentWorkouts,
+  getSleepLog,
   getWeeklyVolume,
   searchExercises,
   type ToolContext,
@@ -234,7 +235,9 @@ test('get_weekly_volume: mirrors app rules (primary only, unilateral 0.5, deload
   assert.equal(wk0831.sets_by_muscle_group.upper_back, 2, 'legacy rear_delts credits upper_back, as the app does since V10');
   assert.equal(wk0831.sets_by_muscle_group.lats, 2, 'bodyweight sets count like any other set');
   assert.equal(r.weeks[3]!.sets_by_category.legs, 2);
-  assert.equal((r as { unrecognized_muscle_groups?: string[] }).unrecognized_muscle_groups, undefined);
+  assert.equal((r as { unmapped_exercises?: unknown[] }).unmapped_exercises, undefined, 'every fixture exercise has a real mapping');
+  assert.equal((r as { warning?: string }).warning, undefined);
+  assert.equal('miscellaneous' in wk0831.sets_by_muscle_group, false, 'miscellaneous is not a credited group');
   assert.equal(wk0831.sets_by_muscle_group.side_delts, 0, 'Sunday-night Denver set is not in this week');
   assert.equal(wk0824.sets_by_muscle_group.side_delts, 1, 'it lands in the prior week');
   assert.equal(wk0824.sets_by_muscle_group.chest, 0, 'deload sets excluded');
@@ -246,6 +249,46 @@ test('get_weekly_volume: mirrors app rules (primary only, unilateral 0.5, deload
   assert.deepEqual(r.weekly_targets, { chest: 12, quads: 10 });
   assert.equal(wk0831.total_sets, 4);
   assert.equal(wk0831.target_sets, 22);
+});
+
+test('get_weekly_volume: duplicate primaries credit once, miscellaneous is stripped, unmapped exercises are reported loudly', async () => {
+  const { client } = createFakeSupabase({
+    ...tables,
+    exercises: [
+      ...tables.exercises!,
+      // The rotator-cuff shape before the repair: chest duplicated and padded with miscellaneous.
+      { id: 'e10', user_id: U, name: 'Cable (D-Handle) Rotator cuff', base_name: null, primary_muscle_groups: ['chest', 'chest', 'miscellaneous'], secondary_muscle_groups: [], equipment: 'cable', is_favorite: false, is_unilateral: false },
+      { id: 'e11', user_id: U, name: 'Mystery Machine', base_name: null, primary_muscle_groups: ['miscellaneous'], secondary_muscle_groups: [], equipment: 'machine', is_favorite: false },
+      { id: 'e12', user_id: U, name: 'Empty Mapping', base_name: null, primary_muscle_groups: [], secondary_muscle_groups: [], equipment: 'other', is_favorite: false },
+      { id: 'e13', user_id: U, name: 'Cable External Rotation', base_name: null, primary_muscle_groups: ['rotator_cuff'], secondary_muscle_groups: [], equipment: 'cable', is_favorite: false, is_unilateral: true },
+    ],
+    workout_sets: [
+      ...tables.workout_sets!,
+      { id: 's20', user_id: U, workout_id: 'w1', exercise_id: 'e10', weight: 10, reps: 15, logged_at: '2026-09-02T15:52:00Z' },
+      { id: 's21', user_id: U, workout_id: 'w1', exercise_id: 'e10', weight: 10, reps: 15, logged_at: '2026-09-02T15:53:00Z' },
+      { id: 's22', user_id: U, workout_id: 'w1', exercise_id: 'e11', weight: 50, reps: 10, logged_at: '2026-09-02T15:54:00Z' },
+      { id: 's23', user_id: U, workout_id: 'w1', exercise_id: 'e11', weight: 50, reps: 10, logged_at: '2026-09-02T15:55:00Z' },
+      { id: 's24', user_id: U, workout_id: 'w1', exercise_id: 'e11', weight: 50, reps: 10, logged_at: '2026-09-02T15:56:00Z' },
+      { id: 's25', user_id: U, workout_id: 'w1', exercise_id: 'e12', weight: 50, reps: 10, logged_at: '2026-09-02T15:57:00Z' },
+      { id: 's26', user_id: U, workout_id: 'w1', exercise_id: 'e13', weight: 10, reps: 15, logged_at: '2026-09-02T15:58:00Z' },
+      { id: 's27', user_id: U, workout_id: 'w1', exercise_id: 'e13', weight: 10, reps: 15, logged_at: '2026-09-02T15:59:00Z' },
+    ],
+  });
+  const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });
+  const wk = r.weeks[0]!;
+  assert.equal(wk.week_start, '2026-08-31');
+  assert.equal(wk.sets_by_muscle_group.chest, 5, '3 bench + 2 rotator-cuff sets credited to chest once each, not twice');
+  assert.equal('miscellaneous' in wk.sets_by_muscle_group, false);
+  assert.equal(wk.sets_by_muscle_group.rotator_cuff, 1, 'two unilateral sets at 0.5');
+  assert.equal(wk.sets_by_category.shoulders, 1, 'rotator cuff rolls up under shoulders');
+  const out = r as typeof r & { warning?: string; unmapped_exercises?: Array<{ exercise_id: string; sets: number; stored_primary_muscle_groups: string[] }> };
+  assert.ok(out.warning?.includes('4 sets'), out.warning);
+  assert.deepEqual(
+    out.unmapped_exercises?.map(u => [u.exercise_id, u.sets, u.stored_primary_muscle_groups]),
+    [['e11', 3, ['miscellaneous']], ['e12', 1, []]],
+  );
+  const total = Object.values(wk.sets_by_muscle_group).reduce((a, b) => a + b, 0);
+  assert.equal(total, 3 + 1 + 1 + 2 + 2 + 2 + 1, 'unmapped sets are credited nowhere');
 });
 
 test('get_weekly_volume: tolerates a user_settings row missing newer columns', async () => {
@@ -358,6 +401,46 @@ test('get_nutrition_log: empty table gives no days and null averages, not zeros'
   assert.equal(r.summary.daily_averages.calories, null);
 });
 
+const sleepNights = [
+  // Denver (MDT, UTC-6). Bedtimes 23:00 / 23:30 local, wakes 06:00 / 07:00 local.
+  { id: 'hk-sleep-2026-09-04', user_id: U, date: '2026-09-04', time_asleep_min: 420, time_in_bed_min: 450, bedtime: '2026-09-04T05:00:00Z', wake_time: '2026-09-04T12:00:00Z', deep_min: 60, rem_min: 90, core_min: 270, awake_min: 15, sample_count: 12, source: 'Apple Watch', synced_at: '2026-09-04T17:00:00Z' },
+  { id: 'hk-sleep-2026-09-03', user_id: U, date: '2026-09-03', time_asleep_min: 480, time_in_bed_min: 510, bedtime: '2026-09-03T05:30:00Z', wake_time: '2026-09-03T13:00:00Z', deep_min: 80, rem_min: 110, core_min: 290, awake_min: null, sample_count: 10, source: 'Apple Watch', synced_at: '2026-09-04T17:00:00Z' },
+  // iPhone-only night: no stages.
+  { id: 'hk-sleep-2026-09-02', user_id: U, date: '2026-09-02', time_asleep_min: 300, time_in_bed_min: 330, bedtime: '2026-09-02T06:00:00Z', wake_time: '2026-09-02T11:30:00Z', deep_min: null, rem_min: null, core_min: null, awake_min: null, sample_count: 2, source: 'iPhone', synced_at: '2026-09-04T17:00:00Z' },
+  // Nothing recorded: must not appear or count as zero.
+  { id: 'hk-sleep-2026-09-01', user_id: U, date: '2026-09-01', time_asleep_min: 0, time_in_bed_min: 0, bedtime: '2026-09-01T05:00:00Z', wake_time: '2026-09-01T05:00:00Z', deep_min: null, rem_min: null, core_min: null, awake_min: null, sample_count: 0, source: 'iPhone', synced_at: '2026-09-04T17:00:00Z' },
+  { id: 'hk-sleep-2026-09-03', user_id: OTHER, date: '2026-09-03', time_asleep_min: 60, time_in_bed_min: 60, bedtime: '2026-09-03T05:00:00Z', wake_time: '2026-09-03T06:00:00Z', deep_min: null, rem_min: null, core_min: null, awake_min: null, sample_count: 1, source: 'iPhone', synced_at: null },
+  // Outside a 7-day window.
+  { id: 'hk-sleep-2026-08-20', user_id: U, date: '2026-08-20', time_asleep_min: 100, time_in_bed_min: 100, bedtime: '2026-08-20T05:00:00Z', wake_time: '2026-08-20T07:00:00Z', deep_min: null, rem_min: null, core_min: null, awake_min: null, sample_count: 3, source: 'iPhone', synced_at: null },
+];
+
+test('get_sleep_log: nights newest first, no-sample nights omitted, stage averages over staged nights only', async () => {
+  const { client } = createFakeSupabase({ ...tables, sleep_nights: sleepNights });
+  const r = await getSleepLog({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { days_back: 7 });
+  assert.deepEqual(r.nights.map(n => n.date), ['2026-09-04', '2026-09-03', '2026-09-02']);
+  assert.equal(r.summary.nights_with_data, 3);
+  assert.equal(r.summary.avg_time_asleep_min, 400);
+  assert.equal(r.summary.avg_time_in_bed_min, 430);
+  assert.equal(r.summary.avg_bedtime, '23:30', '(23:00 + 23:30 + 00:00) / 3, averaged around midnight');
+  assert.equal(r.summary.avg_wake_time, '06:10', '(06:00 + 07:00 + 05:30) / 3');
+  assert.equal(r.summary.nights_with_stages, 2);
+  assert.deepEqual(r.summary.stage_averages_min, { deep: 70, rem: 100, core: 280, awake: 15 });
+  assert.equal(r.nights[0]!.bedtime_local, '23:00');
+  assert.equal(r.nights[0]!.wake_time_local, '06:00');
+  assert.equal(r.nights[2]!.deep_min, null, 'iPhone night keeps null stages, not zeros');
+  assert.equal(r.nights[2]!.source, 'iPhone');
+});
+
+test('get_sleep_log: empty table gives no nights and null averages, not zeros', async () => {
+  const { client } = createFakeSupabase({ ...tables, sleep_nights: [] });
+  const r = await getSleepLog({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { days_back: 14 });
+  assert.equal(r.nights.length, 0);
+  assert.equal(r.summary.nights_with_data, 0);
+  assert.equal(r.summary.avg_time_asleep_min, null);
+  assert.equal(r.summary.avg_bedtime, null);
+  assert.equal(r.summary.stage_averages_min, null);
+});
+
 test('get_supplement_log: adherence per supplement over the window, inactive hidden unless taken', async () => {
   const r = await getSupplementLog(makeCtx(), { days_back: 7 });
   const creatine = r.supplements.find(s => s.name === 'Creatine')!;
@@ -384,7 +467,7 @@ test('MCP: lists all tools as read-only and executes one', async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map(t => t.name).sort(),
-      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_nutrition_log', 'get_prs', 'get_recent_workouts', 'get_supplement_log', 'get_weekly_volume', 'search_exercises'],
+      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_nutrition_log', 'get_prs', 'get_recent_workouts', 'get_sleep_log', 'get_supplement_log', 'get_weekly_volume', 'search_exercises'],
     );
     assert.ok(tools.every(t => t.annotations?.readOnlyHint === true));
 

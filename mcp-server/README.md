@@ -197,12 +197,13 @@ Weights are in pounds, as stored by the app.
 | `get_recent_workouts` | `limit` 1-50 (10) | Sessions newest first: start/end, `duration_min`, gym, deload flag, per-exercise set count and top set |
 | `get_exercise_history` | `exercise_name`, `limit` 1-200 (30) | Fuzzy-resolved exercise, recent sets, all-time heaviest set, best Epley e1RM (with the app's Brzycki value), other candidate names |
 | `search_exercises` | `query`, `limit` 1-25 (10) | Ranked canonical names with muscle groups, favorite flag, `last_logged_at`. Pass a result's `name` to other tools. |
-| `get_weekly_volume` | `weeks_back` 1-26 (4) | Sets per muscle group per week plus the six-category roll-up and weekly targets |
+| `get_weekly_volume` | `weeks_back` 1-26 (4) | Sets per muscle group per week plus the six-category roll-up and weekly targets. Exercises with no real primary group are listed under `unmapped_exercises` with a `warning` instead of being credited anywhere |
 | `get_prs` | `limit` 1-300 (100) | Per exercise: heaviest set and best Epley e1RM, sorted by e1RM |
 | `get_body_weight_log` | `limit` 1-365 (30) | Body weight entries (lbs) with body-fat % and source, newest first |
 | `get_favorite_exercises` | none | Exercises starred in the app |
 | `get_nutrition_log` | `days_back` 1-90 (14) | Daily nutrition from Cronometer via Apple Health (kcal, g, mg, mcg, IU), newest first, with averages over complete logged days. Days without samples are omitted; today is `partial` |
 | `get_supplement_log` | `days_back` 1-90 (14) | Supplements with adherence (days taken / days in window, taken today, last taken) and daily check-off history |
+| `get_sleep_log` | `days_back` 1-90 (14) | Nights from Apple Health newest first (time asleep / in bed, bedtime and wake in `TIMEZONE`, deep/REM/core/awake when the source recorded stages) plus averages. Nights without samples are omitted; null stages mean none were recorded |
 | `describe_schema` | none | Live table and column listing plus any required columns that are missing. Use it when another tool reports "column does not exist". |
 
 Example calls (as the model would issue them):
@@ -228,6 +229,13 @@ Example calls (as the model would issue them):
 - Sets are bucketed by `logged_at` in `TIMEZONE`, using `week_start_day` from your settings
   (Sunday if unset). The current week is always included.
 - `total_sets` / `target_sets` sum only muscle groups with a target, as the app does.
+- Duplicate primaries on one exercise credit once. `miscellaneous` is a placeholder, not a
+  muscle: sets whose exercise has no other group are credited nowhere and the response
+  carries `unmapped_exercises` (id, name, stored groups, set count) plus a `warning`, so a
+  bad mapping is visible rather than silently inflating a group.
+- `rotator_cuff` is its own group under the shoulders category (app default target 12).
+- `npm run smoke` also recomputes one fixed week (`REGRESSION_WEEK` in `src/smoke.ts`)
+  straight from `workout_sets` and fails if `get_weekly_volume` disagrees for any group.
 
 ### Bodyweight exercises
 
@@ -274,6 +282,8 @@ Discovered from `src/services/syncService.ts` and `supabase/migrations/`:
 | `workout_locations` | `id, user_id, name` |
 | `nutrition_days` | `id, user_id, date, calories, protein_g, carbs_g, fat_g, fiber_g, iron_mg, vitamin_b12_mcg, vitamin_d_iu, calcium_mg, zinc_mg, sodium_mg, sample_count, source, synced_at` (created by `supabase/migrations/20260913000000_nutrition_days.sql`; filled by the app from Apple Health) |
 | `supplements` | `id, user_id, name, sort_order, is_active` |
+| `sleep_nights` | `id, user_id, date, time_asleep_min, time_in_bed_min, bedtime, wake_time, deep_min, rem_min, core_min, awake_min, sample_count, source, synced_at` (created by `supabase/migrations/20260914000000_volume_repair_and_sleep.sql`; one row per night keyed to the wake date, filled by the app from Apple Health with Watch preferred over iPhone and overlapping samples merged) |
+| `exercise_snapshots` | `user_id, exercise_id, reason, row_before, taken_at` (not read by the tools; every migration that remaps exercises writes the rows it is about to change here first, and the app keeps the same under `@workout_tracker/exercise_snapshots`) |
 | `supplement_intakes` | `id, user_id, supplement_id, date, taken_at` |
 
 `is_unilateral` is optional in the schema; it is read when present.

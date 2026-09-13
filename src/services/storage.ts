@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Exercise,
   Equipment,
+  PrimaryMuscleGroup,
   Template,
   Workout,
   WorkoutSet,
@@ -57,10 +58,11 @@ const STORAGE_KEYS = {
   EXERCISE_SWAPS: '@workout_tracker/exercise_swaps',
   MIGRATION_RESYNC: '@workout_tracker/migration_resync',
   MISSED_DISMISSALS: '@workout_tracker/missed_dismissals',
+  EXERCISE_SNAPSHOTS: '@workout_tracker/exercise_snapshots',
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 14;
+const CURRENT_MIGRATION_VERSION = 15;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -170,6 +172,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 14) {
     await migrateToV14();
+  }
+
+  if (currentVersion < 15) {
+    await migrateToV15();
   }
 
   // Update migration version
@@ -614,6 +620,30 @@ export interface MigrationResync {
   exerciseIds: string[];
   workoutIds: string[];
   bodyMeasurementIds?: string[];
+  /** Re-upload user_settings (new muscle-group targets) on the next sync. */
+  syncSettings?: boolean;
+}
+
+/**
+ * Local copy of exercise rows as they were before a migration rewrote them.
+ * Any future remap must call snapshotExercises() first so the change can be
+ * reversed; the cloud keeps the same thing in exercise_snapshots.
+ */
+export interface ExerciseSnapshot {
+  takenAt: string;
+  reason: string;
+  rows: Exercise[];
+}
+
+export async function getExerciseSnapshots(): Promise<ExerciseSnapshot[]> {
+  return getItem<ExerciseSnapshot[]>(STORAGE_KEYS.EXERCISE_SNAPSHOTS, []);
+}
+
+export async function snapshotExercises(reason: string, rows: Exercise[]): Promise<void> {
+  if (rows.length === 0) return;
+  const existing = await getExerciseSnapshots();
+  existing.push({ takenAt: new Date().toISOString(), reason, rows });
+  await setItem(STORAGE_KEYS.EXERCISE_SNAPSHOTS, existing);
 }
 
 export async function getPendingMigrationResync(): Promise<MigrationResync | null> {
@@ -679,6 +709,66 @@ async function migrateToV14(): Promise<void> {
   console.log(
     `Migration to V14 complete - ${changedExercises.length} exercises, ${changedWorkouts.length} workouts repaired, ` +
       `${measurementIds.length} body measurements queued for re-sync`,
+  );
+}
+
+const ROTATOR_CUFF_EXERCISE_ID = 'bcc9b2b0-0309-4b44-84d7-49de58ab8064'; // Cable (D-Handle) Rotator cuff
+
+/**
+ * V15: volume-counting repairs.
+ *  - The cable rotator cuff exercise carried ["chest", "miscellaneous"]; it now
+ *    has its own rotator_cuff group (shoulders category, weekly target 12).
+ *  - "miscellaneous" is dropped from any exercise that also has a real group, and
+ *    duplicate primaries are collapsed, so no set is credited twice.
+ *  - Every exercise is re-uploaded so the cloud finally receives is_unilateral
+ *    (exerciseRow never sent it before this version).
+ * Affected rows are snapshotted first so the change can be reversed.
+ */
+async function migrateToV15(): Promise<void> {
+  console.log('Running migration to V15 - volume-counting repairs...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const before: Exercise[] = [];
+  const changed: string[] = [];
+
+  const repaired = exercises.map(e => {
+    const stored: PrimaryMuscleGroup[] = e.primaryMuscleGroups ?? (e.primaryMuscleGroup ? [e.primaryMuscleGroup] : []);
+    let primaries: PrimaryMuscleGroup[] = [...stored];
+    if (e.id === ROTATOR_CUFF_EXERCISE_ID) primaries = ['rotator_cuff'];
+    const real = primaries.filter(g => g !== 'miscellaneous');
+    if (real.length > 0) primaries = real;
+    primaries = [...new Set(primaries)];
+    const primaryMuscleGroup = primaries[0] ?? e.primaryMuscleGroup;
+    const same =
+      primaryMuscleGroup === e.primaryMuscleGroup &&
+      primaries.length === stored.length &&
+      primaries.every((g, i) => g === stored[i]);
+    if (same) return e;
+    before.push(e);
+    changed.push(e.id);
+    return { ...e, primaryMuscleGroup, primaryMuscleGroups: primaries };
+  });
+
+  await snapshotExercises('V15 volume-counting repairs', before);
+  if (changed.length > 0) await setItem(STORAGE_KEYS.EXERCISES, repaired);
+
+  const settings = await getUserSettings();
+  if (settings.muscleGroupTargets.rotator_cuff === undefined) {
+    await updateUserSettings({
+      muscleGroupTargets: { ...settings.muscleGroupTargets, rotator_cuff: DEFAULT_USER_SETTINGS.muscleGroupTargets.rotator_cuff },
+    });
+  }
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...exercises.map(e => e.id)])],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: true,
+  });
+
+  console.log(
+    `Migration to V15 complete - ${changed.length} exercise mappings repaired, ${exercises.length} exercises queued for re-sync`,
   );
 }
 
