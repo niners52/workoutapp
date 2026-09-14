@@ -7,6 +7,7 @@ import { AuthProvider } from './src/contexts/AuthContext';
 import { DataProvider } from './src/contexts/DataContext';
 import { WorkoutProvider } from './src/contexts/WorkoutContext';
 import { initializeHealthKit } from './src/services/healthKit';
+import { AppErrorBoundary } from './src/components/common/AppErrorBoundary';
 
 export default function App() {
   useEffect(() => {
@@ -21,14 +22,16 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <DataProvider>
-            <WorkoutProvider>
-              <StatusBar style="light" />
-              <AppNavigator />
-            </WorkoutProvider>
-          </DataProvider>
-        </AuthProvider>
+        <AppErrorBoundary>
+          <AuthProvider>
+            <DataProvider>
+              <WorkoutProvider>
+                <StatusBar style="light" />
+                <AppNavigator />
+              </WorkoutProvider>
+            </DataProvider>
+          </AuthProvider>
+        </AppErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
