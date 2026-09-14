@@ -1238,6 +1238,10 @@ export async function getUserSettings(): Promise<UserSettings> {
         ...DEFAULT_USER_SETTINGS.muscleGroupTargets,
         ...(stored.muscleGroupTargets || {}),
       },
+      healthTargets: {
+        ...DEFAULT_USER_SETTINGS.healthTargets,
+        ...(stored.healthTargets || {}),
+      },
     };
   } catch (error) {
     console.error('Error reading user settings:', error);
