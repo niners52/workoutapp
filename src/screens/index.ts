@@ -38,3 +38,7 @@ export { AerobicSessionScreen } from './AerobicSessionScreen';
 export { RoutineEditorScreen } from './RoutineEditorScreen';
 export { RoutineBuilderScreen } from './RoutineBuilderScreen';
 export { SocialScreen } from './SocialScreen';
+export { HealthDashboardScreen } from './HealthDashboardScreen';
+export { NutritionTodayScreen } from './NutritionTodayScreen';
+export { HealthTargetsScreen } from './HealthTargetsScreen';
+export { HealthRemindersScreen } from './HealthRemindersScreen';

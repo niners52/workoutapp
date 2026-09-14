@@ -600,7 +600,7 @@ export function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+    <SafeAreaView style={commonStyles.safeArea} edges={[]}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={[styles.content, { paddingBottom: 100 + workoutBarPadding }]}

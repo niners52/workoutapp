@@ -28,6 +28,14 @@ export const colors = {
   warning: '#D97706', // Amber (approaching limits)
   error: '#DC2626', // Red (errors, delete actions)
 
+  // Health dashboard. "In range" is green on purpose: the app's success color is
+  // the same yellow as a budget ring, and a calcium band hit must never read as
+  // a sodium budget reading.
+  healthGood: '#34C759',
+  healthGoodDim: 'rgba(52, 199, 89, 0.22)',
+  warningDim: 'rgba(217, 119, 6, 0.2)',
+  errorDim: 'rgba(220, 38, 38, 0.2)',
+
   // Chart colors (Yellow-accented)
   chartTraining: '#FFC52F', // Yellow for training
   chartProtein: '#FFD65A', // Lighter yellow for protein

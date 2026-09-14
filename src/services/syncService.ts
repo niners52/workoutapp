@@ -11,6 +11,7 @@ import {
   SupplementIntake,
   Routine,
   BodyMeasurement,
+  HealthReminder,
 } from '../types';
 import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
 import {
@@ -67,7 +68,7 @@ function getOpKey(op: { table: string; operation: string; data: any }): string {
 }
 
 // Helper to get current user ID
-async function getUserId(): Promise<string | null> {
+export async function getUserId(): Promise<string | null> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     return user?.id || null;
@@ -77,7 +78,7 @@ async function getUserId(): Promise<string | null> {
 }
 
 // Helper to add operation to pending queue (deduplicates at add time)
-async function addToPendingQueue(operation: Omit<PendingSyncOperation, 'timestamp'>): Promise<void> {
+export async function addToPendingQueue(operation: Omit<PendingSyncOperation, 'timestamp'>): Promise<void> {
   await withQueueLock(async () => {
     try {
       const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
@@ -176,6 +177,8 @@ export interface NutritionDayRow {
   zinc_mg: number | null;
   sodium_mg: number | null;
   sample_count: number;
+  /** Newest HealthKit sample that day (ISO); dropped on databases without the column. */
+  last_sample_at: string | null;
   source: 'healthkit';
   synced_at: string;
 }
@@ -191,9 +194,12 @@ export async function syncNutritionDays(rows: NutritionDayRow[]): Promise<void> 
   const withUser = rows.map(r => ({ ...r, user_id: userId }));
   for (const batch of chunkArray(withUser, 50)) {
     try {
-      const { error } = await supabase
-        .from('nutrition_days')
-        .upsert(batch, { onConflict: 'user_id,date' });
+      const { error } = await upsertTolerant(
+        'nutrition_days',
+        batch,
+        OPTIONAL_COLUMNS_BY_TABLE.nutrition_days || [],
+        'user_id,date',
+      );
       if (error) {
         console.log('Nutrition sync failed, queuing:', error.message);
         for (const row of batch) await addToPendingQueue({ table: 'nutrition_days', operation: 'upsert', data: row });
@@ -246,6 +252,118 @@ export async function syncSleepNights(rows: SleepNightRow[]): Promise<void> {
       console.log('Sleep sync error, queuing:', error);
       for (const row of batch) await addToPendingQueue({ table: 'sleep_nights', operation: 'upsert', data: row });
     }
+  }
+}
+
+// ==================== HEALTH DASHBOARD READS ====================
+
+export type CloudRead<T> = { ok: true; data: T } | { ok: false; missingTable: boolean; error: string };
+
+function isMissingTableError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false;
+  // PGRST205 = table not in PostgREST's schema cache; 42P01 = Postgres undefined_table.
+  if (error.code === 'PGRST205' || error.code === '42P01') return true;
+  const msg = error.message || '';
+  return /could not find the table/i.test(msg) || /relation .* does not exist/i.test(msg);
+}
+
+/** Cloud copy of the nutrition sync: days on or after sinceDate, newest first. */
+export async function fetchNutritionDays(sinceDate: string): Promise<CloudRead<NutritionDayRow[]>> {
+  const userId = await getUserId();
+  if (!userId) return { ok: false, missingTable: false, error: 'not signed in' };
+  const { data, error } = await supabase
+    .from('nutrition_days')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('date', sinceDate)
+    .order('date', { ascending: false });
+  if (error) return { ok: false, missingTable: isMissingTableError(error), error: error.message };
+  return {
+    ok: true,
+    data: (data || []).map(row => ({ ...row, last_sample_at: row.last_sample_at ?? null }) as NutritionDayRow),
+  };
+}
+
+/** The night that ended on `date` (wake date). missingTable = sleep sync not deployed yet. */
+export async function fetchSleepNight(date: string): Promise<CloudRead<SleepNightRow | null>> {
+  const userId = await getUserId();
+  if (!userId) return { ok: false, missingTable: false, error: 'not signed in' };
+  const { data, error } = await supabase
+    .from('sleep_nights')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('date', date)
+    .maybeSingle();
+  if (error) return { ok: false, missingTable: isMissingTableError(error), error: error.message };
+  return { ok: true, data: (data as SleepNightRow | null) ?? null };
+}
+
+// ==================== HEALTH REMINDERS ====================
+
+function healthReminderRow(reminder: HealthReminder, userId: string) {
+  return {
+    id: reminder.id,
+    user_id: userId,
+    title: reminder.title,
+    detail: reminder.detail,
+    due_date: reminder.dueDate,
+    done_at: reminder.doneAt,
+    sort_order: reminder.sortOrder,
+    created_at: reminder.createdAt,
+    updated_at: reminder.updatedAt,
+  };
+}
+
+export async function fetchHealthReminders(): Promise<CloudRead<HealthReminder[]>> {
+  const userId = await getUserId();
+  if (!userId) return { ok: false, missingTable: false, error: 'not signed in' };
+  const { data, error } = await supabase.from('health_reminders').select('*').eq('user_id', userId);
+  if (error) return { ok: false, missingTable: isMissingTableError(error), error: error.message };
+  return {
+    ok: true,
+    data: (data || []).map(row => ({
+      id: row.id,
+      title: row.title,
+      detail: row.detail ?? null,
+      dueDate: row.due_date ?? null,
+      doneAt: row.done_at ?? null,
+      sortOrder: row.sort_order ?? 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
+  };
+}
+
+export async function syncHealthReminder(reminder: HealthReminder): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+  const row = healthReminderRow(reminder, userId);
+  try {
+    const { error } = await supabase.from('health_reminders').upsert(row, { onConflict: 'id' });
+    if (error) {
+      console.log('Health reminder sync failed, queuing:', error.message);
+      await addToPendingQueue({ table: 'health_reminders', operation: 'upsert', data: row });
+    } else {
+      await updateLastSyncTimestamp();
+    }
+  } catch (error) {
+    console.log('Health reminder sync error, queuing:', error);
+    await addToPendingQueue({ table: 'health_reminders', operation: 'upsert', data: row });
+  }
+}
+
+export async function syncDeleteHealthReminder(id: string): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+  try {
+    const { error } = await supabase.from('health_reminders').delete().eq('id', id).eq('user_id', userId);
+    if (error) {
+      console.log('Health reminder delete failed, queuing:', error.message);
+      await addToPendingQueue({ table: 'health_reminders', operation: 'delete', data: { id, user_id: userId } });
+    }
+  } catch (error) {
+    console.log('Health reminder delete error, queuing:', error);
+    await addToPendingQueue({ table: 'health_reminders', operation: 'delete', data: { id, user_id: userId } });
   }
 }
 
@@ -748,6 +866,7 @@ export async function syncUserSettings(settings: UserSettings): Promise<void> {
       weekly_goals: settings.weeklyGoals || {},
       muscle_group_targets: settings.muscleGroupTargets || {},
       creatine_supplement_id: settings.creatineSupplementId || null,
+      health_targets: settings.healthTargets ?? null,
     };
 
     const { error } = await upsertTolerant(
@@ -1255,6 +1374,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
         weeklyGoals: row.weekly_goals,
         muscleGroupTargets: row.muscle_group_targets,
         creatineSupplementId: row.creatine_supplement_id,
+        ...(row.health_targets ? { healthTargets: row.health_targets } : {}),
       };
     }
 

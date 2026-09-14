@@ -430,6 +430,69 @@ export const DEFAULT_WEEKLY_GOALS: WeeklyGoals = {
   cardioMinutes: 60,
 };
 
+// Health dashboard targets. Every medical number the homepage uses lives here
+// (editable in Settings -> Health Targets), never in a component.
+export interface FocusGroup {
+  id: string;
+  label: string;
+  muscleGroup: PrimaryMuscleGroup;
+  /** Count only sets from exercises whose name contains this (case-insensitive), e.g. "incline". */
+  exerciseNameIncludes?: string;
+  /** Weekly target for this row. Absent: the muscle group's target, or none when a name filter narrows the row. */
+  targetSets?: number;
+}
+
+export interface HealthTargets {
+  sodiumBudgetMg: number;          // daily budget, counts down
+  sodiumWarnRemainingPct: number;  // warning once this share of the budget or less remains
+  calciumBandLowMg: number;        // dietary calcium target band
+  calciumBandHighMg: number;
+  calciumFarAboveMg: number;       // at or above this is flagged again
+  proteinFloorG: number;           // floor, counts up
+  eveningStartHour: number;        // local hour the sodium copy switches to "this evening"
+  eveningLogCheckHour: number;     // local hour after which an unlogged evening is flagged
+  goalWeightLbs: number;
+  goalWeightToleranceLbs: number;  // 7-day average within this of goal = maintenance
+  weighInStaleDays: number;        // newest weigh-in older than this -> "step on the scale"
+  deloadWeekStart: string | null;  // 'YYYY-MM-DD' of any day in the deload week
+  focusGroups: FocusGroup[];       // pinned first in the weekly volume card
+  sleepTargetHours: number;
+}
+
+export const DEFAULT_HEALTH_TARGETS: HealthTargets = {
+  sodiumBudgetMg: 2300,
+  sodiumWarnRemainingPct: 25,
+  calciumBandLowMg: 1000,
+  calciumBandHighMg: 1200,
+  calciumFarAboveMg: 2500,
+  proteinFloorG: 170,
+  eveningStartHour: 17,
+  eveningLogCheckHour: 19,
+  goalWeightLbs: 185,
+  goalWeightToleranceLbs: 1,
+  weighInStaleDays: 2,
+  deloadWeekStart: '2026-09-21',
+  focusGroups: [
+    { id: 'upper-chest', label: 'Upper chest (incline pressing)', muscleGroup: 'chest', exerciseNameIncludes: 'incline' },
+    { id: 'traps', label: 'Traps', muscleGroup: 'traps' },
+    { id: 'mid-back', label: 'Mid-back (rows)', muscleGroup: 'upper_back' },
+    { id: 'hamstrings', label: 'Hamstrings', muscleGroup: 'hamstrings' },
+  ],
+  sleepTargetHours: 7,
+};
+
+/** A lab, scan, or other recheck on the "Next draws" card. dueDate null = due now. */
+export interface HealthReminder {
+  id: string;
+  title: string;
+  detail: string | null;
+  dueDate: string | null; // 'YYYY-MM-DD'
+  doneAt: string | null;  // ISO
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Body fat calculation types
 export type BodyFatFormula = 'jp3' | 'jp7' | 'dw4' | 'parillo9';
 export type BiologicalSex = 'male' | 'female';
@@ -493,9 +556,12 @@ export interface UserSettings {
   weeklyPlannerReminderDay?: number;      // 0=Sunday … 6=Saturday, default 0 (Sunday)
   weeklyPlannerReminderHour?: number;     // 0-23, default 19 (7pm)
   weeklyPlannerReminderMinute?: number;   // 0-59, default 0
+  // Health dashboard targets (sodium, calcium, protein, weight, deload, focus groups, sleep)
+  healthTargets: HealthTargets;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
+  healthTargets: DEFAULT_HEALTH_TARGETS,
   weekStartDay: 'monday',
   units: 'imperial',
   proteinGoal: 150,

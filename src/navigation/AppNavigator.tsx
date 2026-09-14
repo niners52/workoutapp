@@ -53,6 +53,10 @@ import {
   ProgressPhotosScreen,
   ProgressPhotoViewScreen,
   ProgressPhotoCompareScreen,
+  HealthDashboardScreen,
+  NutritionTodayScreen,
+  HealthTargetsScreen,
+  HealthRemindersScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -208,7 +212,7 @@ function MainTabs() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeScreen}
+        component={HealthDashboardScreen}
         options={{ tabBarLabel: 'Home' }}
       />
       <Tab.Screen
@@ -579,6 +583,34 @@ export function AppNavigator() {
           component={ProgressPhotoCompareScreen}
           options={{
             headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="TrainingOverview"
+          component={HomeScreen}
+          options={{
+            title: 'Training & Goals',
+          }}
+        />
+        <Stack.Screen
+          name="NutritionToday"
+          component={NutritionTodayScreen}
+          options={{
+            title: 'Nutrition Today',
+          }}
+        />
+        <Stack.Screen
+          name="HealthTargets"
+          component={HealthTargetsScreen}
+          options={{
+            title: 'Health Targets',
+          }}
+        />
+        <Stack.Screen
+          name="HealthReminders"
+          component={HealthRemindersScreen}
+          options={{
+            title: 'Health Reminders',
           }}
         />
       </Stack.Navigator>

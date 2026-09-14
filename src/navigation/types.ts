@@ -56,6 +56,10 @@ export type RootStackParamList = {
   ProgressPhotos: undefined;
   ProgressPhotoView: { photoId: string };
   ProgressPhotoCompare: { photoId1?: string; photoId2?: string };
+  TrainingOverview: undefined;
+  NutritionToday: { focus?: 'calcium' } | undefined;
+  HealthTargets: undefined;
+  HealthReminders: undefined;
 };
 
 // Bottom Tab Navigator

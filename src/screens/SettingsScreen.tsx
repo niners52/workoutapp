@@ -845,6 +845,27 @@ export function SettingsScreen() {
           </Text>
         </View>
 
+        {/* Health Dashboard */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Health Dashboard</Text>
+          <Card padding="none">
+            <ListItem
+              title="Health Targets"
+              subtitle="Sodium, calcium, protein, weight, deload, focus groups"
+              onPress={() => navigation.navigate('HealthTargets')}
+              showChevron
+              isFirst
+            />
+            <ListItem
+              title="Health Reminders"
+              subtitle="Lab and scan rechecks on the Next draws card"
+              onPress={() => navigation.navigate('HealthReminders')}
+              showChevron
+              isLast
+            />
+          </Card>
+        </View>
+
         {/* Routines */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Planning</Text>
