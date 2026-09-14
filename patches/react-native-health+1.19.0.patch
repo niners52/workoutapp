@@ -16,10 +16,10 @@ index fba0f76..b48346f 100644
  - (void)dietary_getTotalFatSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback;
  @end
 diff --git a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m
-index 9d532ee..7ed7342 100644
+index 9d532ee..610517e 100644
 --- a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m
 +++ b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Methods_Dietary.m
-@@ -108,6 +108,192 @@
+@@ -108,6 +108,193 @@
      }];
  }
  
@@ -119,7 +119,8 @@ index 9d532ee..7ed7342 100644
 +- (void)dietary_getVitaminDSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
 +{
 +    HKQuantityType *quantityType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryVitaminD];
-+    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit internationalUnit]];
++    // HealthKit stores dietary vitamin D by mass; IU cannot be converted to and crashed the app.
++    HKUnit *unit = [RCTAppleHealthKit hkUnitFromOptions:input key:@"unit" withDefault:[HKUnit unitFromString:@"mcg"]];
 +    NSUInteger limit = [RCTAppleHealthKit uintFromOptions:input key:@"limit" withDefault:HKObjectQueryNoLimit];
 +    BOOL ascending = [RCTAppleHealthKit boolFromOptions:input key:@"ascending" withDefault:false];
 +    NSDate *startDate = [RCTAppleHealthKit dateFromOptions:input key:@"startDate" withDefault:nil];
@@ -212,6 +213,62 @@ index 9d532ee..7ed7342 100644
  - (void)dietary_getFiberSamples:(NSDictionary *)input callback:(RCTResponseSenderBlock)callback
  {
      HKQuantityType *fiberType = [HKQuantityType quantityTypeForIdentifier:HKQuantityTypeIdentifierDietaryFiber];
+diff --git a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Queries.m b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Queries.m
+index d6d61ef..a0e69a2 100644
+--- a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Queries.m
++++ b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit+Queries.m
+@@ -254,27 +254,34 @@
+             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+ 
+                 for (HKQuantitySample *sample in results) {
+-                    HKQuantity *quantity = sample.quantity;
+-                    double value = [quantity doubleValueForUnit:unit];
++                    // doubleValueForUnit: throws on an incompatible unit (a mass-based
++                    // vitamin D sample read in IU crashed build 121). Uncaught on this
++                    // queue it kills the app, so skip the sample instead.
++                    @try {
++                        HKQuantity *quantity = sample.quantity;
++                        double value = [quantity doubleValueForUnit:unit];
+ 
+-                    NSString *startDateString = [RCTAppleHealthKit buildISO8601StringFromDate:sample.startDate];
+-                    NSString *endDateString = [RCTAppleHealthKit buildISO8601StringFromDate:sample.endDate];
++                        NSString *startDateString = [RCTAppleHealthKit buildISO8601StringFromDate:sample.startDate];
++                        NSString *endDateString = [RCTAppleHealthKit buildISO8601StringFromDate:sample.endDate];
+ 
+-                    NSMutableDictionary *elem = [NSMutableDictionary dictionaryWithDictionary:@{
+-                            @"value" : @(value),
+-                            @"id" : [[sample UUID] UUIDString],
+-                            @"sourceName" : [[[sample sourceRevision] source] name],
+-                            @"sourceId" : [[[sample sourceRevision] source] bundleIdentifier],
+-                            @"startDate" : startDateString,
+-                            @"endDate" : endDateString,
+-                    }];
++                        NSMutableDictionary *elem = [NSMutableDictionary dictionaryWithDictionary:@{
++                                @"value" : @(value),
++                                @"id" : [[sample UUID] UUIDString],
++                                @"sourceName" : [[[sample sourceRevision] source] name],
++                                @"sourceId" : [[[sample sourceRevision] source] bundleIdentifier],
++                                @"startDate" : startDateString,
++                                @"endDate" : endDateString,
++                        }];
++
++                        NSDictionary *metadata = [sample metadata];
++                        if (metadata) {
++                            [elem setValue:metadata forKey:kMetadataKey];
++                        }
+ 
+-                    NSDictionary *metadata = [sample metadata];
+-                    if (metadata) {
+-                        [elem setValue:metadata forKey:kMetadataKey];
++                        [data addObject:elem];
++                    } @catch (NSException *exception) {
++                        NSLog(@"RNHealth: skipped a %@ sample: %@", quantityType.identifier, exception.reason);
+                     }
+-
+-                    [data addObject:elem];
+                 }
+ 
+                 completion(data, error);
 diff --git a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m b/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m
 index e8ddce1..d061ebf 100644
 --- a/node_modules/react-native-health/RCTAppleHealthKit/RCTAppleHealthKit.m

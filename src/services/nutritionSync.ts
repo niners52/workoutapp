@@ -26,7 +26,14 @@ export const MIN_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 type NutrientColumn = Exclude<keyof NutritionDayRow, 'id' | 'date' | 'sample_count' | 'source' | 'synced_at' | 'last_sample_at'>;
 
-/** HealthKit getter per column. Default units in the native library: kcal, g, mg, mcg, IU. */
+/**
+ * HealthKit getter per column. Default units in the native library: kcal, g, mg, mcg.
+ *
+ * vitamin_d_iu is deliberately not read. Build 121's getVitaminDSamples converts
+ * each sample to IU, HealthKit stores dietary vitamin D by mass, and the failed
+ * conversion throws on a native queue and crashes the app on launch. The column
+ * stays null ("not readable") until a build with the hardened library is installed.
+ */
 export const NUTRIENT_GETTERS: ReadonlyArray<{ column: NutrientColumn; method: string }> = [
   { column: 'calories', method: 'getEnergyConsumedSamples' },
   { column: 'protein_g', method: 'getProteinSamples' },
@@ -35,7 +42,6 @@ export const NUTRIENT_GETTERS: ReadonlyArray<{ column: NutrientColumn; method: s
   { column: 'fiber_g', method: 'getFiberSamples' },
   { column: 'iron_mg', method: 'getIronSamples' },
   { column: 'vitamin_b12_mcg', method: 'getVitaminB12Samples' },
-  { column: 'vitamin_d_iu', method: 'getVitaminDSamples' },
   { column: 'calcium_mg', method: 'getCalciumSamples' },
   { column: 'zinc_mg', method: 'getZincSamples' },
   { column: 'sodium_mg', method: 'getSodiumSamples' },
