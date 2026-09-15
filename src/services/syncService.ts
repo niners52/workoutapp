@@ -77,6 +77,28 @@ export async function getUserId(): Promise<string | null> {
   }
 }
 
+/**
+ * Queue many operations under one lock with a single read and write of the
+ * queue. Calling addToPendingQueue in a loop rewrites the whole queue per row.
+ */
+async function addManyToPendingQueue(operations: Array<Omit<PendingSyncOperation, 'timestamp'>>): Promise<void> {
+  if (operations.length === 0) return;
+  await withQueueLock(async () => {
+    try {
+      const existing = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
+      const queued: PendingSyncOperation[] = existing ? JSON.parse(existing) : [];
+      const incoming = new Map(operations.map(op => [getOpKey(op), op]));
+      const kept = queued.filter(op => !incoming.has(getOpKey(op)));
+      const now = Date.now();
+      for (const op of incoming.values()) kept.push({ ...op, timestamp: now, retries: 0 });
+      await AsyncStorage.setItem(SYNC_KEYS.PENDING_OPERATIONS, JSON.stringify(kept));
+      console.log(`[Sync] Queued ${incoming.size} operations (${kept.length} pending)`);
+    } catch (error) {
+      console.log('Failed to add to pending queue:', error);
+    }
+  });
+}
+
 // Helper to add operation to pending queue (deduplicates at add time)
 export async function addToPendingQueue(operation: Omit<PendingSyncOperation, 'timestamp'>): Promise<void> {
   await withQueueLock(async () => {
@@ -425,15 +447,21 @@ export async function reconcileCloud(force: boolean = false): Promise<ReconcileR
     return { exercises: 0, workouts: 0, sets: 0 };
   }
 
-  const have = (rows: { id: string }[]) => new Set(rows.map(r => r.id));
-  const missingExercises = localExercises.filter(e => !have(cloudExercises.data).has(e.id));
-  const missingWorkouts = localWorkouts.filter(w => !have(cloudWorkouts.data).has(w.id));
+  // Build each id set once. Rebuilding the cloud set list per local set was
+  // quadratic and froze the JS thread (no taps) for minutes on a large history.
+  const cloudExerciseIds = new Set(cloudExercises.data.map(r => r.id));
+  const cloudWorkoutIds = new Set(cloudWorkouts.data.map(r => r.id));
+  const cloudSetIds = new Set(cloudSets.data.map(r => r.id));
   const knownWorkouts = new Set(localWorkouts.map(w => w.id));
-  const missingSets = localSets.filter(s => knownWorkouts.has(s.workoutId) && !have(cloudSets.data).has(s.id));
+  const missingExercises = localExercises.filter(e => !cloudExerciseIds.has(e.id));
+  const missingWorkouts = localWorkouts.filter(w => !cloudWorkoutIds.has(w.id));
+  const missingSets = localSets.filter(s => knownWorkouts.has(s.workoutId) && !cloudSetIds.has(s.id));
 
-  for (const e of missingExercises) await addToPendingQueue({ table: 'exercises', operation: 'upsert', data: exerciseRow(e, userId) });
-  for (const w of missingWorkouts) await addToPendingQueue({ table: 'workouts', operation: 'upsert', data: workoutRow(w, userId) });
-  for (const st of missingSets) await addToPendingQueue({ table: 'workout_sets', operation: 'upsert', data: setRow(st, userId) });
+  await addManyToPendingQueue([
+    ...missingExercises.map(e => ({ table: 'exercises', operation: 'upsert' as const, data: exerciseRow(e, userId) })),
+    ...missingWorkouts.map(w => ({ table: 'workouts', operation: 'upsert' as const, data: workoutRow(w, userId) })),
+    ...missingSets.map(st => ({ table: 'workout_sets', operation: 'upsert' as const, data: setRow(st, userId) })),
+  ]);
 
   await AsyncStorage.setItem(SYNC_KEYS.LAST_RECONCILE, today).catch(() => {});
   const result = { exercises: missingExercises.length, workouts: missingWorkouts.length, sets: missingSets.length };
