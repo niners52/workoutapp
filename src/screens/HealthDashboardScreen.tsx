@@ -4,15 +4,16 @@
  * Every tile links out to detail instead of expanding in place.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfWeek } from 'date-fns';
 import { colors, typography, spacing, commonStyles } from '../theme';
-import { Card } from '../components/common';
+import { Button, Card } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
+import { useWorkout } from '../contexts/WorkoutContext';
 import {
   BodyWeightTileView,
   CalciumTileView,
@@ -38,7 +39,19 @@ import {
 } from '../services/healthDashboard';
 import { loadNutrition, loadSleep, type NutritionLoad } from '../services/healthDashboardData';
 import { getLocalReminders, loadReminders, setReminderDone } from '../services/healthReminders';
-import { getWeeklyVolume } from '../services/analytics';
+import { computeWeeklyVolume } from '../services/analytics';
+import {
+  dismissMissedExercise,
+  getExercises,
+  getExerciseSwaps,
+  getMissedExerciseDismissals,
+  getSets,
+  getUserSettings,
+  getWorkouts,
+} from '../services/storage';
+import { getMissedExercisesThisWeek, getTrainingWeekStart, type MissedExercise } from '../services/missedExercises';
+import { CatchUpCard } from '../components/goals';
+import { InsightsCard } from '../components/insights/InsightsCard';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
 import { importHealthKitBodyWeights } from '../services/bodyWeightImport';
@@ -50,10 +63,13 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 /** Home re-reads Apple Health at most this often; pull-to-refresh always does. */
 const FOCUS_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+/** Room kept under the scroll content for the pinned Start Workout button. */
+const START_BUTTON_HEIGHT = 80;
 
 export function HealthDashboardScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { userSettings, bodyMeasurements, refreshBodyMeasurements } = useData();
+  const { isWorkoutActive, startWorkout } = useWorkout();
   const workoutBarPadding = useWorkoutBarPadding();
   const targets = userSettings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
   const weekStartDay = userSettings.weekStartDay;
@@ -62,6 +78,7 @@ export function HealthDashboardScreen() {
   const [nutrition, setNutrition] = useState<NutritionLoad | null>(null);
   const [volume, setVolume] = useState<MuscleGroupVolume[] | null>(null);
   const [volumeError, setVolumeError] = useState(false);
+  const [missed, setMissed] = useState<MissedExercise[] | null>(null);
   const [sleep, setSleep] = useState<SleepInput | null>(null);
   const [reminders, setReminders] = useState<HealthReminder[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -72,21 +89,34 @@ export function HealthDashboardScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const load = useCallback(async () => {
+  // Reads storage rather than DataContext, which the active workout does not
+  // update. The set history is large, so it is read once per visit (not again
+  // after the Apple Health sync, which never changes sets) and shared by both views.
+  const loadTraining = useCallback(async () => {
+    try {
+      const [sets, workouts, exercises, settings, swaps, dismissals] = await Promise.all([
+        getSets(),
+        getWorkouts(),
+        getExercises(),
+        getUserSettings(),
+        getExerciseSwaps(),
+        getMissedExerciseDismissals(),
+      ]);
+      // Same counting rules as the Weekly Volume panel.
+      setVolume(computeWeeklyVolume(sets, workouts, exercises, settings, new Date()).muscleGroups);
+      setVolumeError(false);
+      setMissed(getMissedExercisesThisWeek(workouts, sets, swaps, exercises, settings.weekStartDay, dismissals));
+    } catch (e) {
+      console.error('[HealthDashboard] Training load error:', e);
+      setVolumeError(true);
+    }
+  }, []);
+
+  const loadHealth = useCallback(async () => {
     const at = new Date();
     setNow(at);
     await Promise.all([
       loadNutrition(at).then(setNutrition),
-      // Same call as the Weekly Volume panel, so the counting rules are shared.
-      getWeeklyVolume(at)
-        .then(v => {
-          setVolume(v.muscleGroups);
-          setVolumeError(false);
-        })
-        .catch(e => {
-          console.error('[HealthDashboard] Weekly volume error:', e);
-          setVolumeError(true);
-        }),
       loadSleep(at).then(setSleep),
       loadReminders()
         .catch(() => getLocalReminders())
@@ -99,11 +129,9 @@ export function HealthDashboardScreen() {
       await Promise.all([
         syncNutritionFromHealthKit(force, new Date(), FOCUS_SYNC_INTERVAL_MS).catch(e => console.log('Nutrition sync failed:', e)),
         syncSleepFromHealthKit(force).catch(e => console.log('Sleep sync failed:', e)),
-        force
-          ? importHealthKitBodyWeights()
-              .then(r => (r.imported > 0 ? refreshBodyMeasurements() : undefined))
-              .catch(e => console.log('Body weight import failed:', e))
-          : Promise.resolve(),
+        importHealthKitBodyWeights({ force })
+          .then(r => (r.imported > 0 ? refreshBodyMeasurements() : undefined))
+          .catch(e => console.log('Body weight import failed:', e)),
       ]);
     },
     [refreshBodyMeasurements],
@@ -112,22 +140,55 @@ export function HealthDashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      loadTraining();
       // Show what is already synced, then refresh from Apple Health if it is due.
-      load()
+      loadHealth()
         .then(() => syncHealthKit(false))
-        .then(() => (active ? load() : undefined));
+        .then(() => (active ? loadHealth() : undefined));
       return () => {
         active = false;
       };
-    }, [load, syncHealthKit]),
+    }, [loadTraining, loadHealth, syncHealthKit]),
   );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await syncHealthKit(true);
-    await load();
+    await Promise.all([loadTraining(), loadHealth()]);
     setRefreshing(false);
-  }, [syncHealthKit, load]);
+  }, [syncHealthKit, loadTraining, loadHealth]);
+
+  // Remove a row from the catch-up list for the rest of this training week.
+  const handleDismissMissed = useCallback(
+    async (exerciseId: string) => {
+      setMissed(prev => prev?.filter(m => m.exercise.id !== exerciseId) ?? prev);
+      try {
+        await dismissMissedExercise(exerciseId, getTrainingWeekStart(weekStartDay));
+      } catch (e) {
+        console.error('[HealthDashboard] Dismiss missed exercise error:', e);
+      }
+    },
+    [weekStartDay],
+  );
+
+  // One tap: an active workout preloaded with everything on the catch-up list.
+  const handleStartCatchUp = useCallback(async () => {
+    const ids = missed?.map(m => m.exercise.id) ?? [];
+    if (ids.length === 0) return;
+    try {
+      // Returns null if the user chose to keep an in-progress workout.
+      const workoutId = await startWorkout(undefined, ids);
+      if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
+    } catch (e) {
+      console.error('[HealthDashboard] Start catch-up workout error:', e);
+      Alert.alert('Error', 'Could not start the catch-up workout.');
+    }
+  }, [missed, startWorkout, navigation]);
+
+  const handleStartWorkout = () => {
+    if (isWorkoutActive) navigation.navigate('MainTabs', { screen: 'Train' });
+    else navigation.navigate('StartWorkout');
+  };
 
   const today = nutrition?.today ?? null;
   const sodium = useMemo(() => sodiumTile(today, targets, now), [today, targets, now]);
@@ -161,7 +222,7 @@ export function HealthDashboardScreen() {
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxxl + workoutBarPadding }]}
+        contentContainerStyle={[styles.content, { paddingBottom: spacing.xxxl + START_BUTTON_HEIGHT + workoutBarPadding }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />}
       >
         <View style={styles.header}>
@@ -205,6 +266,17 @@ export function HealthDashboardScreen() {
         <View style={styles.tierHeader}>
           <Text style={styles.tierTitle}>This week</Text>
         </View>
+        {missed && missed.length > 0 && (
+          <View style={styles.catchUp}>
+            <Text style={styles.catchUpTitle}>Missed this week — catch up</Text>
+            <CatchUpCard
+              items={missed}
+              onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
+              onDismiss={handleDismissMissed}
+              onStart={handleStartCatchUp}
+            />
+          </View>
+        )}
         {volumeView?.deload && <DeloadBanner />}
         <WeeklyVolumeCard
           view={volumeView}
@@ -221,6 +293,8 @@ export function HealthDashboardScreen() {
           )}
         </View>
 
+        <InsightsCard />
+
         {/* Tier 3: medical layer */}
         <View style={styles.tierHeader}>
           <Text style={styles.tierTitle}>Medical</Text>
@@ -231,12 +305,21 @@ export function HealthDashboardScreen() {
           <Card style={styles.trainingCard}>
             <View style={styles.trainingText}>
               <Text style={styles.trainingTitle}>Training & goals</Text>
-              <Text style={styles.trainingSubtitle}>Rings, streaks, today’s plan, supplements, catch-up</Text>
+              <Text style={styles.trainingSubtitle}>Rings, streaks, today’s plan, supplements</Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </Card>
         </TouchableOpacity>
       </ScrollView>
+
+      <View style={[styles.buttonContainer, { bottom: workoutBarPadding }]}>
+        <Button
+          title={isWorkoutActive ? 'Continue Workout' : 'Start Workout'}
+          onPress={handleStartWorkout}
+          size="large"
+          fullWidth
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -298,6 +381,15 @@ const styles = StyleSheet.create({
   half: {
     flex: 1,
   },
+  catchUp: {
+    marginBottom: spacing.md,
+  },
+  catchUpTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
   trainingLink: {
     marginTop: spacing.xl,
   },
@@ -321,6 +413,15 @@ const styles = StyleSheet.create({
   chevron: {
     fontSize: typography.size.lg,
     color: colors.textTertiary,
+  },
+  buttonContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    padding: spacing.base,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
   },
 });
 
