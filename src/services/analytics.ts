@@ -16,7 +16,7 @@ import {
   ALL_TRACKABLE_MUSCLE_GROUPS,
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
-import { getSetsInDateRange, getExercises, getUserSettings, getWorkoutsInDateRange } from './storage';
+import { getSets, getSetsInDateRange, getExercises, getUserSettings, getWorkouts, getWorkoutsInDateRange } from './storage';
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
 
 // Calculate volume (sets) per muscle group for a date range
@@ -24,14 +24,33 @@ export async function calculateVolumeForDateRange(
   startDate: Date,
   endDate: Date
 ): Promise<MuscleGroupVolume[]> {
-  const sets = await getSetsInDateRange(startDate, endDate);
-  const exercises = await getExercises();
-  const settings = await getUserSettings();
+  const [sets, exercises, settings, workouts] = await Promise.all([
+    getSets(),
+    getExercises(),
+    getUserSettings(),
+    getWorkouts(),
+  ]);
+  return computeVolumeForDateRange(sets, workouts, exercises, settings, startDate, endDate);
+}
+
+/** calculateVolumeForDateRange over data the caller already read from storage. */
+export function computeVolumeForDateRange(
+  allSets: WorkoutSet[],
+  workouts: Workout[],
+  exercises: Exercise[],
+  settings: UserSettings,
+  startDate: Date,
+  endDate: Date
+): MuscleGroupVolume[] {
+  const inRange = (iso: string) => {
+    const d = new Date(iso);
+    return d >= startDate && d <= endDate;
+  };
+  const sets = allSets.filter(s => inRange(s.loggedAt));
 
   // Exclude sets from deload workouts
-  const workoutsInRange = await getWorkoutsInDateRange(startDate, endDate);
   const deloadWorkoutIds = new Set(
-    workoutsInRange.filter(w => w.isDeload).map(w => w.id)
+    workouts.filter(w => w.isDeload && inRange(w.startedAt)).map(w => w.id)
   );
 
   const exerciseMap = new Map<string, Exercise>(
@@ -104,14 +123,29 @@ export async function calculateVolumeForDateRange(
 
 // Get weekly volume data
 export async function getWeeklyVolume(weekStartDate: Date): Promise<WeeklyVolume> {
-  const settings = await getUserSettings();
+  const [sets, exercises, settings, workouts] = await Promise.all([
+    getSets(),
+    getExercises(),
+    getUserSettings(),
+    getWorkouts(),
+  ]);
+  return computeWeeklyVolume(sets, workouts, exercises, settings, weekStartDate);
+}
 
+/** getWeeklyVolume over data the caller already read from storage. */
+export function computeWeeklyVolume(
+  sets: WorkoutSet[],
+  workouts: Workout[],
+  exercises: Exercise[],
+  settings: UserSettings,
+  weekStartDate: Date
+): WeeklyVolume {
   // Adjust start of week based on user settings
   const dayOffset = settings.weekStartDay === 'sunday' ? 0 : 1;
   const weekStart = startOfWeek(weekStartDate, { weekStartsOn: dayOffset as 0 | 1 });
   const weekEnd = endOfWeek(weekStartDate, { weekStartsOn: dayOffset as 0 | 1 });
 
-  const muscleGroups = await calculateVolumeForDateRange(weekStart, weekEnd);
+  const muscleGroups = computeVolumeForDateRange(sets, workouts, exercises, settings, weekStart, weekEnd);
 
   // Calculate totals (only for muscle groups with targets > 0)
   const totalSets = muscleGroups

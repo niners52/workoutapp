@@ -17,7 +17,7 @@ import { format, startOfWeek, endOfWeek, subWeeks, getISOWeek, getYear } from 'd
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card, ProgressBar } from '../components/common';
-import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals } from '../components/goals';
+import { TodayRings, StreakCounters, WeeklyGrid, WeeklyTotals, CatchUpCard } from '../components/goals';
 import { SupplementCheckbox } from '../components/supplements';
 import { useWorkoutBarPadding } from '../components/workout';
 import { WeeklySummaryModal } from '../components/WeeklySummaryModal';
@@ -842,58 +842,15 @@ export function HomeScreen() {
           </View>
         )}
 
-        {/* Catch-up list: planned exercises from this week's finished workouts that
-            never got done. Skips and swap-outs both count; making the exercise up in
-            any later workout this week clears it. */}
         {missedExercises.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Missed This Week — Catch Up</Text>
-            <Card padding="none">
-              {missedExercises.map((item, index) => (
-                <TouchableOpacity
-                  key={item.exercise.id}
-                  style={[
-                    styles.missedRow,
-                    index === 0 && styles.missedRowFirst,
-                    index < missedExercises.length - 1 && styles.missedRowBorder,
-                  ]}
-                  onPress={() => navigation.navigate('ExerciseHistory', { exerciseId: item.exercise.id })}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={item.reason === 'swapped_out' ? 'swap-horizontal-outline' : 'remove-circle-outline'}
-                    size={20}
-                    color={colors.warning}
-                    style={styles.missedIcon}
-                  />
-                  <View style={styles.missedInfo}>
-                    <Text style={styles.missedName}>{item.exercise.name}</Text>
-                    <Text style={styles.missedDetail}>
-                      {item.reason === 'swapped_out'
-                        ? `Swapped out ${item.dayLabel}${item.replacementName ? ` for ${item.replacementName}` : ''}`
-                        : `Skipped ${item.dayLabel}`}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.missedDismiss}
-                    onPress={() => handleDismissMissed(item.exercise.id)}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  >
-                    <Ionicons name="close" size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={styles.missedStartButton}
-                onPress={handleStartCatchUp}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="barbell-outline" size={18} color={colors.primary} />
-                <Text style={styles.missedStartText}>
-                  Start Catch-Up Workout ({missedExercises.length})
-                </Text>
-              </TouchableOpacity>
-            </Card>
+            <CatchUpCard
+              items={missedExercises}
+              onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
+              onDismiss={handleDismissMissed}
+              onStart={handleStartCatchUp}
+            />
           </View>
         )}
 
@@ -1553,56 +1510,6 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,
     color: colors.text,
-  },
-  missedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.base,
-  },
-  missedRowFirst: {
-    borderTopLeftRadius: borderRadius.lg,
-    borderTopRightRadius: borderRadius.lg,
-  },
-  missedRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.separator,
-  },
-  missedIcon: {
-    marginRight: spacing.sm,
-  },
-  missedInfo: {
-    flex: 1,
-  },
-  missedName: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.medium,
-    color: colors.text,
-  },
-  missedDetail: {
-    fontSize: typography.size.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  missedDismiss: {
-    marginLeft: spacing.sm,
-    padding: spacing.xs,
-  },
-  missedStartButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.separator,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  missedStartText: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.semibold,
-    color: colors.primary,
   },
   favoritesTodoHeader: {
     flexDirection: 'row',
