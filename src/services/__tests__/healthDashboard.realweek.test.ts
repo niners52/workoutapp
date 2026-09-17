@@ -18,9 +18,20 @@ const weights = [
   { date: '2026-08-28', weight: 188 },
 ];
 
-test('body weight: 7-day average 185.9 lb is within 1 lb of 185, so maintenance mode', () => {
+test('body weight: 7-day average 185.9 lb against the 175 lb goal, maintenance by mode not proximity', () => {
   const w = bodyWeightTile(weights, t, mondayMorning);
-  expect(w).toMatchObject({ kind: 'trend', avg7: 185.9, atGoal: true, phase: 'maintenance', detail: 'At goal — maintenance mode' });
+  expect(w).toMatchObject({
+    kind: 'trend',
+    avg7: 185.9,
+    atGoal: false,
+    phase: 'maintenance',
+    detail: '10.9 lb above 175 lb goal — maintenance mode',
+  });
+});
+
+test('body weight: cutting mode reads the same average as a deficit', () => {
+  const w = bodyWeightTile(weights, { ...t, macroMode: 'cutting' }, mondayMorning);
+  expect(w).toMatchObject({ phase: 'deficit', calorieCopy: 'Calorie deficit toward goal' });
 });
 
 const vol = (muscleGroup: string, sets: number, target: number): MuscleGroupVolume =>

@@ -6,8 +6,13 @@ import { colors, typography, spacing, borderRadius } from '../../theme';
 import { ProgressBar } from '../common';
 import {
   CALCIUM_LABEL,
+  DAY_RULE_LABELS,
   formatInt,
   type CalciumTile,
+  type CaloriesTile,
+  type CarbsTile,
+  type DayVerdict,
+  type FatTile,
   type LoggingTile,
   type ProteinTile,
   type SodiumTile,
@@ -146,6 +151,115 @@ export function ProteinTileView({ state, onPress }: { state: ProteinTile; onPres
   );
 }
 
+// ─── Calories: a band, so the visual is a band, not a ring ──────────────────
+
+function BandGauge({ low, high, value, markerColor, dim }: { low: number; high: number; value: number | null; markerColor: string; dim: boolean }) {
+  // The scale runs a quarter past the band so "over" has somewhere to sit.
+  const scaleMax = high * 1.25;
+  return (
+    <View style={styles.visual}>
+      <View style={[styles.gauge, dim && styles.gaugeDim]}>
+        <View style={[styles.gaugeBand, { left: pct(low / scaleMax), width: pct((high - low) / scaleMax) }]} />
+        {value !== null && (
+          <View testID="calorie-marker" style={[styles.gaugeMarker, { left: pct(value / scaleMax), backgroundColor: markerColor }]} />
+        )}
+      </View>
+      <View style={styles.gaugeScale}>
+        <Text style={[styles.gaugeTick, { left: pct(low / scaleMax) }]}>
+          {formatInt(low)}–{formatInt(high)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+export function CaloriesTileView({ state, onPress }: { state: CaloriesTile; onPress?: () => void }) {
+  const band = state.kind === 'band' ? state : null;
+  return (
+    <HealthTile label="Calories — band, not a ceiling" onPress={onPress} testID="calories-tile" accent={band ? state.tone : undefined} half>
+      <BandGauge
+        low={state.band.lowKcal}
+        high={state.band.highKcal}
+        value={band?.kcal ?? null}
+        markerColor={band?.tone === 'good' ? colors.healthGood : band ? colors.warning : colors.text}
+        dim={!band}
+      />
+      <Text testID="calories-headline" style={[styles.headline, styles.headlineSmall, { color: headlineColor(band ? state.tone : null) }]}>
+        {state.headline}
+      </Text>
+      <Text style={styles.detail}>{state.detail}</Text>
+    </HealthTile>
+  );
+}
+
+// ─── Fat: a floor, amber only late in the day ───────────────────────────────
+
+export function FatTileView({ state, onPress }: { state: FatTile; onPress?: () => void }) {
+  const progress = state.kind === 'progress' ? state : null;
+  const barColor = state.tone === 'warning' ? colors.warning : state.tone === 'good' ? colors.healthGood : colors.primary;
+  return (
+    <HealthTile label="Fat floor" onPress={onPress} testID="fat-tile" accent={state.tone === 'warning' ? 'warning' : undefined} half>
+      <View style={styles.barVisual}>
+        <ProgressBar
+          progress={progress ? Math.min(100, (progress.grams / Math.max(1, progress.floorG)) * 100) : 0}
+          height={10}
+          color={barColor}
+        />
+      </View>
+      <Text testID="fat-headline" style={[styles.headline, { color: headlineColor(progress ? state.tone : null) }]}>
+        {state.headline}
+      </Text>
+      <Text testID="fat-detail" style={styles.detail}>
+        {state.detail}
+      </Text>
+    </HealthTile>
+  );
+}
+
+// ─── Carbs: flex fuel, information only, never colored ──────────────────────
+
+export function CarbsTileView({ state, onPress }: { state: CarbsTile; onPress?: () => void }) {
+  return (
+    <HealthTile label="Carbs — flex fuel" onPress={onPress} testID="carbs-tile" half>
+      <BandGauge low={state.lowG} high={state.highG} value={state.grams} markerColor={colors.text} dim={state.kind !== 'info'} />
+      <Text testID="carbs-headline" style={[styles.headline, { color: state.grams === null ? colors.textSecondary : colors.text }]}>
+        {state.headline}
+      </Text>
+      <Text testID="carbs-detail" style={styles.detail}>
+        {state.detail}
+      </Text>
+    </HealthTile>
+  );
+}
+
+// ─── Day verdict: the composite call on a complete day ──────────────────────
+
+export function DayVerdictCard({ state, label, onPress }: { state: DayVerdict; label?: string; onPress?: () => void }) {
+  const verdict = state.kind === 'verdict' ? state : null;
+  const tone: Tone = verdict ? verdict.tone : 'muted';
+  const icon = !verdict ? 'time-outline' : verdict.tone === 'good' ? 'checkmark-circle' : 'alert-circle';
+  return (
+    <HealthTile label={label ?? 'Last complete day'} onPress={onPress} testID="day-verdict" accent={verdict?.tone}>
+      <View style={styles.verdictRow}>
+        <Ionicons name={icon} size={22} color={tone === 'muted' ? colors.textTertiary : toneColor(tone)} />
+        <View style={styles.verdictText}>
+          <Text testID="day-verdict-headline" style={[styles.headline, styles.headlineSmall, { color: headlineColor(tone) }]}>
+            {state.headline}
+          </Text>
+          <Text testID="day-verdict-detail" style={styles.detail}>
+            {state.detail}
+          </Text>
+        </View>
+      </View>
+      {verdict && verdict.passed.length > 0 && (
+        <Text testID="day-verdict-passed" style={styles.verdictPassed}>
+          Met: {verdict.passed.map(r => DAY_RULE_LABELS[r]).join(', ')}
+        </Text>
+      )}
+    </HealthTile>
+  );
+}
+
 // ─── Logging completeness ───────────────────────────────────────────────────
 
 export function LoggingTileView({ state, onPress }: { state: LoggingTile; onPress?: () => void }) {
@@ -248,5 +362,18 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     fontWeight: typography.weight.semibold,
     color: colors.warning,
+  },
+  verdictRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  verdictText: {
+    flex: 1,
+  },
+  verdictPassed: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginTop: spacing.sm,
   },
 });

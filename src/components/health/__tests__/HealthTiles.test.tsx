@@ -113,13 +113,14 @@ describe('LoggingTileView', () => {
 });
 
 describe('BodyWeightTileView', () => {
-  test('flips to maintenance framing within 1 lb of goal, deficit framing otherwise', () => {
+  // Framing follows the explicit mode now, not proximity to the 175 lb goal line.
+  test('maintenance mode says maintenance, at the goal line or above it', () => {
     const now = at(9);
-    const nearGoal = [
-      { date: '2026-09-14', weight: 185.6 },
-      { date: '2026-09-12', weight: 186.2 },
+    const atGoal = [
+      { date: '2026-09-14', weight: 175.6 },
+      { date: '2026-09-12', weight: 174.8 },
     ];
-    const { rerender } = render(<BodyWeightTileView state={bodyWeightTile(nearGoal, t, now)} />);
+    const { rerender } = render(<BodyWeightTileView state={bodyWeightTile(atGoal, t, now)} />);
     expect(screen.getByTestId('weight-detail')).toHaveTextContent('At goal — maintenance mode');
     expect(screen.getByTestId('weight-calorie-copy')).toHaveTextContent('Eat at maintenance calories');
 
@@ -128,7 +129,17 @@ describe('BodyWeightTileView', () => {
       { date: '2026-09-12', weight: 187.0 },
     ];
     rerender(<BodyWeightTileView state={bodyWeightTile(aboveGoal, t, now)} />);
-    expect(screen.getByTestId('weight-detail')).toHaveTextContent('2.2 lb above 185 lb goal');
+    expect(screen.getByTestId('weight-detail')).toHaveTextContent('12.2 lb above 175 lb goal — maintenance mode');
+    expect(screen.getByTestId('weight-calorie-copy')).toHaveTextContent('Eat at maintenance calories');
+  });
+
+  test('cutting mode frames the same average as a deficit', () => {
+    const aboveGoal = [
+      { date: '2026-09-14', weight: 187.4 },
+      { date: '2026-09-12', weight: 187.0 },
+    ];
+    render(<BodyWeightTileView state={bodyWeightTile(aboveGoal, { ...t, macroMode: 'cutting' }, at(9))} />);
+    expect(screen.getByTestId('weight-detail')).toHaveTextContent('12.2 lb above 175 lb goal');
     expect(screen.getByTestId('weight-calorie-copy')).toHaveTextContent('Calorie deficit toward goal');
   });
 

@@ -12,6 +12,7 @@ import {
   type SetRow,
   type SetSummaryRow,
   type SleepNightRow,
+  type UserSettingsRow,
   type WorkoutRow,
 } from './db.js';
 import { rankMatches } from './fuzzy.js';
@@ -630,15 +631,79 @@ function averageOf(rows: NutritionDayRow[], column: NutrientColumn): { avg: numb
   return { avg: round1(values.reduce((a, b) => a + b, 0) / values.length), days: values.length };
 }
 
+/**
+ * The five day rules from the app's health targets (HealthTargets in
+ * src/types), so coaching sessions read compliance instead of re-deriving it.
+ * Defaults mirror DEFAULT_HEALTH_TARGETS; cutting mode shifts the calorie band
+ * down by the deficit exactly as the app does.
+ */
+const DAY_RULE_DEFAULTS = {
+  calorieBandLowKcal: 2100,
+  calorieBandHighKcal: 2300,
+  cuttingCalorieDeficit: 250,
+  proteinFloorG: 170,
+  fatFloorG: 60,
+  sodiumBudgetMg: 2300,
+  calciumBandLowMg: 1000,
+  calciumBandHighMg: 1200,
+} as const;
+
+type DayRuleKey = 'calories_in_band' | 'protein_floor' | 'fat_floor' | 'sodium_budget' | 'calcium_band';
+
+function dayRules(settings: UserSettingsRow | null) {
+  const raw = (settings?.health_targets ?? {}) as Record<string, unknown>;
+  const num = (key: keyof typeof DAY_RULE_DEFAULTS): number => {
+    const v = raw[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : DAY_RULE_DEFAULTS[key];
+  };
+  const cutting = raw.macroMode === 'cutting';
+  const shift = cutting ? num('cuttingCalorieDeficit') : 0;
+  const low = num('calorieBandLowKcal') - shift;
+  const high = num('calorieBandHighKcal') - shift;
+  const rules: Array<{ key: DayRuleKey; column: NutrientColumn; pass: (v: number) => boolean; describe: string }> = [
+    { key: 'calories_in_band', column: 'calories', pass: v => v >= low && v <= high, describe: `${low}-${high} kcal` },
+    { key: 'protein_floor', column: 'protein_g', pass: v => v >= num('proteinFloorG'), describe: `>= ${num('proteinFloorG')} g` },
+    { key: 'fat_floor', column: 'fat_g', pass: v => v >= num('fatFloorG'), describe: `>= ${num('fatFloorG')} g` },
+    { key: 'sodium_budget', column: 'sodium_mg', pass: v => v <= num('sodiumBudgetMg'), describe: `<= ${num('sodiumBudgetMg')} mg` },
+    {
+      key: 'calcium_band',
+      column: 'calcium_mg',
+      pass: v => v >= num('calciumBandLowMg') && v <= num('calciumBandHighMg'),
+      describe: `${num('calciumBandLowMg')}-${num('calciumBandHighMg')} mg`,
+    },
+  ];
+  return { rules, mode: cutting ? 'cutting' : 'maintenance' };
+}
+
 export async function getNutritionLog(ctx: ToolContext, input: { days_back: number }) {
   const { today, since } = windowDates(ctx, input.days_back);
   // Only days that have HealthKit samples count as logged. A day absent from the
   // table, or present with sample_count 0, is "no data", never zero calories.
-  const rows = (await ctx.db.listNutritionDays(since))
-    .filter(r => r.sample_count > 0)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const [allRows, settings] = await Promise.all([ctx.db.listNutritionDays(since), ctx.db.getUserSettings()]);
+  const rows = allRows.filter(r => r.sample_count > 0).sort((a, b) => b.date.localeCompare(a.date));
 
   const complete = rows.filter(r => r.date !== today);
+  const { rules, mode } = dayRules(settings);
+  const adherence = Object.fromEntries(
+    rules.map(rule => {
+      const known = complete.filter(r => typeof r[rule.column] === 'number');
+      const met = known.filter(r => rule.pass(r[rule.column] as number));
+      return [
+        rule.key,
+        {
+          target: rule.describe,
+          days_met: met.length,
+          days_with_data: known.length,
+          complete_days: complete.length,
+          pct: known.length > 0 ? round1((met.length / known.length) * 100) : null,
+        },
+      ];
+    }),
+  ) as Record<DayRuleKey, { target: string; days_met: number; days_with_data: number; complete_days: number; pct: number | null }>;
+  // A green day is every rule met, with nothing unreadable.
+  const allMetDays = complete.filter(r =>
+    rules.every(rule => typeof r[rule.column] === 'number' && rule.pass(r[rule.column] as number)),
+  ).length;
   const macros = {} as Record<(typeof MACRO_COLUMNS)[number], number | null>;
   for (const c of MACRO_COLUMNS) macros[c] = averageOf(complete, c).avg;
   const micros = {} as Record<(typeof MICRO_COLUMNS)[number], { avg: number | null; days_with_data: number }>;
@@ -656,6 +721,9 @@ export async function getNutritionLog(ctx: ToolContext, input: { days_back: numb
       averages_exclude_partial_day: true,
       daily_averages: macros,
       micro_averages: micros,
+      macro_mode: mode,
+      rule_adherence: adherence,
+      all_rules_met_days: allMetDays,
       ...(unreadable.length ? { unreadable_in_current_app_build: unreadable } : {}),
     },
     days: rows.map(r => ({

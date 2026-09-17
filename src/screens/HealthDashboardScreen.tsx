@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { format, startOfWeek } from 'date-fns';
+import { format, parseISO, startOfWeek } from 'date-fns';
 import { colors, typography, spacing, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
@@ -17,7 +17,11 @@ import { useWorkout } from '../contexts/WorkoutContext';
 import {
   BodyWeightTileView,
   CalciumTileView,
+  CaloriesTileView,
+  CarbsTileView,
+  DayVerdictCard,
   DeloadBanner,
+  FatTileView,
   LoggingTileView,
   ProteinTileView,
   RemindersCard,
@@ -29,6 +33,10 @@ import { useData } from '../contexts/DataContext';
 import {
   bodyWeightTile,
   calciumTile,
+  caloriesTile,
+  carbsTile,
+  dayVerdict,
+  fatTile,
   loggingTile,
   openReminders,
   proteinTile,
@@ -194,7 +202,16 @@ export function HealthDashboardScreen() {
   const sodium = useMemo(() => sodiumTile(today, targets, now), [today, targets, now]);
   const calcium = useMemo(() => calciumTile(today, nutrition?.latestLogged ?? null, targets), [today, nutrition, targets]);
   const protein = useMemo(() => proteinTile(today, targets), [today, targets]);
+  const calories = useMemo(() => caloriesTile(today, targets), [today, targets]);
+  const fat = useMemo(() => fatTile(today, targets, now), [today, targets, now]);
+  const carbs = useMemo(() => carbsTile(today, targets), [today, targets]);
   const logging = useMemo(() => loggingTile(today, targets, now), [today, targets, now]);
+  // The verdict is for the newest day that is finished, never for today.
+  const lastComplete = useMemo(() => {
+    const todayKey = format(now, 'yyyy-MM-dd');
+    return nutrition?.recent.find(r => r.date < todayKey) ?? null;
+  }, [nutrition, now]);
+  const verdict = useMemo(() => dayVerdict(lastComplete, targets, format(now, 'yyyy-MM-dd')), [lastComplete, targets, now]);
   const volumeView = useMemo(
     () => (volume ? weeklyVolumeView(volume, targets, now, weekStartDay) : null),
     [volume, targets, now, weekStartDay],
@@ -259,8 +276,21 @@ export function HealthDashboardScreen() {
         </View>
         <View style={styles.tileRow}>
           <ProteinTileView state={protein} onPress={() => openNutrition()} />
-          <LoggingTileView state={logging} onPress={() => openNutrition()} />
+          <CaloriesTileView state={calories} onPress={() => openNutrition()} />
         </View>
+        <View style={styles.tileRow}>
+          <FatTileView state={fat} onPress={() => openNutrition()} />
+          <CarbsTileView state={carbs} onPress={() => openNutrition()} />
+        </View>
+        <View style={styles.tileRow}>
+          <LoggingTileView state={logging} onPress={() => openNutrition()} />
+          <View style={styles.half} />
+        </View>
+        <DayVerdictCard
+          state={verdict}
+          label={lastComplete ? `Verdict — ${format(parseISO(lastComplete.date), 'EEE, MMM d')}` : undefined}
+          onPress={() => openNutrition()}
+        />
 
         {/* Tier 2: this week */}
         <View style={styles.tierHeader}>

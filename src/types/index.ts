@@ -442,13 +442,27 @@ export interface FocusGroup {
   targetSets?: number;
 }
 
+/**
+ * Which way the calorie band is aimed. Maintenance eats the band as written;
+ * cutting subtracts cuttingCalorieDeficit from both ends and changes nothing else.
+ */
+export type MacroMode = 'maintenance' | 'cutting';
+
 export interface HealthTargets {
   sodiumBudgetMg: number;          // daily budget, counts down
   sodiumWarnRemainingPct: number;  // warning once this share of the budget or less remains
   calciumBandLowMg: number;        // dietary calcium target band
   calciumBandHighMg: number;
   calciumFarAboveMg: number;       // at or above this is flagged again
+  macroMode: MacroMode;
+  calorieBandLowKcal: number;      // a band, not a ceiling: under it is under-fueled
+  calorieBandHighKcal: number;
+  cuttingCalorieDeficit: number;   // subtracted from both ends of the band in cutting mode
   proteinFloorG: number;           // floor, counts up
+  fatFloorG: number;               // floor: below it late in the day is flagged
+  fatTargetHighG: number;          // top of the comfortable fat range (display only)
+  carbRangeLowG: number;           // flex fuel: shown as information, never pass/fail
+  carbRangeHighG: number;
   eveningStartHour: number;        // local hour the sodium copy switches to "this evening"
   eveningLogCheckHour: number;     // local hour after which an unlogged evening is flagged
   goalWeightLbs: number;
@@ -465,10 +479,18 @@ export const DEFAULT_HEALTH_TARGETS: HealthTargets = {
   calciumBandLowMg: 1000,
   calciumBandHighMg: 1200,
   calciumFarAboveMg: 2500,
+  macroMode: 'maintenance',
+  calorieBandLowKcal: 2100,
+  calorieBandHighKcal: 2300,
+  cuttingCalorieDeficit: 250,
   proteinFloorG: 170,
+  fatFloorG: 60,
+  fatTargetHighG: 70,
+  carbRangeLowG: 220,
+  carbRangeHighG: 250,
   eveningStartHour: 17,
   eveningLogCheckHour: 19,
-  goalWeightLbs: 185,
+  goalWeightLbs: 175,
   goalWeightToleranceLbs: 1,
   weighInStaleDays: 2,
   deloadWeekStart: '2026-09-21',

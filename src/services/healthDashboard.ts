@@ -24,6 +24,9 @@ export interface NutritionDaySnapshot {
   sodium_mg: number | null;
   calcium_mg: number | null;
   protein_g: number | null;
+  calories: number | null;
+  fat_g: number | null;
+  carbs_g: number | null;
   sample_count: number;
   last_sample_at?: string | null;
   synced_at?: string | null;
@@ -198,6 +201,205 @@ export function proteinTile(row: NutritionDaySnapshot | null, t: HealthTargets):
     met,
     headline: `${formatInt(grams)} g`,
     detail: met ? `${formatInt(floor)} g floor met` : `${formatInt(floor - grams)} g to ${formatInt(floor)} g floor`,
+  };
+}
+
+// ─── Tier 1: calories (a band, not a ceiling) ───────────────────────────────
+
+export interface CalorieBand {
+  lowKcal: number;
+  highKcal: number;
+}
+
+/** The band actually in force: cutting shifts both ends down by the deficit. */
+export function calorieBand(t: HealthTargets): CalorieBand {
+  const shift = t.macroMode === 'cutting' ? t.cuttingCalorieDeficit : 0;
+  return { lowKcal: t.calorieBandLowKcal - shift, highKcal: t.calorieBandHighKcal - shift };
+}
+
+export type CalorieStatus = 'under' | 'inBand' | 'over';
+
+export type CaloriesTile =
+  | { kind: 'noData' | 'unreadable'; band: CalorieBand; status: null; tone: Tone; headline: string; detail: string }
+  | {
+      kind: 'band';
+      band: CalorieBand;
+      status: CalorieStatus;
+      tone: Tone;
+      kcal: number;
+      headline: string;
+      detail: string;
+    };
+
+/**
+ * Under the band is amber ("under-fueled"), not a win — the behavioural change
+ * from a cutting ceiling. Over the band is amber too; inside it is the target.
+ */
+export function caloriesTile(row: NutritionDaySnapshot | null, t: HealthTargets): CaloriesTile {
+  const band = calorieBand(t);
+  const bandText = `${formatInt(band.lowKcal)}–${formatInt(band.highKcal)} kcal`;
+  const modeText = t.macroMode === 'cutting' ? 'cutting' : 'maintenance';
+
+  if (!isLogged(row)) {
+    return { kind: 'noData', band, status: null, tone: 'muted', headline: 'Nothing logged yet', detail: `${bandText} (${modeText})` };
+  }
+  if (row.calories === null) {
+    return { kind: 'unreadable', band, status: null, tone: 'warning', headline: 'Calories not readable', detail: 'This build cannot read energy' };
+  }
+
+  const kcal = Math.round(row.calories);
+  const base = { kind: 'band' as const, band, kcal };
+  if (kcal < band.lowKcal) {
+    return {
+      ...base,
+      status: 'under',
+      tone: 'warning',
+      headline: `${formatInt(kcal)} kcal — under-fueled`,
+      detail: `${formatInt(band.lowKcal - kcal)} kcal under the ${bandText} band`,
+    };
+  }
+  if (kcal > band.highKcal) {
+    return {
+      ...base,
+      status: 'over',
+      tone: 'warning',
+      headline: `${formatInt(kcal)} kcal — over band`,
+      detail: `${formatInt(kcal - band.highKcal)} kcal above the ${bandText} band`,
+    };
+  }
+  return { ...base, status: 'inBand', tone: 'good', headline: `${formatInt(kcal)} kcal — in band`, detail: `${bandText} (${modeText})` };
+}
+
+// ─── Tier 1: fat (a floor, flagged late in the day) ─────────────────────────
+
+export type FatTile =
+  | { kind: 'noData' | 'unreadable'; floorG: number; tone: Tone; met: false; headline: string; detail: string }
+  | { kind: 'progress'; floorG: number; highG: number; grams: number; met: boolean; tone: Tone; headline: string; detail: string };
+
+/**
+ * Below the floor only turns amber after the evening check hour, so a morning
+ * with 20 g logged is not yet a failure. Hormone support is the reason, so the
+ * copy says so rather than just showing a number.
+ */
+export function fatTile(row: NutritionDaySnapshot | null, t: HealthTargets, now: Date): FatTile {
+  const floor = t.fatFloorG;
+  if (!isLogged(row)) return { kind: 'noData', floorG: floor, tone: 'muted', met: false, headline: 'Nothing logged yet', detail: `${formatInt(floor)} g floor` };
+  if (row.fat_g === null) return { kind: 'unreadable', floorG: floor, tone: 'warning', met: false, headline: 'Fat not readable', detail: 'This build cannot read fat' };
+
+  const grams = Math.round(row.fat_g);
+  const met = grams >= floor;
+  const late = now.getHours() >= t.eveningLogCheckHour;
+  return {
+    kind: 'progress',
+    floorG: floor,
+    highG: t.fatTargetHighG,
+    grams,
+    met,
+    tone: met ? 'good' : late ? 'warning' : 'normal',
+    headline: `${formatInt(grams)} g`,
+    detail: met
+      ? `${formatInt(floor)} g floor met (${formatInt(floor)}–${formatInt(t.fatTargetHighG)} g)`
+      : late
+        ? 'Fat low — hormone support'
+        : `${formatInt(floor - grams)} g to the ${formatInt(floor)} g floor`,
+  };
+}
+
+// ─── Tier 1: carbs (flex fuel, never pass/fail) ─────────────────────────────
+
+export interface CarbsTile {
+  kind: 'noData' | 'unreadable' | 'info';
+  grams: number | null;
+  lowG: number;
+  highG: number;
+  /** Calorie-band midpoint minus logged protein and fat kcal, as carb grams. Null when protein or fat is unknown. */
+  remainingAsCarbsG: number | null;
+  headline: string;
+  detail: string;
+}
+
+export function carbsTile(row: NutritionDaySnapshot | null, t: HealthTargets): CarbsTile {
+  const range = { lowG: t.carbRangeLowG, highG: t.carbRangeHighG };
+  const rangeText = `${formatInt(range.lowG)}–${formatInt(range.highG)} g range`;
+  if (!isLogged(row)) return { ...range, kind: 'noData', grams: null, remainingAsCarbsG: null, headline: 'Nothing logged yet', detail: rangeText };
+  if (row.carbs_g === null) return { ...range, kind: 'unreadable', grams: null, remainingAsCarbsG: null, headline: 'Carbs not readable', detail: 'This build cannot read carbohydrate' };
+
+  const grams = Math.round(row.carbs_g);
+  const band = calorieBand(t);
+  const midpoint = (band.lowKcal + band.highKcal) / 2;
+  const remaining =
+    row.protein_g === null || row.fat_g === null
+      ? null
+      : Math.round((midpoint - row.protein_g * 4 - row.fat_g * 9) / 4);
+  return {
+    ...range,
+    kind: 'info',
+    grams,
+    remainingAsCarbsG: remaining,
+    headline: `${formatInt(grams)} g`,
+    detail: remaining === null ? rangeText : `${rangeText} · ${formatInt(Math.max(0, remaining))} g left at band midpoint`,
+  };
+}
+
+// ─── Day verdict: one composite call on a complete logged day ───────────────
+
+export type DayRule = 'calories' | 'protein' | 'fat' | 'sodium' | 'calcium';
+
+export const DAY_RULE_LABELS: Record<DayRule, string> = {
+  calories: 'Calories in band',
+  protein: 'Protein floor',
+  fat: 'Fat floor',
+  sodium: 'Sodium budget',
+  calcium: 'Calcium band',
+};
+
+export type DayVerdict =
+  | { kind: 'partial'; headline: string; detail: string }
+  | { kind: 'incomplete'; headline: string; detail: string }
+  | { kind: 'verdict'; tone: 'good' | 'warning'; passed: DayRule[]; failed: DayRule[]; unknown: DayRule[]; headline: string; detail: string };
+
+/**
+ * Green only when every rule passes. A failure names the rules that missed
+ * rather than turning the whole day red with no reason, and a rule this build
+ * cannot read counts as unknown, which is not a pass.
+ *
+ * `today` is the local date key of the current day: that day is still being
+ * logged, so it never gets a verdict.
+ */
+export function dayVerdict(row: NutritionDaySnapshot | null, t: HealthTargets, today: string): DayVerdict {
+  if (row && row.date === today) return { kind: 'partial', headline: 'Day in progress', detail: 'A verdict lands once the day is complete' };
+  if (!isLogged(row)) return { kind: 'incomplete', headline: 'Not logged', detail: 'An unlogged day is incomplete, not compliant' };
+
+  const band = calorieBand(t);
+  const checks: Array<{ rule: DayRule; value: number | null; pass: (v: number) => boolean }> = [
+    { rule: 'calories', value: row.calories, pass: v => v >= band.lowKcal && v <= band.highKcal },
+    { rule: 'protein', value: row.protein_g, pass: v => v >= t.proteinFloorG },
+    { rule: 'fat', value: row.fat_g, pass: v => v >= t.fatFloorG },
+    { rule: 'sodium', value: row.sodium_mg, pass: v => v <= t.sodiumBudgetMg },
+    { rule: 'calcium', value: row.calcium_mg, pass: v => v >= t.calciumBandLowMg && v <= t.calciumBandHighMg },
+  ];
+
+  const passed: DayRule[] = [];
+  const failed: DayRule[] = [];
+  const unknown: DayRule[] = [];
+  for (const c of checks) {
+    if (c.value === null) unknown.push(c.rule);
+    else if (c.pass(Math.round(c.value * 10) / 10)) passed.push(c.rule);
+    else failed.push(c.rule);
+  }
+
+  if (failed.length === 0 && unknown.length === 0) {
+    return { kind: 'verdict', tone: 'good', passed, failed, unknown, headline: 'All five rules met', detail: 'Calories, protein, fat, sodium, calcium' };
+  }
+  const missed = [...failed, ...unknown].map(r => DAY_RULE_LABELS[r]);
+  return {
+    kind: 'verdict',
+    tone: 'warning',
+    passed,
+    failed,
+    unknown,
+    headline: failed.length > 0 ? `${failed.length} of 5 rules missed` : 'Verdict incomplete',
+    detail: unknown.length > 0 && failed.length === 0 ? `Unreadable: ${missed.join(', ')}` : `Missed: ${missed.join(', ')}`,
   };
 }
 
@@ -390,7 +592,9 @@ export function bodyWeightTile(entries: WeightEntry[], t: HealthTargets, now: Da
   const goal = t.goalWeightLbs;
   const delta = round1(avg7 - goal);
   const atGoal = Math.abs(delta) <= t.goalWeightToleranceLbs;
-  const phase: WeightPhase = atGoal ? 'maintenance' : delta > 0 ? 'deficit' : 'belowGoal';
+  // Mode is explicit now, so it decides the phase; proximity to the goal line
+  // only decides whether the tile says "at goal".
+  const phase: WeightPhase = t.macroMode === 'maintenance' ? 'maintenance' : delta > 0 ? 'deficit' : 'belowGoal';
   const sinceKey = format(subDays(now, 29), 'yyyy-MM-dd');
 
   return {
@@ -403,7 +607,9 @@ export function bodyWeightTile(entries: WeightEntry[], t: HealthTargets, now: Da
     headline: `${avg7.toFixed(1)} lb`,
     detail:
       phase === 'maintenance'
-        ? 'At goal — maintenance mode'
+        ? atGoal
+          ? 'At goal — maintenance mode'
+          : `${Math.abs(delta).toFixed(1)} lb ${delta > 0 ? 'above' : 'below'} ${formatInt(goal)} lb goal — maintenance mode`
         : phase === 'deficit'
           ? `${delta.toFixed(1)} lb above ${formatInt(goal)} lb goal`
           : `${(-delta).toFixed(1)} lb below ${formatInt(goal)} lb goal`,

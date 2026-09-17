@@ -31,6 +31,7 @@ import {
   TRAVEL_LOCATION,
 } from '../types';
 import { getWeeklyVolume, getTemplatesForDay } from '../services/analytics';
+import { isDeloadByDefault } from '../services/deload';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -53,12 +54,16 @@ interface SuggestedExercise {
 
 export function StartWorkoutScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { templates, locations, exercises, getActiveRoutine } = useData();
+  const { templates, locations, exercises, getActiveRoutine, userSettings } = useData();
   const { startWorkout, addExerciseToWorkout, activeWorkout } = useWorkout();
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<TemplateType | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<WorkoutLocation | null>(null);
+  // Starts on during a scheduled deload week (or while the deload setting is on),
+  // so those sets are excluded from volume without anyone remembering. Tappable.
+  const deloadByDefault = useMemo(() => isDeloadByDefault(userSettings), [userSettings]);
+  const [isDeload, setIsDeload] = useState(deloadByDefault);
 
   // Remaining Weekly Work state
   const [shortfalls, setShortfalls] = useState<MuscleShortfall[]>([]);
@@ -129,7 +134,7 @@ export function StartWorkoutScreen() {
   };
 
   const handleSelectTemplate = (template: Template) => {
-    startWorkout(template.id, undefined, selectedLocation?.id ?? template.locationId)
+    startWorkout(template.id, undefined, selectedLocation?.id ?? template.locationId, { isDeload })
       .then((workoutId) => {
         // null = user cancelled out of the in-progress-workout prompt
         if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
@@ -140,7 +145,7 @@ export function StartWorkoutScreen() {
   };
 
   const handleStartBlank = () => {
-    startWorkout(undefined, undefined, selectedLocation?.id)
+    startWorkout(undefined, undefined, selectedLocation?.id, { isDeload })
       .then((workoutId) => {
         if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
       })
@@ -271,7 +276,7 @@ export function StartWorkoutScreen() {
     try {
       const priorActiveId = activeWorkout?.workout.id;
       // Start a blank workout (null = user kept their in-progress workout)
-      const workoutId = await startWorkout(undefined, undefined, selectedLocation?.id);
+      const workoutId = await startWorkout(undefined, undefined, selectedLocation?.id, { isDeload });
       if (!workoutId) return;
 
       // If the user chose "Resume" in the in-progress prompt we get the EXISTING
@@ -768,6 +773,34 @@ export function StartWorkoutScreen() {
           <View style={styles.dividerLine} />
         </View>
 
+        {/* Deload: on by default during a scheduled deload week, untoggleable here.
+            Deload sets are excluded from weekly volume. */}
+        <TouchableOpacity
+          style={[styles.deloadRow, isDeload && styles.deloadRowActive]}
+          onPress={() => setIsDeload(v => !v)}
+          activeOpacity={0.7}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: isDeload }}
+          accessibilityLabel="Count this workout as a deload"
+          testID="deload-toggle"
+        >
+          <Ionicons
+            name={isDeload ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={isDeload ? colors.warning : colors.textTertiary}
+          />
+          <View style={styles.deloadText}>
+            <Text style={styles.deloadTitle}>Deload workout</Text>
+            <Text style={styles.deloadHint}>
+              {isDeload
+                ? deloadByDefault
+                  ? 'Deload week — these sets stay out of weekly volume'
+                  : 'These sets stay out of weekly volume'
+                : 'Counts toward weekly volume as usual'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
         {/* Step Content */}
         {step === 'type' && renderTypeStep()}
         {step === 'location' && renderLocationStep()}
@@ -834,6 +867,33 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.base,
+  },
+  deloadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.base,
+    marginBottom: spacing.base,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.backgroundSecondary,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.separator,
+  },
+  deloadRowActive: {
+    borderColor: colors.warning,
+  },
+  deloadText: {
+    flex: 1,
+  },
+  deloadTitle: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  deloadHint: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   title: {
     fontSize: typography.size.xxxl,
