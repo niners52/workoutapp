@@ -37,6 +37,8 @@ test('weekly volume: focus rows first, then biggest gap first, pinned groups not
   expect(v.deload).toBe(false);
   expect(v.focus.map(r => [r.key, r.sets, r.target])).toEqual([
     ['focus:upper-chest', 0, null], ['focus:traps', 3, 6], ['focus:mid-back', 0, 12], ['focus:hamstrings', 0, 6],
+    // Before the lats remap the cloud had no lats target, so the pinned row has none either.
+    ['focus:lats', 3, null],
   ]);
   expect(v.open.map(r => r.muscleGroup)).toEqual([
     'quads', 'biceps', 'triceps', 'lower_back', 'side_delts', 'abs', 'calves', 'glutes', 'chest',
@@ -44,6 +46,26 @@ test('weekly volume: focus rows first, then biggest gap first, pinned groups not
   expect(v.met).toEqual([]);
   expect(v.open.find(r => r.muscleGroup === 'quads')?.tone).toBe('warning');
   expect(v.open.find(r => r.muscleGroup === 'triceps')?.tone).toBe('normal');
+});
+
+// The same snapshot with the new lats target of 10 and an illustrative 6 lats
+// sets. No UI change: the target flows in through mg.target like every group.
+const weekAfterLatsRemap = week.map(v =>
+  v.muscleGroup === 'lats' ? vol('lats', 6, 10) : v,
+);
+
+test('lats target: the pinned lats focus row picks up the target of 10', () => {
+  const v = weeklyVolumeView(weekAfterLatsRemap, t, mondayMorning, 'monday');
+  expect(v.focus.find(r => r.key === 'focus:lats')).toMatchObject({ label: 'Lats', sets: 6, target: 10, gap: 4, pinned: true });
+  expect(v.open.some(r => r.muscleGroup === 'lats')).toBe(false);
+});
+
+test('lats target: unpinned, lats joins the gap sort (gap 4 sits between side delts and abs)', () => {
+  const unpinned = { ...t, focusGroups: t.focusGroups.filter(f => f.id !== 'lats') };
+  const v = weeklyVolumeView(weekAfterLatsRemap, unpinned, mondayMorning, 'monday');
+  expect(v.open.map(r => r.muscleGroup)).toEqual([
+    'quads', 'biceps', 'triceps', 'lower_back', 'side_delts', 'lats', 'abs', 'calves', 'glutes', 'chest',
+  ]);
 });
 
 test('weekly volume: the seeded deload week (Sep 21) suspends urgency', () => {

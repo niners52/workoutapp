@@ -477,6 +477,7 @@ export const DEFAULT_HEALTH_TARGETS: HealthTargets = {
     { id: 'traps', label: 'Traps', muscleGroup: 'traps' },
     { id: 'mid-back', label: 'Mid-back (rows)', muscleGroup: 'upper_back' },
     { id: 'hamstrings', label: 'Hamstrings', muscleGroup: 'hamstrings' },
+    { id: 'lats', label: 'Lats', muscleGroup: 'lats' },
   ],
   sleepTargetHours: 7,
 };
@@ -572,7 +573,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   moveCompletedToBottom: true,
   muscleGroupTargets: {
     chest: 10,
-    lats: 10,
+    lats: 10, // storage V16 sets existing users to this too (LATS_WEEKLY_TARGET)
     upper_back: 12, // formerly 6 + 6 from rear_delts (merged in V10)
     rotator_cuff: 12, // rehab/prehab work; keeps those sets out of "miscellaneous" and out of chest
     front_delts: 6,
