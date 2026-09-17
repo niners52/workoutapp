@@ -35,6 +35,7 @@ import {
   Template,
   UserSettings,
 } from '../types';
+import { isDeloadByDefault, type StartWorkoutOptions } from '../services/deload';
 import {
   addWorkout,
   updateWorkout,
@@ -99,7 +100,12 @@ interface WorkoutContextType {
   // Returns the workout id to open (new OR resumed-existing), or null when the
   // user cancelled out of the in-progress-workout prompt. Callers must not
   // navigate on null.
-  startWorkout: (templateId?: string, exerciseIdsOverride?: string[], locationId?: string) => Promise<string | null>;
+  startWorkout: (
+    templateId?: string,
+    exerciseIdsOverride?: string[],
+    locationId?: string,
+    options?: StartWorkoutOptions,
+  ) => Promise<string | null>;
   finishWorkout: (skippedExerciseIds?: string[]) => Promise<void>;
   cancelWorkout: () => Promise<void>;
   updateActiveWorkoutLocation: (locationId: string) => Promise<void>;
@@ -427,6 +433,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     templateId?: string,
     exerciseIdsOverride?: string[],
     locationId?: string,
+    options?: StartWorkoutOptions,
   ): Promise<string | null> => {
     // ── Wipe protection ──────────────────────────────────────────────────────
     // Never silently replace an in-progress workout. Every start path funnels
@@ -481,7 +488,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       completedAt: null,
       templateId: templateId || null,
       locationId: resolvedLocationId,
-      isDeload: userSettings?.isOnDeload || undefined,
+      isDeload: (options?.isDeload ?? isDeloadByDefault(userSettings)) || undefined,
     };
 
     await addWorkout(workout);

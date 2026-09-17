@@ -15,8 +15,10 @@ import {
   DEFAULT_HEALTH_TARGETS,
   MUSCLE_GROUP_DISPLAY_NAMES,
   type HealthTargets,
+  type MacroMode,
   type PrimaryMuscleGroup,
 } from '../types';
+import { calorieBand } from '../services/healthDashboard';
 
 const GROUP_NAMES = MUSCLE_GROUP_DISPLAY_NAMES as Record<string, string>;
 const PICKABLE_GROUPS = ALL_TRACKABLE_MUSCLE_GROUPS.filter(g => g !== 'miscellaneous');
@@ -57,6 +59,7 @@ export function HealthTargetsScreen() {
   const [newFilter, setNewFilter] = useState('');
   const [newTarget, setNewTarget] = useState(0);
 
+  const band = calorieBand(t);
   const deloadDate = t.deloadWeekStart ? parseISO(t.deloadWeekStart) : null;
   const setDeload = (d: Date) => update({ deloadWeekStart: format(startOfWeek(d, { weekStartsOn }), 'yyyy-MM-dd') });
 
@@ -139,6 +142,80 @@ export function HealthTargetsScreen() {
           min={t.calciumBandHighMg}
           max={5000}
           step={100}
+          last
+        />
+      </Card>
+
+      <Text style={styles.sectionTitle}>Macros</Text>
+      <Card padding="none">
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.label}>Mode</Text>
+            <Text style={styles.hint}>
+              {t.macroMode === 'cutting'
+                ? `Cutting: the calorie band drops ${t.cuttingCalorieDeficit} kcal`
+                : 'Maintenance: the calorie band as written'}
+            </Text>
+          </View>
+          <View style={styles.modeToggle}>
+            {(['maintenance', 'cutting'] as MacroMode[]).map(m => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.mode, t.macroMode === m && styles.modeActive]}
+                onPress={() => update({ macroMode: m })}
+              >
+                <Text style={[styles.modeText, t.macroMode === m && styles.modeTextActive]}>
+                  {m === 'maintenance' ? 'Maintain' : 'Cut'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+        <NumberRow
+          label="Calorie band low (kcal)"
+          hint={`In force now: ${band.lowKcal}–${band.highKcal} kcal`}
+          value={t.calorieBandLowKcal}
+          onChange={v => update({ calorieBandLowKcal: v })}
+          min={1000}
+          max={t.calorieBandHighKcal}
+          step={50}
+        />
+        <NumberRow
+          label="Calorie band high (kcal)"
+          value={t.calorieBandHighKcal}
+          onChange={v => update({ calorieBandHighKcal: v })}
+          min={t.calorieBandLowKcal}
+          max={6000}
+          step={50}
+        />
+        <NumberRow
+          label="Cutting deficit (kcal)"
+          hint="Subtracted from both ends of the band in cutting mode"
+          value={t.cuttingCalorieDeficit}
+          onChange={v => update({ cuttingCalorieDeficit: v })}
+          min={0}
+          max={1000}
+          step={50}
+        />
+        <NumberRow label="Fat floor (g)" value={t.fatFloorG} onChange={v => update({ fatFloorG: v })} min={20} max={200} step={5} />
+        <NumberRow
+          label="Fat target high (g)"
+          hint="Top of the comfortable range; shown, never flagged"
+          value={t.fatTargetHighG}
+          onChange={v => update({ fatTargetHighG: v })}
+          min={t.fatFloorG}
+          max={250}
+          step={5}
+        />
+        <NumberRow label="Carb range low (g)" value={t.carbRangeLowG} onChange={v => update({ carbRangeLowG: v })} min={0} max={t.carbRangeHighG} step={10} />
+        <NumberRow
+          label="Carb range high (g)"
+          hint="Carbs are information only — no pass or fail"
+          value={t.carbRangeHighG}
+          onChange={v => update({ carbRangeHighG: v })}
+          min={t.carbRangeLowG}
+          max={800}
+          step={10}
           last
         />
       </Card>
@@ -335,6 +412,27 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  mode: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.backgroundTertiary,
+  },
+  modeActive: {
+    backgroundColor: colors.primary,
+  },
+  modeText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
+  },
+  modeTextActive: {
+    color: colors.background,
   },
   padded: {
     padding: spacing.base,

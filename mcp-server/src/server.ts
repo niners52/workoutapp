@@ -166,7 +166,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: 'Nutrition log',
       description:
-        'Daily nutrition from Cronometer via Apple Health: calories, protein/carbs/fat/fiber (g), iron/calcium/zinc/sodium (mg), vitamin B12 (mcg), vitamin D (IU), newest first, with averages over complete logged days. Days with no samples are omitted, never shown as zero; today is flagged partial.',
+        'Daily nutrition from Cronometer via Apple Health: calories, protein/carbs/fat/fiber (g), iron/calcium/zinc/sodium (mg), vitamin B12 (mcg), vitamin D (IU), newest first, with averages over complete logged days. Days with no samples are omitted, never shown as zero; today is flagged partial. The summary also reports adherence to the five day rules from the app\'s health targets (calorie band, protein floor, fat floor, sodium budget, calcium band): days met / days with data per rule, the count of days meeting all five, and the macro mode (cutting shifts the calorie band down by its deficit).',
       inputSchema: { days_back: z.number().int().min(1).max(90).default(14).describe('Trailing window in days (1-90)') },
       annotations: READ_ONLY,
     },

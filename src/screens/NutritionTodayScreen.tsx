@@ -9,7 +9,7 @@ import { format, parseISO } from 'date-fns';
 import { colors, typography, spacing } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
-import { formatInt } from '../services/healthDashboard';
+import { dayVerdict, formatInt } from '../services/healthDashboard';
 import { loadNutrition, type NutritionLoad } from '../services/healthDashboardData';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import type { NutritionDayRow } from '../services/syncService';
@@ -76,6 +76,7 @@ export function NutritionTodayScreen() {
   };
 
   const today = data?.today ?? null;
+  const todayKey = format(new Date(), 'yyyy-MM-dd');
   const calciumBroken =
     data?.unavailable.includes('calcium_mg') || (data?.latestLogged ? data.latestLogged.calcium_mg === null : false);
   const calciumFirst = route.params?.focus === 'calcium' && calciumBroken;
@@ -119,15 +120,21 @@ export function NutritionTodayScreen() {
       {data && data.recent.length > 0 && (
         <Card style={styles.card}>
           <Text style={styles.cardTitle}>Recent days</Text>
+          <Text style={styles.body}>
+            A complete day is green only when all five rules are met: calories in band, protein and fat at their floors,
+            sodium inside the budget, calcium in band.
+          </Text>
           {data.recent.slice(0, 7).map(day => {
-            const over = day.sodium_mg !== null && day.sodium_mg > targets.sodiumBudgetMg;
+            const verdict = dayVerdict(day, targets, todayKey);
+            const tone =
+              verdict.kind !== 'verdict' ? colors.textTertiary : verdict.tone === 'good' ? colors.healthGood : colors.warning;
             return (
-              <View key={day.date} style={styles.row}>
-                <Text style={styles.rowLabel}>{format(parseISO(day.date), 'EEE, MMM d')}</Text>
-                <Text style={[styles.rowValue, over && { color: colors.error }]}>
-                  {day.sodium_mg === null ? 'sodium n/a' : `${formatInt(day.sodium_mg)} mg Na`}
-                  {day.protein_g === null ? '' : ` · ${formatInt(day.protein_g)} g protein`}
-                </Text>
+              <View key={day.date} style={styles.verdictRow}>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>{format(parseISO(day.date), 'EEE, MMM d')}</Text>
+                  <Text style={[styles.rowValue, { color: tone }]}>{verdict.headline}</Text>
+                </View>
+                <Text style={styles.verdictDetail}>{verdict.detail}</Text>
               </View>
             );
           })}
@@ -185,6 +192,13 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontWeight: typography.weight.regular,
     fontSize: typography.size.sm,
+  },
+  verdictRow: {
+    paddingVertical: spacing.xs,
+  },
+  verdictDetail: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
   },
   meta: {
     fontSize: typography.size.xs,

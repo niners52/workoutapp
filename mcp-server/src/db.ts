@@ -74,6 +74,8 @@ export interface UserSettingsRow {
   user_id: string;
   week_start_day?: 'sunday' | 'monday' | null;
   muscle_group_targets?: Record<string, number> | null;
+  /** HealthTargets as the app stores it (src/types HealthTargets). Absent on older rows. */
+  health_targets?: Record<string, unknown> | null;
 }
 
 /** One device-local day of Apple Health nutrition. null = the app build could not read that nutrient. */

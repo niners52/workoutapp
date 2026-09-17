@@ -201,7 +201,7 @@ Weights are in pounds, as stored by the app.
 | `get_prs` | `limit` 1-300 (100) | Per exercise: heaviest set and best Epley e1RM, sorted by e1RM |
 | `get_body_weight_log` | `limit` 1-365 (30) | Body weight entries (lbs) with body-fat % and source, newest first |
 | `get_favorite_exercises` | none | Exercises starred in the app |
-| `get_nutrition_log` | `days_back` 1-90 (14) | Daily nutrition from Cronometer via Apple Health (kcal, g, mg, mcg, IU), newest first, with averages over complete logged days. Days without samples are omitted; today is `partial` |
+| `get_nutrition_log` | `days_back` 1-90 (14) | Daily nutrition from Cronometer via Apple Health (kcal, g, mg, mcg, IU), newest first, with averages over complete logged days and `rule_adherence` for the five day rules. Days without samples are omitted; today is `partial` |
 | `get_supplement_log` | `days_back` 1-90 (14) | Supplements with adherence (days taken / days in window, taken today, last taken) and daily check-off history |
 | `get_sleep_log` | `days_back` 1-90 (14) | Nights from Apple Health newest first (time asleep / in bed, bedtime and wake in `TIMEZONE`, deep/REM/core/awake when the source recorded stages) plus averages. Nights without samples are omitted; null stages mean none were recorded |
 | `describe_schema` | none | Live table and column listing plus any required columns that are missing. Use it when another tool reports "column does not exist". |
@@ -234,6 +234,18 @@ Example calls (as the model would issue them):
   carries `unmapped_exercises` (id, name, stored groups, set count) plus a `warning`, so a
   bad mapping is visible rather than silently inflating a group.
 - `rotator_cuff` is its own group under the shoulders category (app default target 12).
+- `lats` is its own group again (app default target 10); pulldowns, pull-ups, straight-arm
+  pulldowns and pullovers are lats-primary, rows stay `upper_back`.
+
+### Day rules (nutrition adherence)
+
+`get_nutrition_log` reports `summary.rule_adherence` for the same five rules the app's
+dashboard verdict uses, read from `user_settings.health_targets`: calorie band (a band,
+not a ceiling — under it is "under-fueled"), protein floor, fat floor, sodium budget and
+calcium band. Each rule gives `days_met` out of `days_with_data`, so a nutrient this app
+build cannot read lowers the denominator instead of counting as a pass. `macro_mode` is
+`maintenance` or `cutting`, and cutting subtracts `cuttingCalorieDeficit` from both ends
+of the band. Only complete days count; today is excluded.
 - `npm run smoke` also recomputes one fixed week (`REGRESSION_WEEK` in `src/smoke.ts`)
   straight from `workout_sets` and fails if `get_weekly_volume` disagrees for any group.
 

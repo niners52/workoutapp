@@ -330,6 +330,69 @@ test('get_weekly_volume: lats remap regression (week of 2026-09-07, real lats-fa
   assert.deepEqual(r.weekly_targets, { lats: 10, upper_back: 12 }, 'lats target read from the shared muscle_group_targets column');
 });
 
+test('get_nutrition_log: per-rule adherence over complete days, read from health_targets', async () => {
+  const nd = (date: string, calories: number, protein: number, fat: number, sodium: number, calcium: number) =>
+    ({ id: `n-${date}`, user_id: U, date, calories, protein_g: protein, carbs_g: 200, fat_g: fat, fiber_g: 30, iron_mg: 10, vitamin_b12_mcg: 5, vitamin_d_iu: null, calcium_mg: calcium, zinc_mg: 1, sodium_mg: sodium, sample_count: 90 });
+  const { client } = createFakeSupabase({
+    ...tables,
+    nutrition_days: [
+      // Real Sep 8: under the band, under protein, under fat, calcium above band, sodium fine.
+      nd('2026-09-02', 1573.3, 156.2, 33.6, 1516.5, 1857.6),
+      // Every rule met.
+      nd('2026-09-03', 2200, 175, 65, 2100, 1100),
+      // Today (partial): excluded from adherence.
+      nd('2026-09-04', 100, 5, 1, 50, 20),
+    ],
+    user_settings: [
+      {
+        user_id: U,
+        week_start_day: 'monday',
+        health_targets: { macroMode: 'maintenance', calorieBandLowKcal: 2100, calorieBandHighKcal: 2300, proteinFloorG: 170, fatFloorG: 60, sodiumBudgetMg: 2300, calciumBandLowMg: 1000, calciumBandHighMg: 1200 },
+      },
+    ],
+  });
+  const r = await getNutritionLog({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { days_back: 7 });
+  const s = r.summary as typeof r.summary & {
+    macro_mode: string;
+    all_rules_met_days: number;
+    rule_adherence: Record<string, { days_met: number; days_with_data: number; complete_days: number; pct: number | null; target: string }>;
+  };
+  assert.equal(s.complete_days, 2, 'today is partial');
+  assert.equal(s.macro_mode, 'maintenance');
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(s.rule_adherence).map(([k, v]) => [k, [v.days_met, v.days_with_data, v.pct]])),
+    {
+      calories_in_band: [1, 2, 50],
+      protein_floor: [1, 2, 50],
+      fat_floor: [1, 2, 50],
+      sodium_budget: [2, 2, 100],
+      calcium_band: [1, 2, 50],
+    },
+  );
+  assert.equal(s.all_rules_met_days, 1);
+  assert.equal(s.rule_adherence.calories_in_band!.target, '2100-2300 kcal');
+});
+
+test('get_nutrition_log: cutting mode shifts the calorie rule, missing health_targets falls back to the app defaults', async () => {
+  const nd = { id: 'n1', user_id: U, date: '2026-09-02', calories: 1900, protein_g: 175, carbs_g: 200, fat_g: 65, fiber_g: 30, iron_mg: 10, vitamin_b12_mcg: 5, vitamin_d_iu: null, calcium_mg: 1100, zinc_mg: 1, sodium_mg: 2000, sample_count: 90 };
+  const cutting = createFakeSupabase({
+    ...tables,
+    nutrition_days: [nd],
+    user_settings: [{ user_id: U, week_start_day: 'monday', health_targets: { macroMode: 'cutting', cuttingCalorieDeficit: 250 } }],
+  });
+  const cut = await getNutritionLog({ db: new Db(cutting.client, U), timeZone: TZ, now: () => NOW }, { days_back: 7 });
+  const cutSummary = cut.summary as typeof cut.summary & { macro_mode: string; rule_adherence: Record<string, { days_met: number; target: string }> };
+  assert.equal(cutSummary.macro_mode, 'cutting');
+  assert.equal(cutSummary.rule_adherence.calories_in_band!.target, '1850-2050 kcal', '250 off both ends');
+  assert.equal(cutSummary.rule_adherence.calories_in_band!.days_met, 1, '1900 kcal sits inside the cutting band');
+
+  const plain = createFakeSupabase({ ...tables, nutrition_days: [nd], user_settings: [{ user_id: U, week_start_day: 'monday' }] });
+  const r = await getNutritionLog({ db: new Db(plain.client, U), timeZone: TZ, now: () => NOW }, { days_back: 7 });
+  const s = r.summary as typeof r.summary & { rule_adherence: Record<string, { days_met: number; target: string }> };
+  assert.equal(s.rule_adherence.calories_in_band!.target, '2100-2300 kcal');
+  assert.equal(s.rule_adherence.calories_in_band!.days_met, 0, '1900 kcal is under the maintenance band');
+});
+
 test('get_weekly_volume: tolerates a user_settings row missing newer columns', async () => {
   const { client } = createFakeSupabase({ ...tables, user_settings: [{ user_id: U, week_start_day: 'monday' }] });
   const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });
