@@ -64,7 +64,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 16;
+const CURRENT_MIGRATION_VERSION = 17;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -182,6 +182,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 16) {
     await migrateToV16();
+  }
+
+  if (currentVersion < 17) {
+    await migrateToV17();
   }
 
   // Update migration version
@@ -818,6 +822,35 @@ async function migrateToV16(): Promise<void> {
   });
 
   console.log(`Migration to V16 complete - ${changed.length} exercises now lats-primary, lats target 10`);
+}
+
+/** The goal weight seeded before the maintenance-model change. */
+const PREVIOUS_GOAL_WEIGHT_LBS = 185;
+
+/**
+ * V17: the goal weight line moves to 175 lb with the maintenance macro model.
+ * Only a phone still carrying the old seed is moved, so a goal typed by hand
+ * is left alone. The new setting re-uploads on the next sync.
+ */
+async function migrateToV17(): Promise<void> {
+  const settings = await getUserSettings();
+  const healthTargets = settings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
+  if (healthTargets.goalWeightLbs !== PREVIOUS_GOAL_WEIGHT_LBS) {
+    console.log('Migration to V17 - goal weight was edited by hand, left as is');
+    return;
+  }
+
+  await updateUserSettings({
+    healthTargets: { ...healthTargets, goalWeightLbs: DEFAULT_HEALTH_TARGETS.goalWeightLbs },
+  });
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: previous?.exerciseIds ?? [],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: true,
+  });
+  console.log(`Migration to V17 complete - goal weight ${PREVIOUS_GOAL_WEIGHT_LBS} -> ${DEFAULT_HEALTH_TARGETS.goalWeightLbs} lb`);
 }
 
 // Reset storage (for debugging/testing)
