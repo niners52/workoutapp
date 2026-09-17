@@ -291,6 +291,45 @@ test('get_weekly_volume: duplicate primaries credit once, miscellaneous is strip
   assert.equal(total, 3 + 1 + 1 + 2 + 2 + 2 + 1, 'unmapped sets are credited nowhere');
 });
 
+test('get_weekly_volume: lats remap regression (week of 2026-09-07, real lats-family sets)', async () => {
+  // Mappings after supabase/migrations/20260917000000_lats_remap.sql; the app's
+  // storage V16 (src/services/latsRemap.ts) writes the same rows.
+  const lx = (id: string, name: string, primary: string[], secondary: string[], equipment: string) =>
+    ({ id, user_id: U, name, base_name: null, primary_muscle_groups: primary, secondary_muscle_groups: secondary, equipment, is_favorite: false, is_unilateral: false });
+  const set = (id: string, exercise_id: string, logged_at: string) =>
+    ({ id, user_id: U, workout_id: 'w0907', exercise_id, weight: 100, reps: 8, logged_at });
+  const { client } = createFakeSupabase({
+    exercises: [
+      lx('import-pullup', 'Bodyweight Pull-Up', ['lats'], ['upper_back'], 'bodyweight'),
+      lx('wide-grip-lat-pulldown', 'Cable Wide-Grip Lat Pulldown', ['lats'], ['biceps', 'upper_back'], 'cable'),
+      lx('86847ace-fb9f-421b-b32b-776f27c56775', 'Machine Lat pulldown', ['lats'], ['upper_back'], 'machine'),
+      lx('import-seated-row', 'Machine Seated Row', ['upper_back'], [], 'machine'),
+    ],
+    workouts: [{ id: 'w0907', user_id: U, template_id: null, started_at: '2026-09-09T11:00:00Z', completed_at: '2026-09-09T12:00:00Z', location_id: null, is_deload: false }],
+    workout_sets: [
+      set('p1', 'import-pullup', '2026-09-07T15:13:40Z'), set('p2', 'import-pullup', '2026-09-07T15:16:29Z'),
+      set('p3', 'import-pullup', '2026-09-07T15:19:50Z'), set('p4', 'import-pullup', '2026-09-10T11:54:21Z'),
+      set('p5', 'import-pullup', '2026-09-10T11:57:28Z'), set('p6', 'import-pullup', '2026-09-11T00:50:18Z'),
+      set('l1', 'wide-grip-lat-pulldown', '2026-09-09T11:32:11Z'), set('l2', 'wide-grip-lat-pulldown', '2026-09-09T11:37:30Z'),
+      set('l3', 'wide-grip-lat-pulldown', '2026-09-09T11:45:22Z'),
+      set('m1', '86847ace-fb9f-421b-b32b-776f27c56775', '2026-09-13T16:30:51Z'),
+      set('m2', '86847ace-fb9f-421b-b32b-776f27c56775', '2026-09-13T16:31:52Z'),
+      set('m3', '86847ace-fb9f-421b-b32b-776f27c56775', '2026-09-13T16:35:12Z'),
+      set('r1', 'import-seated-row', '2026-09-11T11:55:00Z'), set('r2', 'import-seated-row', '2026-09-11T12:02:14Z'),
+    ],
+    user_settings: [{ user_id: U, week_start_day: 'monday', muscle_group_targets: { lats: 10, upper_back: 12 } }],
+  });
+  const r = await getWeeklyVolume(
+    { db: new Db(client, U), timeZone: 'America/Chicago', now: () => new Date('2026-09-13T20:00:00Z') },
+    { weeks_back: 1 },
+  );
+  const wk = r.weeks[0]!;
+  assert.equal(wk.week_start, '2026-09-07');
+  assert.equal(wk.sets_by_muscle_group.lats, 12, '6 pull-ups + 3 wide-grip + 3 machine lat pulldown');
+  assert.equal(wk.sets_by_muscle_group.upper_back, 2, 'only the rows; pulldowns no longer credit upper_back');
+  assert.deepEqual(r.weekly_targets, { lats: 10, upper_back: 12 }, 'lats target read from the shared muscle_group_targets column');
+});
+
 test('get_weekly_volume: tolerates a user_settings row missing newer columns', async () => {
   const { client } = createFakeSupabase({ ...tables, user_settings: [{ user_id: U, week_start_day: 'monday' }] });
   const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });

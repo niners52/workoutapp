@@ -20,6 +20,7 @@ import {
   ExerciseSwap,
   getExerciseDisplayName,
   DEFAULT_USER_SETTINGS,
+  DEFAULT_HEALTH_TARGETS,
   DEFAULT_LOCATIONS,
   DEFAULT_DAILY_GOALS,
   DEFAULT_WEEKLY_GOALS,
@@ -31,6 +32,7 @@ import { SEED_TEMPLATES } from '../data/templates';
 import { IMPORTED_EXERCISES } from '../data/importedExercises';
 import { IMPORTED_WORKOUTS, IMPORTED_SETS } from '../data/importedWorkouts';
 import { effectiveCompletedAt } from './sessionTimeout';
+import { LATS_WEEKLY_TARGET, remapToLatsPrimary, withLatsFocusGroup } from './latsRemap';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -62,7 +64,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 15;
+const CURRENT_MIGRATION_VERSION = 16;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -176,6 +178,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 15) {
     await migrateToV15();
+  }
+
+  if (currentVersion < 16) {
+    await migrateToV16();
   }
 
   // Update migration version
@@ -770,6 +776,48 @@ async function migrateToV15(): Promise<void> {
   console.log(
     `Migration to V15 complete - ${changed.length} exercise mappings repaired, ${exercises.length} exercises queued for re-sync`,
   );
+}
+
+/**
+ * V16: lats become a tracked group again (they were folded into upper_back by
+ * an earlier merger). Pulldowns, pull-ups, straight-arm pulldowns and pullovers move to
+ * lats-primary, the lats weekly target is set to 10, and lats is pinned on the
+ * home dashboard's focus rows. Rows are snapshotted first; the changed
+ * exercises and settings re-upload on the next sync.
+ */
+async function migrateToV16(): Promise<void> {
+  console.log('Running migration to V16 - lats remap...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const before: Exercise[] = [];
+  const changed: string[] = [];
+  const remapped = exercises.map(e => {
+    const next = remapToLatsPrimary(e);
+    if (!next) return e;
+    before.push(e);
+    changed.push(e.id);
+    return next;
+  });
+
+  await snapshotExercises('V16 lats remap', before);
+  if (changed.length > 0) await setItem(STORAGE_KEYS.EXERCISES, remapped);
+
+  const settings = await getUserSettings();
+  const healthTargets = settings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
+  await updateUserSettings({
+    muscleGroupTargets: { ...settings.muscleGroupTargets, lats: LATS_WEEKLY_TARGET },
+    healthTargets: { ...healthTargets, focusGroups: withLatsFocusGroup(healthTargets.focusGroups) },
+  });
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...changed])],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: true,
+  });
+
+  console.log(`Migration to V16 complete - ${changed.length} exercises now lats-primary, lats target 10`);
 }
 
 // Reset storage (for debugging/testing)
