@@ -1,5 +1,6 @@
 import { startOfWeek, endOfWeek } from 'date-fns';
 import { ExerciseSwap, Exercise, WeekStartDay, DAY_NAMES } from '../types';
+import { variantFamily } from './exerciseVariants';
 
 // A swap made earlier this week that's relevant to an exercise in the current workout.
 export interface SwapConflict {
@@ -51,6 +52,9 @@ export function getWeekSwapConflicts(
   const weekSwaps = exerciseSwaps
     .filter(s => {
       if (s.workoutId === currentWorkoutId) return false;
+      // Wide ↔ narrow of one movement is a variant choice, not a conflict (older
+      // workouts recorded it as a swap before the variant toggle existed).
+      if (variantFamily(s.originalExerciseId).includes(s.currentExerciseId)) return false;
       const t = new Date(s.swappedAt);
       return t >= weekStart && t <= weekEnd;
     })

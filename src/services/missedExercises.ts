@@ -1,6 +1,7 @@
 import { format, startOfWeek } from 'date-fns';
 import { DAY_NAMES, Exercise, ExerciseSwap, WeekStartDay, Workout, WorkoutSet } from '../types';
 import { MissedExerciseDismissal } from './storage';
+import { VARIANT_GROUPS, variantFamily, type VariantGroup } from './exerciseVariants';
 
 /**
  * The home screen's catch-up list: exercises that were planned in one of this
@@ -42,6 +43,7 @@ export function getMissedExercisesThisWeek(
   exercises: Exercise[],
   weekStartDay: WeekStartDay = 'monday',
   dismissals: MissedExerciseDismissal[] = [],
+  variantGroups: ReadonlyArray<VariantGroup> = VARIANT_GROUPS,
 ): MissedExercise[] {
   const weekStart = startOfWeek(new Date(), {
     weekStartsOn: weekStartDay === 'monday' ? 1 : 0,
@@ -58,11 +60,12 @@ export function getMissedExercisesThisWeek(
 
   // Anything with a set logged this week is done, regardless of which workout
   // it happened in. This is what clears Monday's miss when it's made up Tuesday.
+  // A set on any variant (wide vs narrow cable fly) counts for the whole family.
   const doneThisWeek = new Set<string>();
   for (const set of sets) {
     const logged = new Date(set.loggedAt);
     if (Number.isFinite(logged.getTime()) && logged >= weekStart) {
-      doneThisWeek.add(set.exerciseId);
+      for (const id of variantFamily(set.exerciseId, variantGroups)) doneThisWeek.add(id);
     }
   }
 

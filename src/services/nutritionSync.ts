@@ -126,6 +126,36 @@ export async function buildNutritionDays(days: number = NUTRITION_WINDOW_DAYS, n
 
 export interface CachedNutritionDays extends NutritionBuildResult {
   syncedAt: string;
+  /**
+   * Per date, when a sync on this phone first saw that day's totals change.
+   * Cronometer stamps its Apple Health entries at midnight rather than at meal
+   * time, so this is the only honest signal of when food was logged. Kept on the
+   * phone only: it is not a nutrition_days column.
+   */
+  changedAt?: Record<string, string>;
+}
+
+/** Everything a day's row says about what was eaten; a change here means new or edited entries. */
+function dayFingerprint(row: NutritionDayRow): string {
+  return [row.sample_count, ...NUTRIENT_GETTERS.map(({ column }) => row[column])].join('|');
+}
+
+/**
+ * Carry forward when each day last changed: a day whose totals match the
+ * previous sync keeps its old time; a new or changed day gets this sync's time.
+ */
+export function trackDayChanges(
+  rows: NutritionDayRow[],
+  previous: CachedNutritionDays | null,
+  syncedAt: string,
+): Record<string, string> {
+  const before = new Map((previous?.rows ?? []).map(r => [r.date, dayFingerprint(r)]));
+  const changedAt: Record<string, string> = {};
+  for (const row of rows) {
+    const prior = previous?.changedAt?.[row.date];
+    changedAt[row.date] = before.get(row.date) === dayFingerprint(row) && prior ? prior : syncedAt;
+  }
+  return changedAt;
 }
 
 /** Rows from the most recent sync on this phone, newest first; null before the first sync. */
@@ -155,7 +185,9 @@ export async function syncNutritionFromHealthKit(
   if (!force && now.getTime() - last < minIntervalMs) return { days: 0, unavailable: [], skipped: 'throttled' };
 
   const { rows, unavailable } = await buildNutritionDays(NUTRITION_WINDOW_DAYS, now);
-  const cache: CachedNutritionDays = { rows, unavailable, syncedAt: now.toISOString() };
+  const syncedAt = now.toISOString();
+  const changedAt = trackDayChanges(rows, await getCachedNutritionDays(), syncedAt);
+  const cache: CachedNutritionDays = { rows, unavailable, syncedAt, changedAt };
   await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache)).catch(() => {});
   if (rows.length > 0) await syncNutritionDays(rows);
   await AsyncStorage.setItem(LAST_SYNC_KEY, String(now.getTime())).catch(() => {});

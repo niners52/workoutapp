@@ -116,7 +116,7 @@ interface WorkoutContextType {
   removeExerciseFromWorkout: (exerciseId: string) => void;
   reorderExercises: (exerciseIds: string[]) => void;
   switchTemplate: (templateId: string) => Promise<void>;
-  swapExercise: (oldExerciseId: string, newExerciseId: string) => void;
+  swapExercise: (oldExerciseId: string, newExerciseId: string, options?: { asVariant?: boolean }) => void;
 
   // Set actions
   logSet: (reps: number, weight: number, exerciseId?: string) => Promise<void>;
@@ -721,16 +721,17 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeWorkout]);
 
-  const swapExercise = useCallback((oldExerciseId: string, newExerciseId: string) => {
+  const swapExercise = useCallback((oldExerciseId: string, newExerciseId: string, options?: { asVariant?: boolean }) => {
     if (!activeWorkout) return;
 
     // Persist a net-swap record so the home screen can show "Original → Current" for the week.
     // The slot's "original" comes from the snapshot taken at workout start, so a chain like
     // A→B→C collapses to (original=A, current=C) and a round trip A→B→A removes the row entirely.
+    // Switching between variants of one movement (wide ↔ narrow cable fly) is not a swap.
     const slotIndex = activeWorkout.exerciseIds.indexOf(oldExerciseId);
     const originalExerciseId =
       slotIndex >= 0 ? activeWorkout.originalExerciseIds[slotIndex] : oldExerciseId;
-    if (originalExerciseId) {
+    if (originalExerciseId && !options?.asVariant) {
       // Stable ID per (workout, slot original) — keeps the upsert idempotent across edits.
       const swapId = `swap-${activeWorkout.workout.id}-${originalExerciseId}`;
       upsertExerciseSwap({

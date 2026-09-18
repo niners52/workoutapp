@@ -412,7 +412,27 @@ export interface LoggingTile {
   nudge: string | null;
 }
 
-export function loggingTile(row: NutritionDaySnapshot | null, t: HealthTargets, now: Date): LoggingTile {
+/**
+ * Cronometer writes its Apple Health samples stamped at local midnight rather
+ * than at meal time, so a midnight time says nothing about when food was eaten.
+ */
+export function isMidnightStamp(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  return d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0;
+}
+
+/**
+ * `changedAt` is when a sync on this phone saw today's totals change. It is the
+ * fallback when the entries carry no real time, and it is only as fine-grained
+ * as the syncs (home re-reads Apple Health every 15 minutes while open).
+ */
+export function loggingTile(
+  row: NutritionDaySnapshot | null,
+  t: HealthTargets,
+  now: Date,
+  changedAt: string | null = null,
+): LoggingTile {
   const afterCheck = now.getHours() >= t.eveningLogCheckHour;
 
   if (!isLogged(row)) {
@@ -421,16 +441,18 @@ export function loggingTile(row: NutritionDaySnapshot | null, t: HealthTargets, 
       : { tone: 'muted', headline: 'Nothing logged yet', detail: 'An unlogged day is incomplete, not compliant', nudge: null };
   }
 
-  const last = row.last_sample_at ? new Date(row.last_sample_at) : null;
+  const entryTime = row.last_sample_at && !isMidnightStamp(row.last_sample_at) ? new Date(row.last_sample_at) : null;
+  const changed = changedAt ? new Date(changedAt) : null;
+  const last = entryTime ?? changed;
   const synced = row.synced_at ? new Date(row.synced_at) : null;
   const syncedText = synced ? `Synced ${format(synced, 'h:mm a')}` : 'Not synced yet';
 
   if (!last) {
-    // Rows synced before last_sample_at existed: the count is known, the time is not.
-    return { tone: 'normal', headline: `${row.sample_count} entries today`, detail: `${syncedText} · entry times appear after the next sync`, nudge: null };
+    // Midnight-stamped entries and no change seen on this phone yet: the count is known, the time is not.
+    return { tone: 'normal', headline: `${row.sample_count} entries today`, detail: syncedText, nudge: null };
   }
 
-  const headline = `Last entry ${format(last, 'h:mm a')}`;
+  const headline = entryTime ? `Last entry ${format(last, 'h:mm a')}` : `Updated ${format(last, 'h:mm a')}`;
   if (afterCheck && last < atHour(now, t.eveningStartHour)) {
     // Synced before the check hour: whether the evening was logged is unknown, so
     // it still reads as incomplete rather than fine.

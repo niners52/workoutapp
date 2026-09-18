@@ -32,6 +32,7 @@ import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLb
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
 import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/fatigueDetection';
 import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
+import { variantGroupFor, type VariantGroup } from '../services/exerciseVariants';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -1052,6 +1053,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     atTravelGym={activeWorkout.workout.locationId === TRAVEL_LOCATION_ID}
                     swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
                     onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
+                    variantGroup={variantGroupFor(exerciseId)}
+                    variantIdsInWorkout={new Set(activeWorkout.exerciseIds)}
+                    onSwitchVariant={variantId => swapExercise(exerciseId, variantId, { asVariant: true })}
                   />
                 </React.Fragment>
               );
@@ -1805,6 +1809,11 @@ interface ExerciseCardProps {
   atTravelGym?: boolean;
   swapConflict?: SwapConflict;
   onKeepSwapConflict?: () => void;
+  /** Linked variants of this movement (wide / narrow); absent when it has none. */
+  variantGroup?: VariantGroup | null;
+  /** Variant ids already in this workout, which cannot be switched to. */
+  variantIdsInWorkout?: Set<string>;
+  onSwitchVariant?: (exerciseId: string) => void;
 }
 
 function ExerciseCard({
@@ -1840,6 +1849,9 @@ function ExerciseCard({
   atTravelGym,
   swapConflict,
   onKeepSwapConflict,
+  variantGroup,
+  variantIdsInWorkout,
+  onSwitchVariant,
 }: ExerciseCardProps) {
   const showPR = prCelebration?.exerciseId === exercise.id;
   const setCount = currentSets.length;
@@ -1911,6 +1923,32 @@ function ExerciseCard({
           <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
         </View>
       </TouchableOpacity>
+
+      {/* Variant toggle (wide / narrow): switches this slot in place, not a swap.
+          Each variant keeps its own history and last-time weight. Locked once a
+          set is logged, since those sets belong to the variant they were done on. */}
+      {variantGroup && onSwitchVariant && (
+        <View style={styles.variantRow}>
+          {variantGroup.variants.map(v => {
+            const selected = v.exerciseId === exercise.id;
+            const locked = !selected && (setCount > 0 || !!variantIdsInWorkout?.has(v.exerciseId));
+            return (
+              <TouchableOpacity
+                key={v.exerciseId}
+                style={[styles.variantOption, selected && styles.variantOptionSelected, locked && styles.variantOptionLocked]}
+                onPress={() => !selected && !locked && onSwitchVariant(v.exerciseId)}
+                disabled={selected || locked}
+                accessibilityRole="button"
+                accessibilityState={{ selected, disabled: locked }}
+                testID={`variant-${v.label.toLowerCase()}`}
+              >
+                <Text style={[styles.variantText, selected && styles.variantTextSelected]}>{v.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          {setCount > 0 && <Text style={styles.variantHint}>Sets logged on {variantGroup.variants.find(v => v.exerciseId === exercise.id)?.label.toLowerCase()}</Text>}
+        </View>
+      )}
 
       {/* Swap Conflict Banner — this exercise was swapped in/out earlier this week */}
       {swapConflict && (
@@ -2288,6 +2326,38 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.warning,
     flex: 1,
+  },
+  variantRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+  },
+  variantOption: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.backgroundTertiary,
+  },
+  variantOptionSelected: {
+    backgroundColor: colors.primary,
+  },
+  variantOptionLocked: {
+    opacity: 0.4,
+  },
+  variantText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
+  },
+  variantTextSelected: {
+    color: colors.background,
+  },
+  variantHint: {
+    fontSize: typography.size.xs,
+    color: colors.textTertiary,
+    marginLeft: spacing.xs,
   },
   swapConflictBanner: {
     flexDirection: 'row' as const,
