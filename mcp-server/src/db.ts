@@ -48,10 +48,12 @@ export interface SetRow {
   reps: number;
   weight: number; // lbs
   logged_at: string;
+  /** How the set was done on an exercise with variants ('Wide' / 'Narrow'); absent before the column exists. */
+  variant?: string | null;
 }
 
 /** Subset of SetRow fetched for whole-history scans. */
-export type SetSummaryRow = Pick<SetRow, 'workout_id' | 'exercise_id' | 'reps' | 'weight' | 'logged_at'>;
+export type SetSummaryRow = Pick<SetRow, 'workout_id' | 'exercise_id' | 'reps' | 'weight' | 'logged_at' | 'variant'>;
 
 export interface BodyMeasurementRow {
   id: string;
@@ -251,8 +253,10 @@ export class Db {
   }
 
   listAllSetsForExercise(exerciseId: string): Promise<SetSummaryRow[]> {
+    // '*' rather than a column list so `variant` comes through once it exists
+    // and nothing breaks on a database without it.
     return this.runAll('workout_sets', () =>
-      this.scoped<SetSummaryRow>('workout_sets', 'workout_id,exercise_id,reps,weight,logged_at')
+      this.scoped<SetSummaryRow>('workout_sets', '*')
         .eq('exercise_id', exerciseId)
         .order('logged_at', { ascending: true }),
     );

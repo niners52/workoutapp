@@ -15,6 +15,7 @@ import { Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
 import { getExerciseHistory, getMaxWeightForExercise, WorkoutSessionSets } from '../services/workoutService';
 import { TRAVEL_LOCATION_ID } from '../types';
+import { variantsFor } from '../services/exerciseVariants';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'ExerciseHistory'>;
@@ -38,6 +39,18 @@ export function ExerciseHistoryScreen() {
   const [loading, setLoading] = useState(true);
 
   const exercise = exercises.find(e => e.id === exerciseId);
+
+  // Exercises done more than one way (cable fly: wide / narrow) show one history
+  // with every set labelled, and a separate max per variant.
+  const variants = variantsFor(exerciseId);
+  const maxForVariant = (variant: string): number | null => {
+    const weights = history.flatMap(s => s.sets).filter(s => s.variant === variant).map(s => s.weight);
+    return weights.length > 0 ? Math.max(...weights) : null;
+  };
+  const sessionVariants = (sets: WorkoutSessionSets['sets']): string | null => {
+    const used = [...new Set(sets.map(s => s.variant).filter((v): v is string => !!v))];
+    return used.length > 0 ? used.join(' + ') : null;
+  };
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -99,10 +112,20 @@ export function ExerciseHistoryScreen() {
                 <Text style={styles.statValue}>{history.length}</Text>
                 <Text style={styles.statLabel}>Workouts</Text>
               </View>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{maxWeight}</Text>
-                <Text style={styles.statLabel}>Max Weight (lbs)</Text>
-              </View>
+              {variants ? (
+                // One max per variant: 20 lb wide and 10 lb narrow are not comparable.
+                variants.map(v => (
+                  <View key={v} style={styles.stat}>
+                    <Text style={styles.statValue}>{maxForVariant(v) ?? '—'}</Text>
+                    <Text style={styles.statLabel}>{v} max (lbs)</Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{maxWeight}</Text>
+                  <Text style={styles.statLabel}>Max Weight (lbs)</Text>
+                </View>
+              )}
               <View style={styles.stat}>
                 <Text style={styles.statValue}>
                   {history.reduce((sum, session) => sum + session.sets.length, 0)}
@@ -135,6 +158,7 @@ export function ExerciseHistoryScreen() {
                     {locationLabel(session.locationId)
                       ? ` · ${locationLabel(session.locationId)}`
                       : ''}
+                    {sessionVariants(session.sets) ? ` · ${sessionVariants(session.sets)}` : ''}
                   </Text>
                 </View>
                 <View style={styles.setsGrid}>
@@ -143,6 +167,7 @@ export function ExerciseHistoryScreen() {
                       <Text style={styles.setNumber}>Set {setIndex + 1}</Text>
                       <Text style={styles.setValue}>
                         {set.weight} lbs × {set.reps} reps
+                        {set.variant ? <Text style={styles.setVariant}>{`  ${set.variant}`}</Text> : null}
                       </Text>
                     </View>
                   ))}
@@ -235,6 +260,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     fontWeight: typography.weight.medium,
     color: colors.text,
+  },
+  setVariant: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.textTertiary,
   },
   emptyText: {
     fontSize: typography.size.base,

@@ -36,6 +36,7 @@ import {
   UserSettings,
 } from '../types';
 import { isDeloadByDefault, type StartWorkoutOptions } from '../services/deload';
+import { defaultVariant, variantsFor } from '../services/exerciseVariants';
 import {
   addWorkout,
   updateWorkout,
@@ -116,10 +117,10 @@ interface WorkoutContextType {
   removeExerciseFromWorkout: (exerciseId: string) => void;
   reorderExercises: (exerciseIds: string[]) => void;
   switchTemplate: (templateId: string) => Promise<void>;
-  swapExercise: (oldExerciseId: string, newExerciseId: string, options?: { asVariant?: boolean }) => void;
+  swapExercise: (oldExerciseId: string, newExerciseId: string) => void;
 
   // Set actions
-  logSet: (reps: number, weight: number, exerciseId?: string) => Promise<void>;
+  logSet: (reps: number, weight: number, exerciseId?: string, variant?: string) => Promise<void>;
   removeSet: (setId: string) => Promise<void>;
   editSet: (setId: string, reps: number, weight: number) => Promise<void>;
 
@@ -721,17 +722,16 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeWorkout]);
 
-  const swapExercise = useCallback((oldExerciseId: string, newExerciseId: string, options?: { asVariant?: boolean }) => {
+  const swapExercise = useCallback((oldExerciseId: string, newExerciseId: string) => {
     if (!activeWorkout) return;
 
     // Persist a net-swap record so the home screen can show "Original → Current" for the week.
     // The slot's "original" comes from the snapshot taken at workout start, so a chain like
     // A→B→C collapses to (original=A, current=C) and a round trip A→B→A removes the row entirely.
-    // Switching between variants of one movement (wide ↔ narrow cable fly) is not a swap.
     const slotIndex = activeWorkout.exerciseIds.indexOf(oldExerciseId);
     const originalExerciseId =
       slotIndex >= 0 ? activeWorkout.originalExerciseIds[slotIndex] : oldExerciseId;
-    if (originalExerciseId && !options?.asVariant) {
+    if (originalExerciseId) {
       // Stable ID per (workout, slot original) — keeps the upsert idempotent across edits.
       const swapId = `swap-${activeWorkout.workout.id}-${originalExerciseId}`;
       upsertExerciseSwap({
@@ -765,12 +765,18 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeWorkout]);
 
-  const logSet = useCallback(async (reps: number, weight: number, exerciseId?: string) => {
+  const logSet = useCallback(async (reps: number, weight: number, exerciseId?: string, variant?: string) => {
     if (!activeWorkout) return;
 
     // Use provided exerciseId or fall back to currentExerciseId
     const targetExerciseId = exerciseId || activeWorkout.currentExerciseId;
     if (!targetExerciseId) return;
+
+    // A set on an exercise with variants always carries one. Callers without a
+    // toggle (the Watch) get whatever was done last on it in this workout.
+    const setVariant = variantsFor(targetExerciseId)
+      ? variant ?? defaultVariant(targetExerciseId, activeWorkout.sets.filter(s => s.exerciseId === targetExerciseId), [])
+      : undefined;
 
     const set: WorkoutSet = {
       id: generateId(),
@@ -779,6 +785,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       reps,
       weight,
       loggedAt: new Date().toISOString(),
+      ...(setVariant ? { variant: setVariant } : {}),
     };
 
     await addSet(set);

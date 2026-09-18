@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { WorkoutSet, Workout, TRAVEL_LOCATION_ID } from '../types';
 import { getSetsByExerciseId, getWorkouts, getLocations } from './storage';
+import { setsForVariant } from './exerciseVariants';
 import {
   buildLocationResolver,
   classifyLocationMatch,
@@ -61,8 +62,11 @@ export async function getLastWorkoutForExercise(
   exerciseId: string,
   excludeWorkoutIds?: Set<string>,
   preferLocationId?: string,
+  variant?: string,
 ): Promise<LastWorkoutForExercise | null> {
-  let sets = await getSetsByExerciseId(exerciseId);
+  // On an exercise with variants, "last time" means last time done this way:
+  // the loads differ (10 lb narrow vs 20 lb wide on the cable fly).
+  let sets = setsForVariant(await getSetsByExerciseId(exerciseId), variant);
 
   // Optionally exclude sets from deload (or other) workouts
   if (excludeWorkoutIds && excludeWorkoutIds.size > 0) {

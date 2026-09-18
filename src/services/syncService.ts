@@ -21,6 +21,7 @@ import {
   getExercises,
   getPendingMigrationResync,
   getSets,
+  getTemplates,
   getUserSettings,
   getWorkoutById,
   getWorkouts,
@@ -178,7 +179,64 @@ function setRow(set: WorkoutSet, userId: string) {
     reps: set.reps,
     weight: set.weight,
     logged_at: set.loggedAt || new Date().toISOString(),
+    ...(set.variant ? { variant: set.variant } : {}),
   };
+}
+
+// ==================== SET VARIANT TAGS ====================
+
+/**
+ * Set ids whose variant tag (Wide / Narrow) has not reached the cloud because
+ * workout_sets had no `variant` column when they synced. The set itself did
+ * sync (without the tag); the tag is re-sent on each launch until the column
+ * exists (supabase/migrations/20260918000000_cable_fly_variants.sql).
+ */
+const VARIANT_TAGS_PENDING_KEY = '@workout_tracker/variant_tags_pending';
+
+async function markVariantTagsPending(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const raw = await AsyncStorage.getItem(VARIANT_TAGS_PENDING_KEY).catch(() => null);
+  const pending = new Set<string>(raw ? JSON.parse(raw) : []);
+  for (const id of ids) pending.add(id);
+  await AsyncStorage.setItem(VARIANT_TAGS_PENDING_KEY, JSON.stringify([...pending])).catch(() => {});
+}
+
+/**
+ * Upsert sets; tagged sets keep their variant when the column exists. When it
+ * does not, the sets still sync without it and their ids are queued for a retry.
+ */
+async function upsertSets(sets: WorkoutSet[], userId: string): Promise<{ error: any }> {
+  const rows = sets.map(s => setRow(s, userId));
+  const { error, rows: sent } = await upsertTolerant('workout_sets', rows, OPTIONAL_COLUMNS_BY_TABLE.workout_sets || []);
+  if (!error) {
+    const dropped = (sent as Array<Record<string, unknown>>)
+      .filter((r, i) => rows[i]?.variant && !('variant' in r))
+      .map(r => r.id as string);
+    await markVariantTagsPending(dropped);
+  }
+  return { error };
+}
+
+/** Re-send variant tags that were dropped earlier; clears them once the cloud has the column. */
+export async function retryPendingVariantTags(): Promise<void> {
+  const raw = await AsyncStorage.getItem(VARIANT_TAGS_PENDING_KEY).catch(() => null);
+  const ids: string[] = raw ? JSON.parse(raw) : [];
+  if (ids.length === 0) return;
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const wanted = new Set(ids);
+  const sets = (await getSets()).filter(s => wanted.has(s.id) && s.variant);
+  for (const batch of chunkArray(sets, 50)) {
+    // Plain upsert on purpose: the tolerant path would drop the column again.
+    const { error } = await supabase.from('workout_sets').upsert(batch.map(s => setRow(s, userId)), { onConflict: 'id' });
+    if (error) {
+      console.log(`[Sync] ${ids.length} variant tag(s) still waiting for workout_sets.variant:`, error.message);
+      return;
+    }
+  }
+  await AsyncStorage.removeItem(VARIANT_TAGS_PENDING_KEY).catch(() => {});
+  console.log(`[Sync] Uploaded ${sets.length} variant tag(s)`);
 }
 
 // ==================== NUTRITION DAYS ====================
@@ -627,13 +685,15 @@ export async function syncSet(set: WorkoutSet): Promise<void> {
   try {
     const row = setRow(set, userId);
 
-    const { error } = await supabase
-      .from('workout_sets')
-      .upsert(row, { onConflict: 'id' });
+    const { error } = set.variant
+      ? await upsertSets([set], userId)
+      : await supabase.from('workout_sets').upsert(row, { onConflict: 'id' });
 
     if (error) {
       console.log('Set sync failed, queuing:', error.message);
       await addToPendingQueue({ table: 'workout_sets', operation: 'upsert', data: row });
+      // The queue replays tolerantly and may drop the tag; make sure it is re-sent.
+      if (set.variant) await markVariantTagsPending([set.id]);
     } else {
       await updateLastSyncTimestamp();
     }
@@ -1349,6 +1409,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       reps: row.reps,
       weight: row.weight,
       loggedAt: row.logged_at,
+      ...(row.variant ? { variant: row.variant } : {}),
     }));
 
     const supplements: Supplement[] = (supplementsResult.data || []).map(row => ({
@@ -1460,6 +1521,7 @@ export async function clearPendingSyncQueue(): Promise<void> {
  * leave the cloud (and the MCP connector) showing the old values.
  */
 export async function flushMigrationResync(): Promise<void> {
+  await retryPendingVariantTags().catch(e => console.log('Variant tag retry failed:', e));
   const pending = await getPendingMigrationResync();
   if (!pending) return;
   const userId = await getUserId();
@@ -1468,6 +1530,24 @@ export async function flushMigrationResync(): Promise<void> {
   for (const id of pending.exerciseIds) {
     const exercise = await getExerciseById(id);
     if (exercise) await syncExercise(exercise);
+  }
+  for (const id of pending.deletedExerciseIds ?? []) {
+    await syncDeleteExercise(id);
+  }
+  if (pending.templateIds?.length) {
+    const wanted = new Set(pending.templateIds);
+    for (const template of (await getTemplates()).filter(t => wanted.has(t.id))) await syncTemplate(template);
+  }
+  if (pending.setIds?.length) {
+    const wanted = new Set(pending.setIds);
+    const sets = (await getSets()).filter(s => wanted.has(s.id));
+    for (const batch of chunkArray(sets, 50)) {
+      const { error } = await upsertSets(batch, userId);
+      if (error) {
+        for (const s of batch) await addToPendingQueue({ table: 'workout_sets', operation: 'upsert', data: setRow(s, userId) });
+        await markVariantTagsPending(batch.filter(s => s.variant).map(s => s.id));
+      }
+    }
   }
   for (const id of pending.workoutIds) {
     const workout = await getWorkoutById(id);
