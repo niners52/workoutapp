@@ -36,6 +36,7 @@ import {
   UserSettings,
 } from '../types';
 import { isDeloadByDefault, type StartWorkoutOptions } from '../services/deload';
+import { defaultVariant, variantsFor } from '../services/exerciseVariants';
 import {
   addWorkout,
   updateWorkout,
@@ -119,7 +120,7 @@ interface WorkoutContextType {
   swapExercise: (oldExerciseId: string, newExerciseId: string) => void;
 
   // Set actions
-  logSet: (reps: number, weight: number, exerciseId?: string) => Promise<void>;
+  logSet: (reps: number, weight: number, exerciseId?: string, variant?: string) => Promise<void>;
   removeSet: (setId: string) => Promise<void>;
   editSet: (setId: string, reps: number, weight: number) => Promise<void>;
 
@@ -764,12 +765,18 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     });
   }, [activeWorkout]);
 
-  const logSet = useCallback(async (reps: number, weight: number, exerciseId?: string) => {
+  const logSet = useCallback(async (reps: number, weight: number, exerciseId?: string, variant?: string) => {
     if (!activeWorkout) return;
 
     // Use provided exerciseId or fall back to currentExerciseId
     const targetExerciseId = exerciseId || activeWorkout.currentExerciseId;
     if (!targetExerciseId) return;
+
+    // A set on an exercise with variants always carries one. Callers without a
+    // toggle (the Watch) get whatever was done last on it in this workout.
+    const setVariant = variantsFor(targetExerciseId)
+      ? variant ?? defaultVariant(targetExerciseId, activeWorkout.sets.filter(s => s.exerciseId === targetExerciseId), [])
+      : undefined;
 
     const set: WorkoutSet = {
       id: generateId(),
@@ -778,6 +785,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       reps,
       weight,
       loggedAt: new Date().toISOString(),
+      ...(setVariant ? { variant: setVariant } : {}),
     };
 
     await addSet(set);

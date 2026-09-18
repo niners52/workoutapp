@@ -33,6 +33,7 @@ import { IMPORTED_EXERCISES } from '../data/importedExercises';
 import { IMPORTED_WORKOUTS, IMPORTED_SETS } from '../data/importedWorkouts';
 import { effectiveCompletedAt } from './sessionTimeout';
 import { LATS_WEEKLY_TARGET, remapToLatsPrimary, withLatsFocusGroup } from './latsRemap';
+import { CABLE_FLY_MERGE, tagSetsForVariantMerge } from './exerciseVariants';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -64,7 +65,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 17;
+const CURRENT_MIGRATION_VERSION = 18;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -186,6 +187,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 17) {
     await migrateToV17();
+  }
+
+  if (currentVersion < 18) {
+    await migrateToV18();
   }
 
   // Update migration version
@@ -632,6 +637,10 @@ export interface MigrationResync {
   bodyMeasurementIds?: string[];
   /** Re-upload user_settings (new muscle-group targets) on the next sync. */
   syncSettings?: boolean;
+  /** Exercises a migration removed locally (e.g. merged away); deleted in the cloud. */
+  deletedExerciseIds?: string[];
+  templateIds?: string[];
+  setIds?: string[];
 }
 
 /**
@@ -851,6 +860,63 @@ async function migrateToV17(): Promise<void> {
     syncSettings: true,
   });
   console.log(`Migration to V17 complete - goal weight ${PREVIOUS_GOAL_WEIGHT_LBS} -> ${DEFAULT_HEALTH_TARGETS.goalWeightLbs} lb`);
+}
+
+/**
+ * V18: the wide and narrow Planet Fitness cable flies become one exercise with
+ * variants. Every set is tagged with the variant it was done as (so last-time
+ * weights and PRs stay per variant), the narrow exercise's sets, template slots
+ * and skips move onto the wide one, wide<->narrow swap records are dropped (a
+ * variant change is not a swap), and the narrow exercise is removed. Both rows
+ * are snapshotted first; the cloud follows via the re-sync queue.
+ */
+async function migrateToV18(): Promise<void> {
+  const m = CABLE_FLY_MERGE;
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const keeper = exercises.find(e => e.id === m.keeperId);
+  const source = exercises.find(e => e.id === m.sourceId);
+  if (!keeper) {
+    console.log('Migration to V18 - cable fly not on this phone, nothing to merge');
+    return;
+  }
+  await snapshotExercises('V18 cable fly variants', [keeper, ...(source ? [source] : [])]);
+
+  // 1. Tag sets while they still say which exercise they were.
+  const { sets: tagged, changedIds } = tagSetsForVariantMerge(await getSets(), m);
+  await setItem(STORAGE_KEYS.SETS, tagged);
+
+  // 2. Move templates, skips and the active workout onto the keeper; delete the source.
+  let templateIds: string[] = [];
+  if (source) ({ updatedTemplateIds: templateIds } = await mergeExercise(m.sourceId, m.keeperId));
+
+  // 3. One exercise, named for both.
+  const merged = (await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, [])).map(e =>
+    e.id === m.keeperId ? { ...e, name: m.name, baseName: m.baseName } : e,
+  );
+  await setItem(STORAGE_KEYS.EXERCISES, merged);
+
+  // 4. A wide<->narrow "swap" was a variant choice; others that named narrow now name the keeper.
+  const pair = new Set<string>([m.keeperId, m.sourceId]);
+  const swaps = (await getExerciseSwaps())
+    .filter(s => !(pair.has(s.originalExerciseId) && pair.has(s.currentExerciseId)))
+    .map(s => ({
+      ...s,
+      originalExerciseId: s.originalExerciseId === m.sourceId ? m.keeperId : s.originalExerciseId,
+      currentExerciseId: s.currentExerciseId === m.sourceId ? m.keeperId : s.currentExerciseId,
+    }));
+  await setItem(STORAGE_KEYS.EXERCISE_SWAPS, swaps);
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), m.keeperId])],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: previous?.syncSettings,
+    deletedExerciseIds: [...new Set([...(previous?.deletedExerciseIds ?? []), ...(source ? [m.sourceId] : [])])],
+    templateIds: [...new Set([...(previous?.templateIds ?? []), ...templateIds])],
+    setIds: [...new Set([...(previous?.setIds ?? []), ...changedIds])],
+  });
+  console.log(`Migration to V18 complete - ${changedIds.length} cable fly sets tagged, ${templateIds.length} templates updated`);
 }
 
 // Reset storage (for debugging/testing)

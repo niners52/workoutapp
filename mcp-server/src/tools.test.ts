@@ -393,6 +393,35 @@ test('get_nutrition_log: cutting mode shifts the calorie rule, missing health_ta
   assert.equal(s.rule_adherence.calories_in_band!.days_met, 0, '1900 kcal is under the maintenance band');
 });
 
+test('get_exercise_history: variant tags show on sets, and bests are also reported per variant', async () => {
+  const fly = { id: 'fly', user_id: U, name: 'Cable Fly High to Low', base_name: 'Fly High to Low', primary_muscle_groups: ['chest'], secondary_muscle_groups: [], equipment: 'cable', is_favorite: false, is_unilateral: false };
+  const s = (id: string, weight: number, variant: string, logged_at: string) =>
+    ({ id, user_id: U, workout_id: 'w1', exercise_id: 'fly', weight, reps: 12, logged_at, variant });
+  const { client } = createFakeSupabase({
+    ...tables,
+    exercises: [...tables.exercises!, fly],
+    workout_sets: [
+      s('f1', 20, 'Wide', '2026-08-30T17:10:00Z'),
+      s('f2', 22.5, 'Wide', '2026-09-02T17:10:00Z'),
+      s('f3', 10, 'Narrow', '2026-08-25T11:29:00Z'),
+      s('f4', 12.5, 'Narrow', '2026-09-03T11:29:00Z'),
+    ],
+  });
+  const r = await getExerciseHistory({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { exercise_name: 'Cable Fly High to Low', limit: 10 });
+  assert.deepEqual(r.recent_sets.map(x => [x.weight_lbs, x.variant]), [[12.5, 'Narrow'], [22.5, 'Wide'], [20, 'Wide'], [10, 'Narrow']]);
+  assert.equal(r.heaviest_set?.weight_lbs, 22.5, 'the combined best is still reported');
+  const byVariant = (r as typeof r & { best_by_variant: Record<string, { heaviest_set: { weight_lbs: number } | null }> }).best_by_variant;
+  assert.equal(byVariant.Wide!.heaviest_set!.weight_lbs, 22.5);
+  assert.equal(byVariant.Narrow!.heaviest_set!.weight_lbs, 12.5, 'a narrow PR is visible even though wide is heavier');
+});
+
+test('get_exercise_history: no variant tags, no best_by_variant', async () => {
+  const { client } = createFakeSupabase(tables);
+  const r = await getExerciseHistory({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { exercise_name: 'Barbell Bench Press', limit: 5 });
+  assert.equal('best_by_variant' in r, false);
+  assert.equal(r.recent_sets.some(x => 'variant' in x), false);
+});
+
 test('get_weekly_volume: tolerates a user_settings row missing newer columns', async () => {
   const { client } = createFakeSupabase({ ...tables, user_settings: [{ user_id: U, week_start_day: 'monday' }] });
   const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });

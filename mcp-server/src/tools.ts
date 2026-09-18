@@ -126,6 +126,8 @@ interface SetView {
   weight_lbs: number;
   reps: number;
   workout_id: string;
+  /** Exercises with variants only: how the set was done ('Wide' / 'Narrow'). */
+  variant?: string;
   /** Bodyweight exercises only: body weight on that date and the total load moved. */
   body_weight_lbs?: number;
   effective_load_lbs?: number;
@@ -144,7 +146,13 @@ function effectiveLoad(s: SetSummaryRow, bodyweight: boolean, bw: BodyWeightLog)
 }
 
 function setView(s: SetRow | SetSummaryRow, bodyweight = false, bw?: BodyWeightLog): SetView {
-  const view: SetView = { date: s.logged_at, weight_lbs: s.weight, reps: s.reps, workout_id: s.workout_id };
+  const view: SetView = {
+    date: s.logged_at,
+    weight_lbs: s.weight,
+    reps: s.reps,
+    workout_id: s.workout_id,
+    ...(s.variant ? { variant: s.variant } : {}),
+  };
   if (bodyweight && bw) {
     const body = bw.asOf(s.logged_at);
     if (body !== null) {
@@ -154,6 +162,11 @@ function setView(s: SetRow | SetSummaryRow, bodyweight = false, bw?: BodyWeightL
     }
   }
   return view;
+}
+
+/** Distinct variant tags present on a set list, in first-seen order. */
+function variantsOf(sets: Array<Pick<SetRow, 'variant'>>): string[] {
+  return [...new Set(sets.map(s => s.variant).filter((v): v is string => !!v))];
 }
 
 interface BestSets {
@@ -343,6 +356,15 @@ export async function getExerciseHistory(ctx: ToolContext, input: { exercise_nam
     first_logged_at: all[0]?.logged_at,
     recent_sets: recent.map(s => setView(s, bodyweight, bw)),
     ...bestSets(all, bodyweight, bw),
+    // An exercise done more than one way (cable fly wide / narrow) has loads that
+    // are not comparable across variants, so bests are also reported per variant.
+    ...(variantsOf(all).length > 0
+      ? {
+          best_by_variant: Object.fromEntries(
+            variantsOf(all).map(v => [v, bestSets(all.filter(s => s.variant === v), bodyweight, bw)]),
+          ),
+        }
+      : {}),
     ...(bodyweight
       ? {
           note: bwError

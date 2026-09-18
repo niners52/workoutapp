@@ -18,6 +18,8 @@ export interface NutritionLoad {
   source: 'phone' | 'cloud' | 'none';
   /** When the rows were produced by the HealthKit sync. */
   syncedAt: string | null;
+  /** When a sync on this phone saw today's totals change; null when unknown (e.g. read from the cloud). */
+  todayChangedAt: string | null;
   error: string | null;
 }
 
@@ -32,6 +34,7 @@ export async function loadNutrition(now: Date = new Date()): Promise<NutritionLo
   let syncedAt: string | null = null;
   let unavailable: string[] = [];
   let error: string | null = null;
+  let todayChangedAt: string | null = null;
 
   const cached = await getCachedNutritionDays();
   if (cached) {
@@ -39,6 +42,7 @@ export async function loadNutrition(now: Date = new Date()): Promise<NutritionLo
     source = 'phone';
     syncedAt = cached.syncedAt;
     unavailable = cached.unavailable;
+    todayChangedAt = cached.changedAt?.[todayKey] ?? null;
   } else {
     const cloud = await fetchNutritionDays(format(subDays(now, 13), 'yyyy-MM-dd'));
     if (cloud.ok) {
@@ -60,6 +64,7 @@ export async function loadNutrition(now: Date = new Date()): Promise<NutritionLo
     unavailable,
     source,
     syncedAt,
+    todayChangedAt,
     error,
   };
 }

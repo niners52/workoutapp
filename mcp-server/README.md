@@ -237,6 +237,14 @@ Example calls (as the model would issue them):
 - `lats` is its own group again (app default target 10); pulldowns, pull-ups, straight-arm
   pulldowns and pullovers are lats-primary, rows stay `upper_back`.
 
+### Exercise variants
+
+Some exercises are done more than one way with loads that are not comparable
+(the Planet Fitness cable fly: `Wide` vs `Narrow`). Each set carries
+`workout_sets.variant`, and `get_exercise_history` shows it on every set and adds
+`best_by_variant` (heaviest set and e1RM per variant) next to the combined bests.
+Exercises without variants have no tag and no `best_by_variant`.
+
 ### Day rules (nutrition adherence)
 
 `get_nutrition_log` reports `summary.rule_adherence` for the same five rules the app's

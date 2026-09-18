@@ -205,7 +205,8 @@ export function HealthDashboardScreen() {
   const calories = useMemo(() => caloriesTile(today, targets), [today, targets]);
   const fat = useMemo(() => fatTile(today, targets, now), [today, targets, now]);
   const carbs = useMemo(() => carbsTile(today, targets), [today, targets]);
-  const logging = useMemo(() => loggingTile(today, targets, now), [today, targets, now]);
+  const todayChangedAt = nutrition?.todayChangedAt ?? null;
+  const logging = useMemo(() => loggingTile(today, targets, now, todayChangedAt), [today, targets, now, todayChangedAt]);
   // The verdict is for the newest day that is finished, never for today.
   const lastComplete = useMemo(() => {
     const todayKey = format(now, 'yyyy-MM-dd');

@@ -369,6 +369,12 @@ export interface WorkoutSet {
   reps: number;
   weight: number; // in lbs
   loggedAt: string; // ISO date string
+  /**
+   * How the set was done on an exercise with variants (e.g. 'Wide' / 'Narrow'
+   * on the Planet Fitness cable fly). Last-time weights and PRs are per variant,
+   * because the loads differ. Absent on exercises without variants.
+   */
+  variant?: string;
   // ─── Aerobic / cardio fields (modality-gated) ─────────────────────────────
   durationMin?: number;
   intensityRPE?: number;     // 6-20 Borg scale, or 1-10 modified — store raw

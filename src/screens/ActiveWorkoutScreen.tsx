@@ -32,6 +32,7 @@ import { formatWeight, formatWeightValue, weightUnit, weightIncrement, inputToLb
 import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult, formatPRLabel } from '../services/personalRecords';
 import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/fatigueDetection';
 import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
+import { defaultVariant, setsForVariant, variantsFor } from '../services/exerciseVariants';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -125,6 +126,31 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [editSecondaryMuscles, setEditSecondaryMuscles] = useState<PrimaryMuscleGroup[]>([]);
   // Per-exercise target set overrides for this workout only
   const [targetSetOverrides, setTargetSetOverrides] = useState<Record<string, number>>({});
+  // Which way each variant exercise is being done right now (e.g. cable fly: 'Wide' / 'Narrow').
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+
+  // Toggle a variant: later sets are tagged with it, and "last time" switches to
+  // that variant's history so the pre-filled weight matches the setup.
+  const handleSelectVariant = async (exerciseId: string, variant: string) => {
+    setSelectedVariants(prev => ({ ...prev, [exerciseId]: variant }));
+    const deloadWorkoutIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
+    const lastWorkout = await getLastWorkoutForExercise(
+      exerciseId,
+      deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined,
+      activeWorkout?.workout.locationId,
+      variant,
+    );
+    setExerciseHistories(prev => ({
+      ...prev,
+      [exerciseId]: {
+        exerciseId,
+        sets: lastWorkout?.sets || [],
+        date: lastWorkout?.date || null,
+        fromLocationId: lastWorkout?.fromLocationId,
+        locationMatch: lastWorkout?.locationMatch ?? 'same',
+      },
+    }));
+  };
 
   // Get units from settings
   const units = userSettings?.units || 'imperial';
@@ -144,12 +170,21 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
       const workoutLocationId = activeWorkout.workout.locationId;
       const histories: Record<string, ExerciseHistory> = {};
+      const startingVariants: Record<string, string> = {};
       for (const exerciseId of activeWorkout.exerciseIds) {
-        const lastWorkout = await getLastWorkoutForExercise(
-          exerciseId,
-          deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined,
-          workoutLocationId
-        );
+        const excluded = deloadWorkoutIds.size > 0 ? deloadWorkoutIds : undefined;
+        let lastWorkout = await getLastWorkoutForExercise(exerciseId, excluded, workoutLocationId);
+        // Exercises with variants: start on the variant done last, and take
+        // "last time" from that variant only (the loads differ).
+        if (variantsFor(exerciseId)) {
+          const variant =
+            selectedVariants[exerciseId] ??
+            defaultVariant(exerciseId, getSetsForExercise(exerciseId), lastWorkout?.sets ?? []);
+          if (variant) {
+            startingVariants[exerciseId] = variant;
+            lastWorkout = await getLastWorkoutForExercise(exerciseId, excluded, workoutLocationId, variant);
+          }
+        }
         histories[exerciseId] = {
           exerciseId,
           sets: lastWorkout?.sets || [],
@@ -159,6 +194,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         };
       }
       setExerciseHistories(histories);
+      setSelectedVariants(prev => ({ ...startingVariants, ...prev }));
 
       // Compute fatigue warnings for exercises in this workout
       if (userSettings.fatigueDetectionEnabled !== false && !userSettings.isOnDeload) {
@@ -179,7 +215,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     if (!selectedExerciseId) return;
 
     // First check if there are sets logged for this exercise in the current workout
-    const currentSets = getSetsForExercise(selectedExerciseId);
+    // (done the currently selected way, on an exercise with variants)
+    const currentSets = setsForVariant(getSetsForExercise(selectedExerciseId), selectedVariants[selectedExerciseId]);
     if (currentSets.length > 0) {
       // Use the most recently logged set from this session
       const lastSet = currentSets[currentSets.length - 1];
@@ -199,7 +236,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
       setWeight(suggestedWeight);
       setReps(history.sets[0].reps);
     }
-  }, [selectedExerciseId, exerciseHistories, activeWorkout?.sets.length]);
+  }, [selectedExerciseId, exerciseHistories, activeWorkout?.sets.length, selectedVariants]);
 
   // Cross-day swap conflicts: which of this workout's exercises were swapped in/out
   // earlier this week. Recomputed when the lineup or the week's swap log changes.
@@ -265,10 +302,15 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     // including sets already logged in the current active workout — DataContext's
     // `sets` is only refreshed on app load, so it doesn't include the in-progress workout)
     const currentWorkoutSets = activeWorkout.sets ?? [];
-    const previousSetsForPRCheck = [
-      ...sets.filter(s => s.workoutId !== activeWorkout.workout.id && s.exerciseId === selectedExerciseId),
-      ...currentWorkoutSets.filter(s => s.exerciseId === selectedExerciseId),
-    ];
+    // PRs are per variant: a 12 lb narrow fly is a PR even though wide is at 20.
+    const variant = selectedVariants[selectedExerciseId];
+    const previousSetsForPRCheck = setsForVariant(
+      [
+        ...sets.filter(s => s.workoutId !== activeWorkout.workout.id && s.exerciseId === selectedExerciseId),
+        ...currentWorkoutSets.filter(s => s.exerciseId === selectedExerciseId),
+      ],
+      variant,
+    );
     const milestoneResult = checkForMilestone(
       { exerciseId: selectedExerciseId, weight, reps, workoutId: activeWorkout.workout.id },
       previousSetsForPRCheck,
@@ -287,7 +329,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     const willComplete = currentSetCount + 1 >= targetSets;
     const exerciseToMove = selectedExerciseId;
 
-    await logSet(reps, weight, selectedExerciseId);
+    await logSet(reps, weight, selectedExerciseId, variant);
 
     // Track PR in session map (keyed by set ID for badge display)
     if (milestoneResult.prResult.isPR) {
@@ -874,8 +916,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
       setSelectedExerciseId(null);
     } else {
       setSelectedExerciseId(exerciseId);
-      // Load weight/reps from current session or history
-      const currentSets = getSetsForExercise(exerciseId);
+      // Load weight/reps from current session or history (same variant, when it has them)
+      const currentSets = setsForVariant(getSetsForExercise(exerciseId), selectedVariants[exerciseId]);
       if (currentSets.length > 0) {
         const lastSet = currentSets[currentSets.length - 1];
         setWeight(lastSet.weight);
@@ -1052,6 +1094,9 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     atTravelGym={activeWorkout.workout.locationId === TRAVEL_LOCATION_ID}
                     swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
                     onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
+                    variants={variantsFor(exerciseId)}
+                    selectedVariant={selectedVariants[exerciseId]}
+                    onSelectVariant={variant => handleSelectVariant(exerciseId, variant)}
                   />
                 </React.Fragment>
               );
@@ -1805,6 +1850,10 @@ interface ExerciseCardProps {
   atTravelGym?: boolean;
   swapConflict?: SwapConflict;
   onKeepSwapConflict?: () => void;
+  /** Ways this exercise is done (e.g. 'Wide' / 'Narrow'); null when it has none. */
+  variants?: readonly string[] | null;
+  selectedVariant?: string;
+  onSelectVariant?: (variant: string) => void;
 }
 
 function ExerciseCard({
@@ -1840,6 +1889,9 @@ function ExerciseCard({
   atTravelGym,
   swapConflict,
   onKeepSwapConflict,
+  variants,
+  selectedVariant,
+  onSelectVariant,
 }: ExerciseCardProps) {
   const showPR = prCelebration?.exerciseId === exercise.id;
   const setCount = currentSets.length;
@@ -1911,6 +1963,29 @@ function ExerciseCard({
           <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
         </View>
       </TouchableOpacity>
+
+      {/* Variant toggle (wide / narrow): the next set is tagged with it, and the
+          pre-filled weight comes from that variant's last session. Switching
+          mid-exercise is fine — each set keeps the variant it was done as. */}
+      {variants && onSelectVariant && (
+        <View style={styles.variantRow}>
+          {variants.map(v => {
+            const selected = v === selectedVariant;
+            return (
+              <TouchableOpacity
+                key={v}
+                style={[styles.variantOption, selected && styles.variantOptionSelected]}
+                onPress={() => !selected && onSelectVariant(v)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                testID={`variant-${v.toLowerCase()}`}
+              >
+                <Text style={[styles.variantText, selected && styles.variantTextSelected]}>{v}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       {/* Swap Conflict Banner — this exercise was swapped in/out earlier this week */}
       {swapConflict && (
@@ -1998,6 +2073,7 @@ function ExerciseCard({
                     <Text style={styles.currentSetNumber}>Set {index + 1}</Text>
                     <Text style={styles.currentSetDetail}>
                       {formatWeight(set.weight, units)} × {set.reps} reps
+                      {set.variant ? <Text style={styles.setVariantTag}>{`  ${set.variant}`}</Text> : null}
                     </Text>
                     {prData && (
                       <View style={[styles.prBadge, prData.isMilestone && styles.prBadgeMilestone]}>
@@ -2288,6 +2364,35 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.warning,
     flex: 1,
+  },
+  variantRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+  },
+  variantOption: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.backgroundTertiary,
+  },
+  variantOptionSelected: {
+    backgroundColor: colors.primary,
+  },
+  variantText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
+  },
+  variantTextSelected: {
+    color: colors.background,
+  },
+  setVariantTag: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.semibold,
+    color: colors.textTertiary,
   },
   swapConflictBanner: {
     flexDirection: 'row' as const,
