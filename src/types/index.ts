@@ -570,6 +570,8 @@ export interface UserSettings {
   fatigueSensitivity?: number;
   isOnDeload?: boolean;
   deloadPercentage?: number; // Weight percentage during deload (default 50, range 40-60)
+  /** Target sets on a deload workout (doubled for unilateral); never raises an exercise's target. */
+  deloadTargetSets?: number;
   // PR notifications
   milestoneCelebrationsEnabled?: boolean;
   // Sleep fallback
@@ -630,6 +632,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   calorieTolerancePercent: 10,
   sodiumLimitMg: 2300,
   deloadPercentage: 50,
+  deloadTargetSets: 2,
   milestoneCelebrationsEnabled: true,
   sleepFallbackReminderEnabled: true,
   sleepFallbackAutoAverage: false,

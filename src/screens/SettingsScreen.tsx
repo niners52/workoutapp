@@ -962,7 +962,7 @@ export function SettingsScreen() {
                   step={5}
                 />
               </View>
-              <View style={[styles.settingRow, !userSettings.isOnDeload && styles.settingRowLast]}>
+              <View style={styles.settingRow}>
                 <Text style={styles.settingLabel}>Currently on Deload</Text>
                 <TouchableOpacity
                   style={[
@@ -981,18 +981,28 @@ export function SettingsScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
-              {userSettings.isOnDeload && (
-                <View style={[styles.settingRow, styles.settingRowLast]}>
-                  <Text style={styles.settingLabel}>Deload Weight %</Text>
-                  <NumberInput
-                    value={userSettings.deloadPercentage ?? 50}
-                    onChangeValue={(value) => updateUserSettings({ deloadPercentage: value })}
-                    min={40}
-                    max={60}
-                    step={5}
-                  />
-                </View>
-              )}
+              {/* Both apply to any workout marked deload (the toggle above, or a
+                  workout started during the deload week), so they stay visible. */}
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Deload Weight %</Text>
+                <NumberInput
+                  value={userSettings.deloadPercentage ?? 50}
+                  onChangeValue={(value) => updateUserSettings({ deloadPercentage: value })}
+                  min={40}
+                  max={60}
+                  step={5}
+                />
+              </View>
+              <View style={[styles.settingRow, styles.settingRowLast]}>
+                <Text style={styles.settingLabel}>Deload Target Sets</Text>
+                <NumberInput
+                  value={userSettings.deloadTargetSets ?? 2}
+                  onChangeValue={(value) => updateUserSettings({ deloadTargetSets: value })}
+                  min={1}
+                  max={10}
+                  step={1}
+                />
+              </View>
             </Card>
           )}
           <Text style={styles.hint}>

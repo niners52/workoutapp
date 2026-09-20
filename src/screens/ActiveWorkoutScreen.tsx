@@ -33,6 +33,7 @@ import { checkForMilestone, formatMilestoneLabel, milestoneEmoji, PRCheckResult,
 import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/fatigueDetection';
 import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
 import { defaultVariant, setsForVariant, variantsFor } from '../services/exerciseVariants';
+import { targetSetsFor } from '../services/targetSets';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -128,6 +129,15 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [targetSetOverrides, setTargetSetOverrides] = useState<Record<string, number>>({});
   // Which way each variant exercise is being done right now (e.g. cable fly: 'Wide' / 'Narrow').
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+
+  /** Target sets for one exercise in this workout; lower on a deload workout. */
+  const targetSetsForExercise = (exercise: Exercise | undefined | null, exerciseId: string): number =>
+    targetSetsFor({
+      exercise,
+      override: targetSetOverrides[exerciseId],
+      settings: userSettings,
+      isDeloadWorkout: activeWorkout?.workout.isDeload,
+    });
 
   // Toggle a variant: later sets are tagged with it, and "last time" switches to
   // that variant's history so the pre-filled weight matches the setup.
@@ -320,11 +330,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
     // Compute expected set count before async logSet (state may not update immediately)
     const currentExercise = exercises.find(e => e.id === selectedExerciseId);
-    const baseTarget = userSettings?.defaultTargetSets ?? 3;
-    const targetSets =
-      targetSetOverrides[selectedExerciseId]
-      ?? currentExercise?.targetSets
-      ?? (currentExercise?.isUnilateral ? baseTarget * 2 : baseTarget);
+    const targetSets = targetSetsForExercise(currentExercise, selectedExerciseId);
     const currentSetCount = getSetsForExercise(selectedExerciseId).length;
     const willComplete = currentSetCount + 1 >= targetSets;
     const exerciseToMove = selectedExerciseId;
@@ -363,11 +369,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         // The exercise we just logged won't have the new set yet, so adjust
         const adjusted = id === exerciseToMove ? setCount + 1 : setCount;
         const ex = exercises.find(e => e.id === id);
-        const exTarget =
-          targetSetOverrides[id]
-          ?? ex?.targetSets
-          ?? (ex?.isUnilateral ? baseTarget * 2 : baseTarget);
-        return adjusted < exTarget;
+        return adjusted < targetSetsForExercise(ex, id);
       });
       if (nextIncomplete) {
         toggleExercise(nextIncomplete);
@@ -1008,18 +1010,12 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           <Text style={styles.sectionTitle}>Exercises</Text>
 
           {(() => {
-            const baseTargetSets = userSettings?.defaultTargetSets ?? 3;
-
             // Sort exercises: incomplete first (in template order), then completed (in template order)
             const incomplete: string[] = [];
             const completed: string[] = [];
             for (const id of activeWorkout.exerciseIds) {
               const ex = exercises.find(e => e.id === id);
-              const target =
-                targetSetOverrides[id]
-                ?? ex?.targetSets
-                ?? (ex?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
-              if (getSetsForExercise(id).length >= target) {
+              if (getSetsForExercise(id).length >= targetSetsForExercise(ex, id)) {
                 completed.push(id);
               } else {
                 incomplete.push(id);
@@ -1037,10 +1033,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     : locations.find(l => l.id === history.fromLocationId)?.name)
                 : undefined;
               const isExpanded = selectedExerciseId === exerciseId;
-              const targetSets =
-                targetSetOverrides[exerciseId]
-                ?? exercise?.targetSets
-                ?? (exercise?.isUnilateral ? baseTargetSets * 2 : baseTargetSets);
+              const targetSets = targetSetsForExercise(exercise, exerciseId);
               const exerciseComplete = currentSets.length >= targetSets;
 
               if (!exercise) return null;
