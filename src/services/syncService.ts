@@ -14,6 +14,7 @@ import {
   HealthReminder,
 } from '../types';
 import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
+import { bodyMeasurementFromRow, exerciseFromRow, setFromRow, workoutFromRow } from './cloudMappers';
 import {
   clearPendingMigrationResync,
   getBodyMeasurementById,
@@ -150,6 +151,9 @@ function exerciseRow(exercise: Exercise, userId: string) {
     is_bodyweight: exercise.isBodyweight ?? exercise.equipment === 'bodyweight',
     // Volume counting needs this (0.5 credit per set); it was never sent before.
     is_unilateral: exercise.isUnilateral ?? false,
+    // Per-exercise target sets lived only on the phone until now, so a restore
+    // reset every exercise to the global default.
+    target_sets: exercise.targetSets ?? null,
     notes: exercise.notes || null,
   };
 }
@@ -1367,20 +1371,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
     ]);
 
     // Map Supabase rows back to local types
-    const exercises: Exercise[] = (exercisesResult.data || []).map(row => ({
-      id: row.id,
-      name: row.name,
-      baseName: row.base_name || undefined,
-      primaryMuscleGroups: row.primary_muscle_groups || [],
-      secondaryMuscleGroups: row.secondary_muscle_groups || [],
-      equipment: row.equipment,
-      cableAccessory: row.cable_accessory,
-      machineWeightType: row.machine_weight_type,
-      locationIds: row.location_ids || [],
-      isCustom: row.is_custom ?? true,
-      isFavorite: row.is_favorite ?? false,
-      ...(typeof row.is_bodyweight === 'boolean' ? { isBodyweight: row.is_bodyweight } : {}),
-    }));
+    const exercises: Exercise[] = (exercisesResult.data || []).map(exerciseFromRow);
 
     const templates: Template[] = (templatesResult.data || []).map(row => ({
       id: row.id,
@@ -1390,27 +1381,9 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       exerciseIds: row.exercise_ids || [],
     }));
 
-    const workouts: Workout[] = (workoutsResult.data || []).map(row => ({
-      id: row.id,
-      templateId: row.template_id,
-      startedAt: row.started_at,
-      completedAt: row.completed_at,
-      ...(row.skipped_exercise_ids?.length ? { skippedExerciseIds: row.skipped_exercise_ids } : {}),
-      // Keep the gym and deload flag on restore — dropping them here is what made
-      // restored devices treat every exercise as never-done-at-this-location.
-      ...(row.location_id ? { locationId: row.location_id } : {}),
-      ...(row.is_deload ? { isDeload: true } : {}),
-    }));
+    const workouts: Workout[] = (workoutsResult.data || []).map(workoutFromRow);
 
-    const sets: WorkoutSet[] = (setsResult.data || []).map(row => ({
-      id: row.id,
-      workoutId: row.workout_id,
-      exerciseId: row.exercise_id,
-      reps: row.reps,
-      weight: row.weight,
-      loggedAt: row.logged_at,
-      ...(row.variant ? { variant: row.variant } : {}),
-    }));
+    const sets: WorkoutSet[] = (setsResult.data || []).map(setFromRow);
 
     const supplements: Supplement[] = (supplementsResult.data || []).map(row => ({
       id: row.id,
@@ -1439,17 +1412,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       sortOrder: row.sort_order ?? 0,
     }));
 
-    const bodyMeasurements: BodyMeasurement[] = (bodyMeasurementsResult.data || []).map(row => ({
-      id: row.id,
-      date: row.date,
-      weight: row.weight ?? undefined,
-      bodyFatPercentage: row.body_fat_percentage ?? undefined,
-      heightInches: row.height_inches ?? undefined,
-      type: row.type ?? undefined,
-      value: row.value ?? undefined,
-      source: row.source || 'manual',
-      syncedAt: row.synced_at ?? undefined,
-    }));
+    const bodyMeasurements: BodyMeasurement[] = (bodyMeasurementsResult.data || []).map(bodyMeasurementFromRow);
 
     let userSettings: Partial<UserSettings> | null = null;
     if (settingsResult.data) {

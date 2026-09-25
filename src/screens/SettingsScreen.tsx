@@ -71,6 +71,7 @@ export function SettingsScreen() {
     userSettings,
     updateUserSettings,
     refreshAll,
+    restoreFromCloud,
     locations,
     addLocation,
     updateLocation,
@@ -292,6 +293,46 @@ export function SettingsScreen() {
   const handleClearStuckTimers = async () => {
     await liveActivityService.endAllActivities();
     Alert.alert('Timers Cleared', 'All Live Activities and stuck timers have been cleared.');
+  };
+
+  /**
+   * The repair for a restore that landed incomplete: re-downloads the cloud
+   * copy, which brings back gyms, deload flags, set variants, unilateral flags
+   * and target sets. It holds off while rows are still waiting to upload, so
+   * nothing that has not reached the cloud can be overwritten by it.
+   */
+  const handleRestoreFromCloud = () => {
+    Alert.alert(
+      'Restore from Cloud',
+      'This replaces the workouts, exercises and settings on this phone with your cloud copy. Use it if a restore came back missing details.\n\nContinue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restore',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await restoreFromCloud();
+              if (result.ok) {
+                Alert.alert(
+                  'Restore Complete',
+                  `Downloaded ${result.counts.workouts} workouts, ${result.counts.sets} sets and ${result.counts.exercises} exercises.`,
+                );
+              } else if (result.reason === 'pending') {
+                Alert.alert(
+                  'Changes Still Uploading',
+                  `${result.pending} change${result.pending === 1 ? '' : 's'} on this phone have not reached the cloud yet. Wait a minute and try again.`,
+                );
+              } else {
+                Alert.alert('Restore Failed', 'Could not read your cloud copy. Check that you are signed in and online.');
+              }
+            } catch (error) {
+              Alert.alert('Restore Failed', error instanceof Error ? error.message : 'Could not restore from the cloud');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleRestoreBackup = async () => {
@@ -1966,6 +2007,12 @@ export function SettingsScreen() {
               title="Export as CSV"
               subtitle="Sets only, spreadsheet compatible"
               onPress={handleExportCSV}
+              showChevron
+            />
+            <ListItem
+              title="Restore from Cloud"
+              subtitle="Re-download your cloud copy onto this phone"
+              onPress={handleRestoreFromCloud}
               showChevron
             />
             <ListItem
