@@ -186,10 +186,11 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
         let lastWorkout = await getLastWorkoutForExercise(exerciseId, excluded, workoutLocationId);
         // Exercises with variants: start on the variant done last, and take
         // "last time" from that variant only (the loads differ).
-        if (variantsFor(exerciseId)) {
+        const variants = variantsFor(exercises.find(e => e.id === exerciseId));
+        if (variants) {
           const variant =
             selectedVariants[exerciseId] ??
-            defaultVariant(exerciseId, getSetsForExercise(exerciseId), lastWorkout?.sets ?? []);
+            defaultVariant(variants, getSetsForExercise(exerciseId), lastWorkout?.sets ?? []);
           if (variant) {
             startingVariants[exerciseId] = variant;
             lastWorkout = await getLastWorkoutForExercise(exerciseId, excluded, workoutLocationId, variant);
@@ -1087,7 +1088,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     atTravelGym={activeWorkout.workout.locationId === TRAVEL_LOCATION_ID}
                     swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
                     onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
-                    variants={variantsFor(exerciseId)}
+                    variants={variantsFor(exercise)}
                     selectedVariant={selectedVariants[exerciseId]}
                     onSelectVariant={variant => handleSelectVariant(exerciseId, variant)}
                   />

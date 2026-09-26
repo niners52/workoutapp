@@ -42,7 +42,10 @@ export function ExerciseHistoryScreen() {
 
   // Exercises done more than one way (cable fly: wide / narrow) show one history
   // with every set labelled, and a separate max per variant.
-  const variants = variantsFor(exerciseId);
+  // Only split the summary once sets actually carry a variant; a cable exercise
+  // with years of untagged history reads better as one number.
+  const hasTaggedSets = history.some(s => s.sets.some(set => set.variant));
+  const variants = hasTaggedSets ? variantsFor(exercise) : null;
   const maxForVariant = (variant: string): number | null => {
     const weights = history.flatMap(s => s.sets).filter(s => s.variant === variant).map(s => s.weight);
     return weights.length > 0 ? Math.max(...weights) : null;
