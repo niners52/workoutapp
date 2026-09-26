@@ -774,9 +774,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
     // A set on an exercise with variants always carries one. Callers without a
     // toggle (the Watch) get whatever was done last on it in this workout.
-    const setVariant = variantsFor(targetExerciseId)
-      ? variant ?? defaultVariant(targetExerciseId, activeWorkout.sets.filter(s => s.exerciseId === targetExerciseId), [])
-      : undefined;
+    const variants = variantsFor(await getExerciseById(targetExerciseId));
+    const setVariant = variant ?? defaultVariant(variants, activeWorkout.sets.filter(s => s.exerciseId === targetExerciseId), []);
 
     const set: WorkoutSet = {
       id: generateId(),

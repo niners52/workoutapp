@@ -63,6 +63,7 @@ import {
   pullFromCloud,
   getLastCloudPull,
   setLastCloudPull,
+  getPendingOperationsCount,
   isAuthenticated,
 } from '../services/syncService';
 import {
@@ -100,6 +101,11 @@ import {
   deletePTCompletionByRoutineAndDate,
 } from '../services/storage';
 
+/** 'pending' = rows still waiting to upload; 'unavailable' = not signed in or the cloud read failed. */
+export type RestoreFromCloudResult =
+  | { ok: true; counts: { exercises: number; workouts: number; sets: number } }
+  | { ok: false; reason: 'pending' | 'unavailable'; pending: number };
+
 interface DataContextType {
   // Loading state
   isLoading: boolean;
@@ -121,6 +127,8 @@ interface DataContextType {
   refreshSets: () => Promise<void>;
   refreshUserSettings: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  /** Re-download the cloud copy over local data; refuses while uploads are pending. */
+  restoreFromCloud: () => Promise<RestoreFromCloudResult>;
 
   // Exercise CRUD
   addExercise: (exercise: Exercise) => Promise<void>;
@@ -471,6 +479,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshPTRoutines, refreshPTCompletions, refreshRoutines, refreshBodyMeasurements, refreshExerciseSwaps]);
 
+  /**
+   * Re-download the cloud copy over the local one. This is the repair for a
+   * restore that landed incomplete (a new phone that came up on an older build,
+   * say): it brings back gyms, deload flags, set variants, unilateral flags and
+   * target sets. Settings are merged rather than replaced, because some of them
+   * (deload percentage and target sets, coach and fatigue options) are local-only
+   * and the cloud copy has nothing to say about them.
+   *
+   * Refuses while the phone still has rows waiting to upload, so work that never
+   * reached the cloud cannot be overwritten by it.
+   */
+  const restoreFromCloud = useCallback(async (): Promise<RestoreFromCloudResult> => {
+    const pending = await getPendingOperationsCount();
+    if (pending > 0) return { ok: false, reason: 'pending', pending };
+
+    const cloudData = await pullFromCloud();
+    if (!cloudData) return { ok: false, reason: 'unavailable', pending: 0 };
+
+    const current = await getUserSettings();
+    await restoreFromBackup({
+      exercises: cloudData.exercises,
+      templates: cloudData.templates,
+      workouts: cloudData.workouts,
+      sets: cloudData.sets,
+      supplements: cloudData.supplements,
+      supplementIntakes: cloudData.supplementIntakes,
+      routines: cloudData.routines,
+      locations: cloudData.locations,
+      bodyMeasurements: cloudData.bodyMeasurements,
+      userSettings: { ...current, ...(cloudData.userSettings ?? {}) },
+    });
+    await refreshAll();
+    await setLastCloudPull();
+    return {
+      ok: true,
+      counts: {
+        exercises: cloudData.exercises.length,
+        workouts: cloudData.workouts.length,
+        sets: cloudData.sets.length,
+      },
+    };
+  }, [refreshAll]);
+
   // Exercise CRUD
   const addExercise = useCallback(async (exercise: Exercise) => {
     await addExerciseToStorage(exercise);
@@ -819,6 +870,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     refreshSets,
     refreshUserSettings,
     refreshAll,
+    restoreFromCloud,
     addExercise,
     updateExercise,
     toggleExerciseFavorite,
