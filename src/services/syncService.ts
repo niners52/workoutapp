@@ -21,6 +21,7 @@ import {
   getExerciseById,
   getExercises,
   getPendingMigrationResync,
+  getLocations,
   getSets,
   getTemplates,
   getUserSettings,
@@ -544,14 +545,18 @@ export async function reconcileCloud(force: boolean = false): Promise<ReconcileR
  */
 export async function pushAllToCloud(): Promise<{
   ok: boolean;
-  counts: { exercises: number; workouts: number; sets: number };
+  counts: { locations: number; templates: number; exercises: number; workouts: number; sets: number };
+  /** Rows left behind because what they point at does not exist on this phone either. */
+  orphanSets: number;
   error?: string;
 }> {
-  const counts = { exercises: 0, workouts: 0, sets: 0 };
+  const counts = { locations: 0, templates: 0, exercises: 0, workouts: 0, sets: 0 };
   const userId = await getUserId();
-  if (!userId) return { ok: false, counts, error: 'not signed in' };
+  if (!userId) return { ok: false, counts, orphanSets: 0, error: 'not signed in' };
 
-  const [exercises, workouts, sets, settings] = await Promise.all([
+  const [locations, templates, exercises, workouts, sets, settings] = await Promise.all([
+    getLocations(),
+    getTemplates(),
     getExercises(),
     getWorkouts(),
     getSets(),
@@ -566,12 +571,19 @@ export async function pushAllToCloud(): Promise<{
     return null;
   };
 
+  // Parents before children: a workout's gym and template, and a set's workout
+  // and exercise, all have to exist in the cloud before the row that names them.
+  for (const location of locations) await syncLocation(location);
+  counts.locations = locations.length;
+  for (const template of templates) await syncTemplate(template);
+  counts.templates = templates.length;
+
   const exerciseError = await pushBatches(
     exercises.map(e => exerciseRow(e, userId)),
     'exercises',
     OPTIONAL_COLUMNS_BY_TABLE.exercises || [],
   );
-  if (exerciseError) return { ok: false, counts, error: exerciseError };
+  if (exerciseError) return { ok: false, counts, orphanSets: 0, error: exerciseError };
   counts.exercises = exercises.length;
 
   const workoutError = await pushBatches(
@@ -579,20 +591,30 @@ export async function pushAllToCloud(): Promise<{
     'workouts',
     OPTIONAL_COLUMNS_BY_TABLE.workouts || [],
   );
-  if (workoutError) return { ok: false, counts, error: workoutError };
+  if (workoutError) return { ok: false, counts, orphanSets: 0, error: workoutError };
   counts.workouts = workouts.length;
 
+  // A set whose workout or exercise is missing locally would be rejected by the
+  // foreign keys and take its whole batch down with it. Skip those, count them,
+  // and let everything else through.
   const knownWorkouts = new Set(workouts.map(w => w.id));
-  const ownedSets = sets.filter(s => knownWorkouts.has(s.workoutId));
+  const knownExercises = new Set(exercises.map(e => e.id));
+  const ownedSets = sets.filter(s => knownWorkouts.has(s.workoutId) && knownExercises.has(s.exerciseId));
+  const orphanSets = sets.length - ownedSets.length;
+  if (orphanSets > 0) {
+    const orphanExerciseIds = [...new Set(sets.filter(s => !knownExercises.has(s.exerciseId)).map(s => s.exerciseId))];
+    console.log(`[Sync] Skipping ${orphanSets} set(s) with no matching workout or exercise; exercise ids: ${orphanExerciseIds.join(', ')}`);
+  }
+
   for (const batch of chunkArray(ownedSets, 50)) {
     const { error } = await upsertSets(batch, userId);
-    if (error) return { ok: false, counts, error: error.message };
+    if (error) return { ok: false, counts, orphanSets, error: error.message };
   }
   counts.sets = ownedSets.length;
 
   await syncUserSettings(settings);
   console.log(`[Sync] Pushed ${counts.exercises} exercises, ${counts.workouts} workouts, ${counts.sets} sets to the cloud`);
-  return { ok: true, counts };
+  return { ok: true, counts, orphanSets };
 }
 
 // ==================== EXERCISE SYNC ====================
