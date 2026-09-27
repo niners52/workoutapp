@@ -313,14 +313,18 @@ export function SettingsScreen() {
           onPress: async () => {
             try {
               const result = await pushAllToCloud();
+              const skipped = result.orphanSets > 0 ? `\n\n${result.orphanSets} set(s) were skipped: the workout or exercise they belong to is missing on this phone too.` : '';
               if (result.ok) {
                 await refreshAll();
                 Alert.alert(
                   'Backup Complete',
-                  `Uploaded ${result.counts.exercises} exercises, ${result.counts.workouts} workouts and ${result.counts.sets} sets.`,
+                  `Uploaded ${result.counts.exercises} exercises, ${result.counts.workouts} workouts and ${result.counts.sets} sets.${skipped}`,
                 );
               } else {
-                Alert.alert('Backup Failed', result.error || 'Could not upload to the cloud.');
+                Alert.alert(
+                  'Backup Failed',
+                  `${result.error || 'Could not upload to the cloud.'}\n\nGot as far as ${result.counts.exercises} exercises, ${result.counts.workouts} workouts, ${result.counts.sets} sets.${skipped}`,
+                );
               }
             } catch (error) {
               Alert.alert('Backup Failed', error instanceof Error ? error.message : 'Could not upload to the cloud');
