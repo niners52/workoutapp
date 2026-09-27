@@ -42,6 +42,7 @@ import {
   getLastSyncTimestamp,
   getPendingOperationsCount,
   clearPendingSyncQueue,
+  pushAllToCloud,
   isAuthenticated as checkIsAuthenticated,
   SyncProgress,
 } from '../services/syncService';
@@ -293,6 +294,41 @@ export function SettingsScreen() {
   const handleClearStuckTimers = async () => {
     await liveActivityService.endAllActivities();
     Alert.alert('Timers Cleared', 'All Live Activities and stuck timers have been cleared.');
+  };
+
+  /**
+   * The other direction: upload everything on this phone, overwriting the
+   * cloud. Ordinary sync only pushes changes, so a value that exists here but
+   * was blanked in the cloud has no other way back up. Run it from the phone
+   * whose copy is the good one.
+   */
+  const handleBackUpNow = () => {
+    Alert.alert(
+      'Back Up Now',
+      'This uploads everything on this phone and replaces the cloud copy of it.\n\nUse it from the phone with the data you want to keep.\n\nContinue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Upload',
+          onPress: async () => {
+            try {
+              const result = await pushAllToCloud();
+              if (result.ok) {
+                await refreshAll();
+                Alert.alert(
+                  'Backup Complete',
+                  `Uploaded ${result.counts.exercises} exercises, ${result.counts.workouts} workouts and ${result.counts.sets} sets.`,
+                );
+              } else {
+                Alert.alert('Backup Failed', result.error || 'Could not upload to the cloud.');
+              }
+            } catch (error) {
+              Alert.alert('Backup Failed', error instanceof Error ? error.message : 'Could not upload to the cloud');
+            }
+          },
+        },
+      ],
+    );
   };
 
   /**
@@ -2007,6 +2043,12 @@ export function SettingsScreen() {
               title="Export as CSV"
               subtitle="Sets only, spreadsheet compatible"
               onPress={handleExportCSV}
+              showChevron
+            />
+            <ListItem
+              title="Back Up Now"
+              subtitle="Upload this phone's data, replacing the cloud copy"
+              onPress={handleBackUpNow}
               showChevron
             />
             <ListItem
