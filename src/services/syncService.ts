@@ -531,6 +531,70 @@ export async function reconcileCloud(force: boolean = false): Promise<ReconcileR
   return result;
 }
 
+/**
+ * Upload everything on this phone, overwriting the cloud row by row.
+ *
+ * Ordinary sync only pushes what changes, and reconcileCloud only adds rows the
+ * cloud is missing, so a field that exists locally but was blanked in the cloud
+ * (target sets, unilateral flags and notes were, when a new phone restored on a
+ * build that dropped them) has no way back up. This is that way back up.
+ *
+ * Run it from the phone whose copy is the good one: it replaces the cloud's
+ * version of these rows with this phone's.
+ */
+export async function pushAllToCloud(): Promise<{
+  ok: boolean;
+  counts: { exercises: number; workouts: number; sets: number };
+  error?: string;
+}> {
+  const counts = { exercises: 0, workouts: 0, sets: 0 };
+  const userId = await getUserId();
+  if (!userId) return { ok: false, counts, error: 'not signed in' };
+
+  const [exercises, workouts, sets, settings] = await Promise.all([
+    getExercises(),
+    getWorkouts(),
+    getSets(),
+    getUserSettings(),
+  ]);
+
+  const pushBatches = async <T>(rows: T[], table: string, optional: string[]): Promise<string | null> => {
+    for (const batch of chunkArray(rows, 50)) {
+      const { error } = await upsertTolerant(table, batch as Record<string, any>[], optional);
+      if (error) return error.message;
+    }
+    return null;
+  };
+
+  const exerciseError = await pushBatches(
+    exercises.map(e => exerciseRow(e, userId)),
+    'exercises',
+    OPTIONAL_COLUMNS_BY_TABLE.exercises || [],
+  );
+  if (exerciseError) return { ok: false, counts, error: exerciseError };
+  counts.exercises = exercises.length;
+
+  const workoutError = await pushBatches(
+    workouts.map(w => workoutRow(w, userId)),
+    'workouts',
+    OPTIONAL_COLUMNS_BY_TABLE.workouts || [],
+  );
+  if (workoutError) return { ok: false, counts, error: workoutError };
+  counts.workouts = workouts.length;
+
+  const knownWorkouts = new Set(workouts.map(w => w.id));
+  const ownedSets = sets.filter(s => knownWorkouts.has(s.workoutId));
+  for (const batch of chunkArray(ownedSets, 50)) {
+    const { error } = await upsertSets(batch, userId);
+    if (error) return { ok: false, counts, error: error.message };
+  }
+  counts.sets = ownedSets.length;
+
+  await syncUserSettings(settings);
+  console.log(`[Sync] Pushed ${counts.exercises} exercises, ${counts.workouts} workouts, ${counts.sets} sets to the cloud`);
+  return { ok: true, counts };
+}
+
 // ==================== EXERCISE SYNC ====================
 
 export async function syncExercise(exercise: Exercise): Promise<void> {
