@@ -40,14 +40,15 @@ export function variantsFor(exercise: Pick<Exercise, 'id' | 'equipment'> | null 
 }
 
 /**
- * The sets that are comparable to `variant`: the ones done that way, or the
- * untagged ones when that variant has no history yet. Without a variant (an
- * exercise that has none) every set is comparable.
+ * The sets that are comparable to `variant`: the ones done that way, plus every
+ * untagged set. Untagged sets predate variants and could have been either way,
+ * so they stay in the comparison — dropping them the moment one tagged set
+ * exists made the second set of a session a "PR" against a history of one.
+ * Only the other variant's sets are excluded, which is the whole point.
  */
 export function setsForVariant<T extends Pick<WorkoutSet, 'variant'>>(sets: T[], variant: string | undefined): T[] {
   if (!variant) return sets;
-  const tagged = sets.filter(s => s.variant === variant);
-  return tagged.length > 0 ? tagged : sets.filter(s => !s.variant);
+  return sets.filter(s => !s.variant || s.variant === variant);
 }
 
 /**
