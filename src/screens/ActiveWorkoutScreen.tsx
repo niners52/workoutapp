@@ -34,6 +34,7 @@ import { getExerciseFatigueWarnings, ExerciseFatigueSignal } from '../services/f
 import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
 import { defaultVariant, setsForVariant, variantsFor } from '../services/exerciseVariants';
 import { targetSetsFor } from '../services/targetSets';
+import { doneThisWeekByExercise, type DoneThisWeek } from '../services/weekProgress';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -129,6 +130,13 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const [targetSetOverrides, setTargetSetOverrides] = useState<Record<string, number>>({});
   // Which way each variant exercise is being done right now (e.g. cable fly: 'Wide' / 'Narrow').
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+
+  // What each exercise already has this week, so a card can say "already done
+  // Saturday" instead of the plan silently repeating it.
+  const doneThisWeekByExerciseId = useMemo(
+    () => doneThisWeekByExercise(sets, userSettings?.weekStartDay ?? 'monday', new Date(), activeWorkout?.workout.id),
+    [sets, userSettings?.weekStartDay, activeWorkout?.workout.id],
+  );
 
   /** Target sets for one exercise in this workout; lower on a deload workout. */
   const targetSetsForExercise = (exercise: Exercise | undefined | null, exerciseId: string): number =>
@@ -396,17 +404,6 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   };
 
   const handleFinishWorkout = () => {
-    const minSets = userSettings?.minimumSetsPerExercise ?? 3;
-
-    // Check for exercises below minimum sets
-    const incompleteExercises = activeWorkout.exerciseIds
-      .map(id => {
-        const exercise = exercises.find(e => e.id === id);
-        const setsLogged = getSetsForExercise(id).length;
-        return { exercise, setsLogged };
-      })
-      .filter(item => item.exercise && item.setsLogged > 0 && item.setsLogged < minSets);
-
     const doFinish = async () => {
       // Calculate muscle group breakdown before finishing
       const muscleGroupSetsMap = new Map<string, { sets: number; isSecondary: boolean }>();
@@ -499,30 +496,10 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
       }
     };
 
-    // Show warning if any exercises are below minimum
-    if (incompleteExercises.length > 0) {
-      const exerciseList = incompleteExercises
-        .map(item => `• ${item.exercise!.name}: ${item.setsLogged} set${item.setsLogged !== 1 ? 's' : ''}`)
-        .join('\n');
-
-      showAlert(
-        'Incomplete Exercises',
-        `The following exercises have fewer than ${minSets} sets:\n\n${exerciseList}\n\nFinish anyway?`,
-        [
-          { text: 'Keep Going', style: 'cancel' },
-          { text: 'Finish Anyway', onPress: doFinish },
-        ]
-      );
-    } else {
-      showAlert(
-        'Finish Workout',
-        'Are you sure you want to finish this workout?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Finish', onPress: doFinish },
-        ]
-      );
-    }
+    // Finish means finish. Leaving exercises unfinished is a normal way to
+    // train (a short session now, the rest tonight), so it is not worth a
+    // confirmation — whatever is left shows up on "Left this week" instead.
+    doFinish();
   };
 
   const handleCancelWorkout = () => {
@@ -1088,6 +1065,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     atTravelGym={activeWorkout.workout.locationId === TRAVEL_LOCATION_ID}
                     swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
                     onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
+                    doneThisWeek={doneThisWeekByExerciseId.get(exerciseId)}
                     variants={variantsFor(exercise)}
                     selectedVariant={selectedVariants[exerciseId]}
                     onSelectVariant={variant => handleSelectVariant(exerciseId, variant)}
@@ -1844,6 +1822,8 @@ interface ExerciseCardProps {
   atTravelGym?: boolean;
   swapConflict?: SwapConflict;
   onKeepSwapConflict?: () => void;
+  /** Set earlier this week in another session, so today's plan repeats it. */
+  doneThisWeek?: DoneThisWeek;
   /** Ways this exercise is done (e.g. 'Wide' / 'Narrow'); null when it has none. */
   variants?: readonly string[] | null;
   selectedVariant?: string;
@@ -1883,6 +1863,7 @@ function ExerciseCard({
   atTravelGym,
   swapConflict,
   onKeepSwapConflict,
+  doneThisWeek,
   variants,
   selectedVariant,
   onSelectVariant,
@@ -1913,6 +1894,12 @@ function ExerciseCard({
           <Text style={[styles.exerciseSets, isComplete && styles.exerciseSetsComplete]}>
             {setLabel}
           </Text>
+          {/* Doing it twice in a week is fine; the point is knowing you already did. */}
+          {doneThisWeek?.inEarlierWorkout && (
+            <Text style={styles.doneThisWeek} testID="done-this-week">
+              ✓ Already done {doneThisWeek.dayLabel} ({doneThisWeek.sets} set{doneThisWeek.sets === 1 ? '' : 's'} this week)
+            </Text>
+          )}
         </View>
         <View style={styles.exerciseHeaderRight}>
           {/* Favorite mid-workout, when "this one's a keeper" is freshest */}
@@ -2382,6 +2369,11 @@ const styles = StyleSheet.create({
   },
   variantTextSelected: {
     color: colors.background,
+  },
+  doneThisWeek: {
+    fontSize: typography.size.xs,
+    color: colors.healthGood,
+    marginTop: 2,
   },
   setVariantTag: {
     fontSize: typography.size.xs,

@@ -5,3 +5,5 @@ export { StreakCounters } from './StreakCounters';
 export { WeeklyGrid } from './WeeklyGrid';
 export { WeeklyTotals } from './WeeklyTotals';
 export { CatchUpCard } from './CatchUpCard';
+export { LeftThisWeekCard } from './LeftThisWeekCard';
+export { RecurringSwapCard } from './RecurringSwapCard';
