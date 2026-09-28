@@ -50,15 +50,29 @@ import { getLocalReminders, loadReminders, setReminderDone } from '../services/h
 import { computeWeeklyVolume } from '../services/analytics';
 import {
   dismissMissedExercise,
+  dismissSwapPromotion,
+  getDismissedSwapPromotions,
   getExercises,
   getExerciseSwaps,
   getMissedExerciseDismissals,
+  getRoutines,
   getSets,
+  getTemplates,
   getUserSettings,
   getWorkouts,
+  replaceExerciseInTemplates,
 } from '../services/storage';
-import { getMissedExercisesThisWeek, getTrainingWeekStart, type MissedExercise } from '../services/missedExercises';
-import { CatchUpCard } from '../components/goals';
+import { findRecurringSwaps, type RecurringSwap } from '../services/recurringSwaps';
+import { calculateAllMuscleStrengthLevels, getStartSnapshotCutoff } from '../services/strengthStandards';
+import { strengthHighlights, type StrengthHighlight } from '../services/strengthProgress';
+import { StrengthProgressCard } from '../components/strength';
+import { useBodyWeight } from '../hooks/useBodyWeight';
+import { syncTemplate } from '../services/syncService';
+import { getTrainingWeekStart } from '../services/missedExercises';
+import { remainingThisWeek, type RemainingExercise } from '../services/weekProgress';
+import { getTemplatesForDay } from '../services/analytics';
+import { DAY_NAMES } from '../types';
+import { LeftThisWeekCard, RecurringSwapCard } from '../components/goals';
 import { InsightsCard } from '../components/insights/InsightsCard';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
@@ -76,8 +90,9 @@ const START_BUTTON_HEIGHT = 80;
 
 export function HealthDashboardScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { userSettings, bodyMeasurements, refreshBodyMeasurements } = useData();
+  const { userSettings, bodyMeasurements, refreshBodyMeasurements, refreshTemplates } = useData();
   const { isWorkoutActive, startWorkout } = useWorkout();
+  const { weightLbs: bodyWeightLbs } = useBodyWeight();
   const workoutBarPadding = useWorkoutBarPadding();
   const targets = userSettings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
   const weekStartDay = userSettings.weekStartDay;
@@ -86,7 +101,9 @@ export function HealthDashboardScreen() {
   const [nutrition, setNutrition] = useState<NutritionLoad | null>(null);
   const [volume, setVolume] = useState<MuscleGroupVolume[] | null>(null);
   const [volumeError, setVolumeError] = useState(false);
-  const [missed, setMissed] = useState<MissedExercise[] | null>(null);
+  const [remaining, setRemaining] = useState<RemainingExercise[] | null>(null);
+  const [recurringSwaps, setRecurringSwaps] = useState<RecurringSwap[] | null>(null);
+  const [strength, setStrength] = useState<StrengthHighlight[] | null>(null);
   const [sleep, setSleep] = useState<SleepInput | null>(null);
   const [reminders, setReminders] = useState<HealthReminder[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,23 +119,58 @@ export function HealthDashboardScreen() {
   // after the Apple Health sync, which never changes sets) and shared by both views.
   const loadTraining = useCallback(async () => {
     try {
-      const [sets, workouts, exercises, settings, swaps, dismissals] = await Promise.all([
+      const [sets, workouts, exercises, settings, dismissals, routines, templates, swaps, swapDismissals] = await Promise.all([
         getSets(),
         getWorkouts(),
         getExercises(),
         getUserSettings(),
-        getExerciseSwaps(),
         getMissedExerciseDismissals(),
+        getRoutines(),
+        getTemplates(),
+        getExerciseSwaps(),
+        getDismissedSwapPromotions(),
       ]);
       // Same counting rules as the Weekly Volume panel.
       setVolume(computeWeeklyVolume(sets, workouts, exercises, settings, new Date()).muscleGroups);
       setVolumeError(false);
-      setMissed(getMissedExercisesThisWeek(workouts, sets, swaps, exercises, settings.weekStartDay, dismissals));
+
+      // Everything this week's routine asks for, day by day, so a Thursday
+      // evening can pick up what Monday and Tuesday left behind.
+      const routine = routines.find(r => r.isActive);
+      const templateById = new Map(templates.map(t => [t.id, t]));
+      const planned = routine
+        ? DAY_NAMES.flatMap((dayLabel, day) =>
+            getTemplatesForDay(routine, day)
+              .flatMap(id => templateById.get(id)?.exerciseIds ?? [])
+              .map(exerciseId => ({ exerciseId, dayLabel })),
+          )
+        : [];
+      const weekKey = getTrainingWeekStart(settings.weekStartDay);
+      const dropped = new Set(dismissals.filter(d => d.weekStart === weekKey).map(d => d.exerciseId));
+      setRemaining(remainingThisWeek(planned, workouts, sets, exercises, settings.weekStartDay, new Date(), dropped));
+
+      const ignored = new Set(swapDismissals);
+      setRecurringSwaps(
+        findRecurringSwaps(swaps, exercises, settings.weekStartDay).filter(s => !ignored.has(s.key)),
+      );
+
+      // Where each lift stands against the strength standards, and what the
+      // next level costs. Compared with the first four weeks of training, so a
+      // level earned since then can be called out.
+      if (bodyWeightLbs) {
+        const cutoff = getStartSnapshotCutoff(workouts);
+        const levelsNow = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs);
+        const levelsAtStart = cutoff
+          ? calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs, { beforeDate: cutoff })
+          : null;
+        setStrength(strengthHighlights(levelsNow, levelsAtStart));
+      }
     } catch (e) {
       console.error('[HealthDashboard] Training load error:', e);
       setVolumeError(true);
     }
-  }, []);
+    // Body weight decides the strength levels, so a fresh weigh-in re-reads them.
+  }, [bodyWeightLbs]);
 
   const loadHealth = useCallback(async () => {
     const at = new Date();
@@ -166,32 +218,65 @@ export function HealthDashboardScreen() {
     setRefreshing(false);
   }, [syncHealthKit, loadTraining, loadHealth]);
 
-  // Remove a row from the catch-up list for the rest of this training week.
-  const handleDismissMissed = useCallback(
+  // Drop a row for the rest of this training week (a swap you meant, say).
+  const handleDismissRemaining = useCallback(
     async (exerciseId: string) => {
-      setMissed(prev => prev?.filter(m => m.exercise.id !== exerciseId) ?? prev);
+      setRemaining(prev => prev?.filter(m => m.exercise.id !== exerciseId) ?? prev);
       try {
         await dismissMissedExercise(exerciseId, getTrainingWeekStart(weekStartDay));
       } catch (e) {
-        console.error('[HealthDashboard] Dismiss missed exercise error:', e);
+        console.error('[HealthDashboard] Dismiss remaining exercise error:', e);
       }
     },
     [weekStartDay],
   );
 
-  // One tap: an active workout preloaded with everything on the catch-up list.
-  const handleStartCatchUp = useCallback(async () => {
-    const ids = missed?.map(m => m.exercise.id) ?? [];
+  // "Do this every week" -> rewrite the templates, and stop treating the
+  // original as work still owed.
+  const handleMakeSwapPermanent = useCallback(
+    async (swap: RecurringSwap) => {
+      setRecurringSwaps(prev => prev?.filter(s => s.key !== swap.key) ?? prev);
+      try {
+        const changed = await replaceExerciseInTemplates(swap.originalExerciseId, swap.currentExerciseId);
+        await dismissSwapPromotion(swap.key);
+        await refreshTemplates();
+        const templates = await getTemplates();
+        for (const template of templates.filter(t => changed.includes(t.id))) {
+          syncTemplate(template).catch(e => console.log('Template sync error:', e));
+        }
+        Alert.alert(
+          'Template updated',
+          changed.length > 0
+            ? `${swap.currentName} replaces ${swap.originalName} in ${changed.length} template${changed.length === 1 ? '' : 's'}.`
+            : `${swap.originalName} was not in any template, so nothing needed changing.`,
+        );
+        await loadTraining();
+      } catch (e) {
+        console.error('[HealthDashboard] Make swap permanent error:', e);
+        Alert.alert('Error', 'Could not update the template.');
+      }
+    },
+    [refreshTemplates, loadTraining],
+  );
+
+  const handleDismissSwap = useCallback(async (swap: RecurringSwap) => {
+    setRecurringSwaps(prev => prev?.filter(s => s.key !== swap.key) ?? prev);
+    await dismissSwapPromotion(swap.key).catch(e => console.error('[HealthDashboard] Dismiss swap error:', e));
+  }, []);
+
+  // One tap: an active workout preloaded with everything still outstanding.
+  const handleStartRemaining = useCallback(async () => {
+    const ids = remaining?.map(m => m.exercise.id) ?? [];
     if (ids.length === 0) return;
     try {
       // Returns null if the user chose to keep an in-progress workout.
       const workoutId = await startWorkout(undefined, ids);
       if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
     } catch (e) {
-      console.error('[HealthDashboard] Start catch-up workout error:', e);
-      Alert.alert('Error', 'Could not start the catch-up workout.');
+      console.error('[HealthDashboard] Start remaining workout error:', e);
+      Alert.alert('Error', 'Could not start the workout.');
     }
-  }, [missed, startWorkout, navigation]);
+  }, [remaining, startWorkout, navigation]);
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) navigation.navigate('MainTabs', { screen: 'Train' });
@@ -297,14 +382,24 @@ export function HealthDashboardScreen() {
         <View style={styles.tierHeader}>
           <Text style={styles.tierTitle}>This week</Text>
         </View>
-        {missed && missed.length > 0 && (
+        {remaining && remaining.length > 0 && (
           <View style={styles.catchUp}>
-            <Text style={styles.catchUpTitle}>Missed this week — catch up</Text>
-            <CatchUpCard
-              items={missed}
+            <Text style={styles.catchUpTitle}>Left this week ({remaining.length})</Text>
+            <LeftThisWeekCard
+              items={remaining}
               onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
-              onDismiss={handleDismissMissed}
-              onStart={handleStartCatchUp}
+              onDismiss={handleDismissRemaining}
+              onStart={handleStartRemaining}
+            />
+          </View>
+        )}
+        {recurringSwaps && recurringSwaps.length > 0 && (
+          <View style={styles.catchUp}>
+            <Text style={styles.catchUpTitle}>This swap keeps happening</Text>
+            <RecurringSwapCard
+              items={recurringSwaps}
+              onMakePermanent={handleMakeSwapPermanent}
+              onDismiss={handleDismissSwap}
             />
           </View>
         )}
@@ -323,6 +418,13 @@ export function HealthDashboardScreen() {
             <View style={styles.half} />
           )}
         </View>
+
+        {strength && strength.length > 0 && (
+          <View style={styles.catchUp}>
+            <Text style={styles.catchUpTitle}>Strength</Text>
+            <StrengthProgressCard items={strength} onPress={openAnalytics} />
+          </View>
+        )}
 
         <InsightsCard />
 

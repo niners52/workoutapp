@@ -2221,6 +2221,42 @@ export async function dismissMissedExercise(exerciseId: string, weekStart: strin
   await setItem(STORAGE_KEYS.MISSED_DISMISSALS, [...thisWeek, { exerciseId, weekStart }]);
 }
 
+// ==================== RECURRING SWAP PROMOTIONS ====================
+
+const SWAP_PROMOTION_KEY = '@workout_tracker/swap_promotions_dismissed';
+
+/** Swap pairs the user told the app to stop offering to make permanent. */
+export async function getDismissedSwapPromotions(): Promise<string[]> {
+  return getItem<string[]>(SWAP_PROMOTION_KEY, []);
+}
+
+export async function dismissSwapPromotion(key: string): Promise<void> {
+  const existing = await getDismissedSwapPromotions();
+  if (existing.includes(key)) return;
+  await setItem(SWAP_PROMOTION_KEY, [...existing, key]);
+}
+
+/**
+ * Put `newExerciseId` wherever `oldExerciseId` appears in templates — the
+ * "make this swap permanent" action. A template that already has the
+ * replacement just loses the original. Returns the templates that changed, so
+ * the caller can sync them.
+ */
+export async function replaceExerciseInTemplates(oldExerciseId: string, newExerciseId: string): Promise<string[]> {
+  const templates = await getTemplates();
+  const changed: string[] = [];
+  const updated = templates.map(template => {
+    if (!template.exerciseIds.includes(oldExerciseId)) return template;
+    changed.push(template.id);
+    const exerciseIds = template.exerciseIds.includes(newExerciseId)
+      ? template.exerciseIds.filter(id => id !== oldExerciseId)
+      : template.exerciseIds.map(id => (id === oldExerciseId ? newExerciseId : id));
+    return { ...template, exerciseIds };
+  });
+  if (changed.length > 0) await setItem(STORAGE_KEYS.TEMPLATES, updated);
+  return changed;
+}
+
 // ==================== SLEEP FALLBACK DISMISSAL ====================
 
 export async function getSleepFallbackDismissed(): Promise<string | null> {
