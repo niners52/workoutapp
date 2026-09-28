@@ -277,9 +277,23 @@ function analyzeWeeklyVolumeTrend(
   let recentWorkouts = 0;
   let baselineWorkouts = 0;
 
+  // A deload week is meant to be lighter, so comparing with one on either side
+  // says nothing about fatigue: it either invents a decline or hides one behind
+  // an artificially low baseline. Skip the signal entirely when either window
+  // contains a deload workout, and never count deload sets.
+  const deloadWorkoutIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
+  const deloadInWindow = workouts.some(w => {
+    if (!w.isDeload) return false;
+    const date = workoutDateMap.get(w.id);
+    if (!date) return false;
+    return (date >= thisWeekStart && date <= now) || (date >= baselineWeekStart && date <= baselineWeekEnd);
+  });
+  if (deloadInWindow) return null;
+
   const countedWorkouts = new Set<string>();
 
   for (const set of sets) {
+    if (deloadWorkoutIds.has(set.workoutId)) continue;
     const date = workoutDateMap.get(set.workoutId);
     if (!date) continue;
 

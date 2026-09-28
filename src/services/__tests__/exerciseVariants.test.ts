@@ -38,16 +38,26 @@ test('last time and PRs compare within a variant', () => {
   expect(setsForVariant(history, undefined)).toHaveLength(2);
 });
 
-test('a variant with no history yet falls back to untagged sets, never to the other variant', () => {
+test('untagged history stays comparable to either variant; only the other variant is excluded', () => {
   const history = [
     set('u1', 'cable-curl', 105, '2026-09-17T11:00:00Z'), // logged before variants existed
     set('u2', 'cable-curl', 100, '2026-09-10T11:00:00Z'),
     set('w1', 'cable-curl', 90, '2026-09-20T11:00:00Z', 'Wide'),
+    set('n1', 'cable-curl', 60, '2026-09-21T11:00:00Z', 'Narrow'),
   ];
-  // Narrow has nothing of its own: the untagged history stands in.
-  expect(setsForVariant(history, 'Narrow').map(s => s.id)).toEqual(['u1', 'u2']);
-  // Wide has its own set, so only that counts.
-  expect(setsForVariant(history, 'Wide').map(s => s.id)).toEqual(['w1']);
+  expect(setsForVariant(history, 'Narrow').map(s => s.id)).toEqual(['u1', 'u2', 'n1']);
+  expect(setsForVariant(history, 'Wide').map(s => s.id)).toEqual(['u1', 'u2', 'w1']);
+});
+
+test('the first tagged set of a session is not a PR against itself', () => {
+  // The bug: one Wide set logged today used to hide years of untagged history,
+  // so the next set at any weight looked like a personal record.
+  const history = [
+    set('u1', 'cable-curl', 105, '2026-09-17T11:00:00Z'),
+    set('w1', 'cable-curl', 90, '2026-09-28T11:00:00Z', 'Wide'),
+  ];
+  const comparable = setsForVariant(history, 'Wide');
+  expect(Math.max(...comparable.map(s => s.weight))).toBe(105);
 });
 
 test('merge: wide sets are tagged Wide, narrow sets move onto the fly tagged Narrow, others untouched', () => {
