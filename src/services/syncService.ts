@@ -155,6 +155,7 @@ function exerciseRow(exercise: Exercise, userId: string) {
     // Per-exercise target sets lived only on the phone until now, so a restore
     // reset every exercise to the global default.
     target_sets: exercise.targetSets ?? null,
+    target_reps: exercise.targetReps ?? null,
     // Prep movements log their sets as warm-ups, which stay out of weekly volume.
     default_warmup: exercise.defaultWarmup ?? false,
     notes: exercise.notes || null,

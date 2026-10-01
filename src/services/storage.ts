@@ -36,6 +36,8 @@ import { effectiveCompletedAt } from './sessionTimeout';
 import { LATS_WEEKLY_TARGET, remapToLatsPrimary, withLatsFocusGroup } from './latsRemap';
 import { CABLE_FLY_MERGE, tagSetsForVariantMerge } from './exerciseVariants';
 import { splitUpperBack } from './upperBackSplit';
+import { applyExerciseRecordFix } from './exerciseRecordFixes';
+import { FULL_BODY_DAYS, fullBodyPrescriptions } from '../data/fullBodyTemplates';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -67,7 +69,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 19;
+const CURRENT_MIGRATION_VERSION = 20;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -197,6 +199,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 19) {
     await migrateToV19();
+  }
+
+  if (currentVersion < 20) {
+    await migrateToV20();
   }
 
   // Update migration version
@@ -979,6 +985,75 @@ async function migrateToV19(): Promise<void> {
   });
 
   console.log(`Migration to V19 complete - ${changed.length} exercises remapped, targets revised`);
+}
+
+/**
+ * V20: three mis-described exercises, the six full-body days, and the targets
+ * that go with them.
+ *  - A "Front raise" that was always a pull-through, and two exercises left
+ *    with no primary group at all, so their sets earned no credit.
+ *  - Full Body 1-6 replace the earlier drafts of the same names: same
+ *    template ids, so routine day assignments keep working.
+ *  - Every exercise on those days gets its 3 sets and rep range, and the
+ *    weekly targets move to the 129-set spread in WEEKLY_SET_TARGETS.
+ * Changed exercises are snapshotted first; everything re-syncs to the cloud.
+ */
+async function migrateToV20(): Promise<void> {
+  console.log('Running migration to V20 - exercise record fixes, full-body templates, targets...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const prescriptions = fullBodyPrescriptions();
+  const before: Exercise[] = [];
+  const changed: string[] = [];
+  const missing: string[] = [];
+
+  const updated = exercises.map(e => {
+    const fixed = applyExerciseRecordFix(e) ?? e;
+    const item = prescriptions.get(e.id);
+    const next =
+      item && (fixed.targetSets !== item.sets || fixed.targetReps !== item.reps)
+        ? { ...fixed, targetSets: item.sets, targetReps: item.reps }
+        : fixed;
+    if (next === e) return e;
+    before.push(e);
+    changed.push(e.id);
+    return next;
+  });
+
+  // A template that points at an exercise this phone does not have would be a
+  // silent hole in the week, so say which one rather than writing it anyway.
+  const haveIds = new Set(exercises.map(e => e.id));
+  for (const id of prescriptions.keys()) if (!haveIds.has(id)) missing.push(id);
+  if (missing.length > 0) {
+    console.error(`Migration V20: ${missing.length} full-body exercises are missing from this phone: ${missing.join(', ')}`);
+  }
+
+  await snapshotExercises('V20 exercise record fixes and full-body prescriptions', before);
+  if (changed.length > 0) await setItem(STORAGE_KEYS.EXERCISES, updated);
+
+  // Templates are replaced by id: the earlier Full Body drafts carried the
+  // same ids, so a routine that already points at them keeps pointing at them.
+  const templates = await getItem<Template[]>(STORAGE_KEYS.TEMPLATES, SEED_TEMPLATES);
+  const replacements = new Map(FULL_BODY_DAYS.map(d => [d.template.id, d.template]));
+  const kept = templates.map(t => replacements.get(t.id) ?? t);
+  const existingIds = new Set(templates.map(t => t.id));
+  const added = FULL_BODY_DAYS.filter(d => !existingIds.has(d.template.id)).map(d => d.template);
+  await setItem(STORAGE_KEYS.TEMPLATES, [...kept, ...added]);
+
+  await updateUserSettings({ muscleGroupTargets: { ...WEEKLY_SET_TARGETS } });
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...changed])],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: true,
+    deletedExerciseIds: previous?.deletedExerciseIds ?? [],
+    templateIds: [...new Set([...(previous?.templateIds ?? []), ...FULL_BODY_DAYS.map(d => d.template.id)])],
+    setIds: previous?.setIds ?? [],
+  });
+
+  console.log(`Migration to V20 complete - ${changed.length} exercises updated, ${FULL_BODY_DAYS.length} full-body days written`);
 }
 
 // Reset storage (for debugging/testing)

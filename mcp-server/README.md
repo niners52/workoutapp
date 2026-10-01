@@ -244,7 +244,8 @@ Example calls (as the model would issue them):
   rather than shoulders only because a group in two categories would double count.
 - `upper_back` is the pre-2026-09-30 name for `mid_back` and is still accepted as an alias
   on input; nothing is stored under it.
-- Weekly targets total 125 sets across 16 groups.
+- Weekly targets total 129 sets across 15 groups (revised 2026-10-01 with the
+  six full-body days: traps 9, abs 9, calves 3, adductors 0).
 
 ### Exercise variants
 

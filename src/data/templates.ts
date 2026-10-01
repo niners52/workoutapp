@@ -1,4 +1,5 @@
 import { Template } from '../types';
+import { FULL_BODY_DAYS } from './fullBodyTemplates';
 
 // Seed templates with all templates from the spec
 export const SEED_TEMPLATES: Template[] = [
@@ -135,6 +136,11 @@ export const SEED_TEMPLATES: Template[] = [
       'ab-roller-knee-raise',
     ],
   },
+
+  // The six full-body days. Defined with their prescriptions in
+  // ./fullBodyTemplates so a fresh install seeds the same thing migration V20
+  // writes onto a phone that already has data.
+  ...FULL_BODY_DAYS.map(d => d.template),
 ];
 
 // Create a map for quick lookup by ID

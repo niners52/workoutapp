@@ -476,6 +476,12 @@ export interface VolumeRow {
   gap: number | null;
   tone: Tone;
   pinned: boolean;
+  /**
+   * For a focus row that tracks part of a group ("incline pressing") and has
+   * no target of its own: the group's target, so the count is read as a share
+   * of something rather than floating free.
+   */
+  share?: { ofTarget: number; groupLabel: string };
 }
 
 export interface WeeklyVolumeView {
@@ -520,13 +526,21 @@ export function weeklyVolumeView(
   const byGroup = new Map<string, MuscleGroupVolume>(muscleGroups.map(mg => [mg.muscleGroup, mg]));
   const names = MUSCLE_GROUP_DISPLAY_NAMES as Record<string, string>;
 
-  const makeRow = (key: string, label: string, muscleGroup: string, sets: number, target: number | null, pinned: boolean): VolumeRow => {
+  const makeRow = (
+    key: string,
+    label: string,
+    muscleGroup: string,
+    sets: number,
+    target: number | null,
+    pinned: boolean,
+    share?: { ofTarget: number; groupLabel: string },
+  ): VolumeRow => {
     const roundedSets = round1(sets);
     const gap = target === null ? null : round1(target - roundedSets);
     let tone: Tone = 'normal';
     if (gap !== null && gap <= 0) tone = 'muted';
     else if (gap !== null && !deload) tone = urgency(roundedSets, target!, daysElapsed);
-    return { key, label, muscleGroup, sets: roundedSets, target, gap, tone, pinned };
+    return { key, label, muscleGroup, sets: roundedSets, target, gap, tone, pinned, share };
   };
 
   const focus = t.focusGroups.map(f => {
@@ -538,7 +552,13 @@ export function weeklyVolumeView(
         ? mg.exercises.filter(e => e.exerciseName.toLowerCase().includes(filter)).reduce((s, e) => s + e.sets, 0)
         : mg.sets;
     const target = f.targetSets && f.targetSets > 0 ? f.targetSets : !filter && mg && mg.target > 0 ? mg.target : null;
-    return makeRow(`focus:${f.id}`, f.label, f.muscleGroup, sets, target, true);
+    // A row like "Upper chest (incline pressing)" has no target of its own.
+    // Rather than a bare set count, it reads against its group's target.
+    const share =
+      target === null && mg && mg.target > 0
+        ? { ofTarget: mg.target, groupLabel: names[f.muscleGroup] ?? f.muscleGroup }
+        : undefined;
+    return makeRow(`focus:${f.id}`, f.label, f.muscleGroup, sets, target, true, share);
   });
 
   // A focus row covering a whole group replaces that group's row in the sorted list.
