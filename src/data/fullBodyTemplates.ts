@@ -149,12 +149,15 @@ export const FULL_BODY_DAYS: FullBodyDay[] = DAYS.map(day => ({
   template: { ...day.template, exerciseIds: day.items.map(i => i.exerciseId) },
 }));
 
-/** Exercises whose location tags do not include the day they are scheduled on. */
+/**
+ * Exercises whose location tags do not include the day they are scheduled on.
+ * Both of these really are Vasa-only machines sitting on a Planet Fitness day;
+ * the gap list treats the muscle as covered however it gets trained, so the
+ * substitute is chosen at the gym rather than written into the template.
+ */
 export const LOCATION_MISMATCHES: Array<{ day: string; exerciseId: string; name: string; taggedFor: string }> = [
   { day: 'Full Body 4', exerciseId: '083c1c85-f090-4a50-a430-19393c82d080', name: 'Machine ISO Lateral Row', taggedFor: 'Vasa' },
   { day: 'Full Body 4', exerciseId: '558d0521-308c-418d-9f3a-40ef807cd6a9', name: 'Machine Seated machine lateral raise', taggedFor: 'Vasa' },
-  { day: 'Full Body 6', exerciseId: 'cable-lateral-raise', name: 'Cable Lateral Raise', taggedFor: 'Planet Fitness' },
-  { day: 'Full Body 6', exerciseId: 'import-tricep-dip-machine', name: 'Bodyweight Tricep Dip', taggedFor: 'Planet Fitness' },
 ];
 
 /** Every prescription, flattened: exercise id -> sets and reps. */

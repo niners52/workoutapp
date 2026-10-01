@@ -17,6 +17,8 @@ export interface ExerciseRecordFix {
   baseName?: string;
   primaryMuscleGroups?: PrimaryMuscleGroup[];
   secondaryMuscleGroups?: PrimaryMuscleGroup[];
+  /** Locations to add to the ones already tagged — never removes any. */
+  addLocationIds?: string[];
   /** Why, for the migration log and for anyone reading this later. */
   reason: string;
 }
@@ -42,6 +44,15 @@ export const EXERCISE_RECORD_FIXES: Record<string, ExerciseRecordFix> = {
     secondaryMuscleGroups: ['chest'],
     reason: 'no primary group — 168 sets earning no credit; a pullover is lats',
   },
+  'import-close-grip-bench-press': {
+    primaryMuscleGroups: ['triceps'],
+    secondaryMuscleGroups: ['chest'],
+    reason: 'no primary group — 45 sets earning no credit',
+  },
+  // Both are at both gyms; they were tagged for one, which made them look
+  // unavailable on the full-body day they sit on.
+  'cable-lateral-raise': { addLocationIds: ['vasa-'], reason: 'available at Vasa too' },
+  'import-tricep-dip-machine': { addLocationIds: ['vasa-'], reason: 'available at Vasa too' },
 };
 
 /**
@@ -61,12 +72,14 @@ export function applyExerciseRecordFix(exercise: Exercise): Exercise | null {
   // The singular field is deprecated but still seeded; leaving it set to the
   // old muscle is what hid these records in the first place.
   if (fix.primaryMuscleGroups) next.primaryMuscleGroup = fix.primaryMuscleGroups[0];
+  if (fix.addLocationIds) next.locationIds = [...new Set([...(exercise.locationIds ?? []), ...fix.addLocationIds])];
 
   const same =
     next.name === exercise.name &&
     next.baseName === exercise.baseName &&
     sameGroups(next.primaryMuscleGroups, exercise.primaryMuscleGroups) &&
     sameGroups(next.secondaryMuscleGroups, exercise.secondaryMuscleGroups) &&
+    sameGroups(next.locationIds, exercise.locationIds) &&
     next.primaryMuscleGroup === exercise.primaryMuscleGroup;
   return same ? null : next;
 }
