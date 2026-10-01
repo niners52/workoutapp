@@ -26,6 +26,7 @@ export function exerciseFromRow(row: any): Exercise {
     // weekly volume and target half the sets it should.
     ...(typeof row.is_unilateral === 'boolean' ? { isUnilateral: row.is_unilateral } : {}),
     ...(typeof row.target_sets === 'number' ? { targetSets: row.target_sets } : {}),
+    ...(typeof row.default_warmup === 'boolean' ? { defaultWarmup: row.default_warmup } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
   } as Exercise;
 }
@@ -54,6 +55,7 @@ export function setFromRow(row: any): WorkoutSet {
     loggedAt: row.logged_at,
     // Wide / Narrow on an exercise with variants.
     ...(row.variant ? { variant: row.variant } : {}),
+    ...(typeof row.is_warmup === 'boolean' ? { isWarmup: row.is_warmup } : {}),
   } as WorkoutSet;
 }
 

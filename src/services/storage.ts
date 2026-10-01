@@ -22,6 +22,7 @@ import {
   DEFAULT_USER_SETTINGS,
   DEFAULT_HEALTH_TARGETS,
   DEFAULT_LOCATIONS,
+  WEEKLY_SET_TARGETS,
   DEFAULT_DAILY_GOALS,
   DEFAULT_WEEKLY_GOALS,
   TRAVEL_LOCATION_ID,
@@ -34,6 +35,7 @@ import { IMPORTED_WORKOUTS, IMPORTED_SETS } from '../data/importedWorkouts';
 import { effectiveCompletedAt } from './sessionTimeout';
 import { LATS_WEEKLY_TARGET, remapToLatsPrimary, withLatsFocusGroup } from './latsRemap';
 import { CABLE_FLY_MERGE, tagSetsForVariantMerge } from './exerciseVariants';
+import { splitUpperBack } from './upperBackSplit';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -65,7 +67,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 18;
+const CURRENT_MIGRATION_VERSION = 19;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -191,6 +193,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 18) {
     await migrateToV18();
+  }
+
+  if (currentVersion < 19) {
+    await migrateToV19();
   }
 
   // Update migration version
@@ -917,6 +923,62 @@ async function migrateToV18(): Promise<void> {
     setIds: [...new Set([...(previous?.setIds ?? []), ...changedIds])],
   });
   console.log(`Migration to V18 complete - ${changedIds.length} cable fly sets tagged, ${templateIds.length} templates updated`);
+}
+
+/**
+ * V19: three changes to how volume is counted.
+ *  - upper_back splits into mid_back (rows) and rear_delts (face pulls,
+ *    reverse flyes); a shrug and a pulldown lose it as a stray second group.
+ *  - The rotator-cuff prep work logs as warm-up, so it stays in history but
+ *    out of weekly volume. Its weekly target goes with it.
+ *  - Weekly targets are revised to the 125-set spread in WEEKLY_SET_TARGETS.
+ * Affected exercises are snapshotted first; everything re-syncs to the cloud.
+ */
+async function migrateToV19(): Promise<void> {
+  console.log('Running migration to V19 - upper back split, warm-up sets, revised targets...');
+
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const before: Exercise[] = [];
+  const changed: string[] = [];
+  const updated = exercises.map(e => {
+    const next = splitUpperBack(e);
+    if (!next) return e;
+    before.push(e);
+    changed.push(e.id);
+    return next;
+  });
+
+  await snapshotExercises('V19 upper back split and warm-up defaults', before);
+  if (changed.length > 0) await setItem(STORAGE_KEYS.EXERCISES, updated);
+
+  // Targets are replaced wholesale: the groups themselves changed, so merging
+  // the old numbers would leave upper_back and rotator_cuff behind.
+  const settings = await getUserSettings();
+  await updateUserSettings({ muscleGroupTargets: { ...WEEKLY_SET_TARGETS } });
+
+  // Focus rows point at muscle groups; the mid-back row named the old one.
+  const healthTargets = settings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
+  await updateUserSettings({
+    healthTargets: {
+      ...healthTargets,
+      focusGroups: healthTargets.focusGroups.map(f =>
+        (f.muscleGroup as string) === 'upper_back' ? { ...f, muscleGroup: 'mid_back' as const } : f,
+      ),
+    },
+  });
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...changed])],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: true,
+    deletedExerciseIds: previous?.deletedExerciseIds ?? [],
+    templateIds: previous?.templateIds ?? [],
+    setIds: previous?.setIds ?? [],
+  });
+
+  console.log(`Migration to V19 complete - ${changed.length} exercises remapped, targets revised`);
 }
 
 // Reset storage (for debugging/testing)

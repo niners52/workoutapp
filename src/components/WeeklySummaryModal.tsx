@@ -327,23 +327,23 @@ export function WeeklySummaryModal({ visible, onDismiss, weekStart }: Props) {
             )}
 
             {/* Goal Hit Rates */}
-            {(userSettings?.dailyGoals?.calories || userSettings?.dailyGoals?.protein) && (
+            {(
               <Card style={styles.goalsCard}>
                 <Text style={styles.sectionTitle}>Goal Progress</Text>
                 <View style={styles.goalRows}>
-                  {userSettings?.dailyGoals?.calories && (
+                  {(
                     <View style={styles.goalRow}>
                       <View style={styles.goalInfo}>
-                        <MaterialCommunityIcons name="fire" size={20} color={colors.caloriesRing} />
+                        <MaterialCommunityIcons name="fire" size={20} color={colors.chartCardio} />
                         <Text style={styles.goalLabel}>Calorie Goal</Text>
                       </View>
                       <Text style={styles.goalValue}>{data.calorieGoalDays}/7 days</Text>
                     </View>
                   )}
-                  {userSettings?.dailyGoals?.protein && (
+                  {(
                     <View style={styles.goalRow}>
                       <View style={styles.goalInfo}>
-                        <MaterialCommunityIcons name="food-drumstick" size={20} color={colors.proteinRing} />
+                        <MaterialCommunityIcons name="food-drumstick" size={20} color={colors.chartProtein} />
                         <Text style={styles.goalLabel}>Protein Goal</Text>
                       </View>
                       <Text style={styles.goalValue}>{data.proteinGoalDays}/7 days</Text>

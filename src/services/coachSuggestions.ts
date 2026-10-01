@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+﻿import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   startOfWeek,
   format,
@@ -20,7 +20,7 @@ import { buildLocationResolver } from './locationMatch';
 import { MuscleGroupShortfall } from './analytics';
 import { analyzeFatigue } from './fatigueDetection';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CoachSuggestionType =
   | 'volume_gap'
@@ -46,7 +46,7 @@ interface DismissedSuggestion {
   expiresAt: string;
 }
 
-// ─── Dismissed Suggestions Storage ───────────────────────────────────────────
+// â”€â”€â”€ Dismissed Suggestions Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DISMISSED_KEY = '@workout_tracker/coach_dismissed';
 
@@ -78,7 +78,7 @@ export async function dismissSuggestion(
   await AsyncStorage.setItem(DISMISSED_KEY, JSON.stringify(updated));
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getExercisePrimaryMuscles(exercise: Exercise): PrimaryMuscleGroup[] {
   if (exercise.primaryMuscleGroups?.length) return exercise.primaryMuscleGroups;
@@ -90,17 +90,17 @@ function displayName(mg: string): string {
   return (MUSCLE_GROUP_DISPLAY_NAMES as Record<string, string>)[mg] || mg;
 }
 
-// ─── Push/Pull Pairs for Imbalance Detection ────────────────────────────────
+// â”€â”€â”€ Push/Pull Pairs for Imbalance Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PUSH_PULL_PAIRS: [PrimaryMuscleGroup, PrimaryMuscleGroup][] = [
   ['chest', 'lats'],
-  ['chest', 'upper_back'],
-  ['front_delts', 'upper_back'],
+  ['chest', 'mid_back'],
+  ['front_delts', 'rear_delts'],
   ['triceps', 'biceps'],
   ['quads', 'hamstrings'],
 ];
 
-// ─── 1. Volume Gap Suggestions ──────────────────────────────────────────────
+// â”€â”€â”€ 1. Volume Gap Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function generateVolumeGapSuggestions(
   shortfalls: MuscleGroupShortfall[]
@@ -110,13 +110,13 @@ function generateVolumeGapSuggestions(
     type: 'volume_gap' as CoachSuggestionType,
     priority: Math.min(90, 70 + sf.shortfall * 2),
     icon: 'trending-down-outline',
-    message: `${sf.displayName} under-targeted — ${sf.currentSets} of ${sf.targetSets} sets this week`,
+    message: `${sf.displayName} under-targeted â€” ${sf.currentSets} of ${sf.targetSets} sets this week`,
     detail: `Need ${sf.shortfall} more sets${sf.projectedSets > 0 ? `. ${sf.projectedSets} scheduled from remaining workouts.` : '.'}`,
     muscleGroup: sf.muscleGroup,
   }));
 }
 
-// ─── 2. Muscle Imbalance Suggestions ────────────────────────────────────────
+// â”€â”€â”€ 2. Muscle Imbalance Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function generateMuscleImbalanceSuggestions(
   workouts: Workout[],
@@ -203,7 +203,7 @@ function generateMuscleImbalanceSuggestions(
   return suggestions;
 }
 
-// ─── 3. Missed Muscle Group Suggestions ─────────────────────────────────────
+// â”€â”€â”€ 3. Missed Muscle Group Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function generateMissedMuscleGroupSuggestions(
   workouts: Workout[],
@@ -241,7 +241,7 @@ function generateMissedMuscleGroupSuggestions(
     if (target <= 0) continue;
     const lastDate = lastTrained.get(mg as PrimaryMuscleGroup);
     if (!lastDate) {
-      // Never trained but has a target — only suggest if they have any workout history at all
+      // Never trained but has a target â€” only suggest if they have any workout history at all
       if (completedWorkouts.length > 7) {
         suggestions.push({
           id: `missed:${mg}`,
@@ -271,7 +271,7 @@ function generateMissedMuscleGroupSuggestions(
   return suggestions;
 }
 
-// ─── 4. Recovery Suggestions ────────────────────────────────────────────────
+// â”€â”€â”€ 4. Recovery Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function isFullBodyRoutine(
   routine: Routine | undefined,
@@ -305,7 +305,7 @@ function generateRecoverySuggestions(
 ): CoachSuggestion[] {
   const fullBody = isFullBodyRoutine(routine, templates);
 
-  // Full body routines intentionally hit every muscle each session —
+  // Full body routines intentionally hit every muscle each session â€”
   // per-muscle consecutive day warnings are not useful
   if (fullBody) return [];
 
@@ -368,7 +368,7 @@ function generateRecoverySuggestions(
         type: 'recovery',
         priority: Math.min(95, 80 + (consecutive - 3) * 5),
         icon: 'bed-outline',
-        message: `${displayName(mg)} trained ${consecutive} days in a row — consider rest`,
+        message: `${displayName(mg)} trained ${consecutive} days in a row â€” consider rest`,
         muscleGroup: mg,
       });
     }
@@ -377,7 +377,7 @@ function generateRecoverySuggestions(
   return suggestions;
 }
 
-// ─── 6. Fatigue Suggestions ──────────────────────────────────────────────────
+// â”€â”€â”€ 6. Fatigue Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function generateFatigueSuggestions(
   workouts: Workout[],
@@ -430,7 +430,7 @@ function generateFatigueSuggestions(
       type: 'fatigue',
       priority: 85,
       icon: 'pause-circle-outline',
-      message: 'Multiple fatigue signals — consider a deload week',
+      message: 'Multiple fatigue signals â€” consider a deload week',
       detail: 'Drop weight 10-15% this week and focus on form and recovery.',
     });
   }
@@ -438,7 +438,7 @@ function generateFatigueSuggestions(
   return suggestions;
 }
 
-// ─── Coach Context ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Coach Context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Detects life events that should soften the coach's tone: returning from a
 // long break (illness, vacation), wrapping up a deload, etc. We compute this
 // once and pass it to every generator so they can adjust their messaging.
@@ -446,7 +446,7 @@ function generateFatigueSuggestions(
 interface CoachContext {
   // Days since the most recent completed (non-deload) workout, or null when there is none.
   daysSinceLastWorkout: number | null;
-  // True if the user has just returned after a 7+ day gap — the most recent workout
+  // True if the user has just returned after a 7+ day gap â€” the most recent workout
   // happened within the last 3 days AND the workout before it was 7+ days earlier.
   justReturnedFromBreak: boolean;
   // The size of that gap in days, if any.
@@ -507,7 +507,7 @@ function computeCoachContext(workouts: Workout[]): CoachContext {
   return { daysSinceLastWorkout, justReturnedFromBreak, priorGapDays, inReturnGracePeriod };
 }
 
-// ─── 6. Positive Insights ───────────────────────────────────────────────────
+// â”€â”€â”€ 6. Positive Insights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Mix wins and progress into the feed so users don't only see warnings.
 
 function generatePositiveInsights(
@@ -531,7 +531,7 @@ function generatePositiveInsights(
   }
   const workingSets = sets.filter(s => workoutDateById.has(s.workoutId));
 
-  // ── 0. Welcome back ───────────────────────────────────────────────────────
+  // â”€â”€ 0. Welcome back â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Highest-priority encouragement when someone just returned after a long break,
   // even if the rest of the data looks sparse.
   if (context.justReturnedFromBreak) {
@@ -542,9 +542,9 @@ function generatePositiveInsights(
       priority: 98,
       icon: 'sunny-outline',
       message: gap >= 7
-        ? `Welcome back 💪 — first workout in ${gap} days`
-        : 'Welcome back 💪 — great to see you training again',
-      detail: 'Just focus on showing up. We won\'t compare you to before — fresh start.',
+        ? `Welcome back ðŸ’ª â€” first workout in ${gap} days`
+        : 'Welcome back ðŸ’ª â€” great to see you training again',
+      detail: 'Just focus on showing up. We won\'t compare you to before â€” fresh start.',
     });
   } else if (context.inReturnGracePeriod) {
     // Still rebuilding inside the 14-day window but not the very first workout back.
@@ -553,13 +553,13 @@ function generatePositiveInsights(
       type: 'insight',
       priority: 88,
       icon: 'sunny-outline',
-      message: 'You showed up today — that\'s what matters',
+      message: 'You showed up today â€” that\'s what matters',
       detail: 'No comparisons to pre-break performance. Stack consistent sessions.',
     });
   }
 
-  // ── Per-session snapshot: sets logged in the most recent workout ──────────
-  // A "you showed up" win scoped to the latest session (not the whole week) — this
+  // â”€â”€ Per-session snapshot: sets logged in the most recent workout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // A "you showed up" win scoped to the latest session (not the whole week) â€” this
   // is the one that lands right after a break when the weekly numbers look thin.
   const mostRecentWorkout = completedWorkouts
     .slice()
@@ -580,8 +580,8 @@ function generatePositiveInsights(
     }
   }
 
-  // ── Building back up: workouts completed since the last long break ────────
-  // Fresh-start framing during the return grace window — counts forward from the
+  // â”€â”€ Building back up: workouts completed since the last long break â”€â”€â”€â”€â”€â”€â”€â”€
+  // Fresh-start framing during the return grace window â€” counts forward from the
   // comeback rather than comparing to pre-break performance.
   if (context.inReturnGracePeriod) {
     const datesDesc = completedWorkouts
@@ -601,8 +601,8 @@ function generatePositiveInsights(
         type: 'insight',
         priority: 72,
         icon: 'barbell-outline',
-        message: `Building back up — ${sinceReturn} workouts since returning`,
-        detail: 'Fresh start — we compare forward from here, not back to before.',
+        message: `Building back up â€” ${sinceReturn} workouts since returning`,
+        detail: 'Fresh start â€” we compare forward from here, not back to before.',
       });
     }
   }
@@ -618,14 +618,14 @@ function generatePositiveInsights(
       type: 'insight',
       priority: 60,
       icon: 'list-outline',
-      message: `${setsThisWeekCount} set${setsThisWeekCount === 1 ? '' : 's'} logged this week — keep it going`,
+      message: `${setsThisWeekCount} set${setsThisWeekCount === 1 ? '' : 's'} logged this week â€” keep it going`,
     });
   }
 
-  // No history yet → only the welcome-back / sets-this-week messages above apply
+  // No history yet â†’ only the welcome-back / sets-this-week messages above apply
   if (workouts.length === 0 || sets.length === 0) return suggestions;
 
-  // ── A. Volume up week-over-week ───────────────────────────────────────────
+  // â”€â”€ A. Volume up week-over-week â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const volumeInRange = (start: Date, end: Date): number => {
     let sum = 0;
     for (const s of workingSets) {
@@ -636,7 +636,7 @@ function generatePositiveInsights(
   };
   const thisWeekVol = volumeInRange(oneWeekAgo, now);
   const lastWeekVol = volumeInRange(twoWeeksAgo, oneWeekAgo);
-  // Skip comparisons while returning from a break — a week with one workout vs.
+  // Skip comparisons while returning from a break â€” a week with one workout vs.
   // a week of zero would otherwise generate a misleading "+1000%" insight.
   if (!context.inReturnGracePeriod && lastWeekVol > 0 && thisWeekVol > lastWeekVol * 1.05) {
     const pct = Math.round(((thisWeekVol - lastWeekVol) / lastWeekVol) * 100);
@@ -646,11 +646,11 @@ function generatePositiveInsights(
       priority: 70,
       icon: 'trending-up',
       message: `Volume up ${pct}% from last week`,
-      detail: 'Solid progress — keep the momentum going.',
+      detail: 'Solid progress â€” keep the momentum going.',
     });
   }
 
-  // ── B. New PR in the last week (vs. all prior history) ────────────────────
+  // â”€â”€ B. New PR in the last week (vs. all prior history) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Pick the most impressive single PR (largest % gain over previous best).
   const recentSetsByExercise = new Map<string, WorkoutSet[]>();
   const olderSetsByExercise = new Map<string, WorkoutSet[]>();
@@ -668,7 +668,7 @@ function generatePositiveInsights(
     const recentMax = Math.max(...recent.map(s => s.weight || 0), 0);
     if (recentMax <= 0) return;
     const older = olderSetsByExercise.get(exerciseId) ?? [];
-    if (older.length === 0) return; // No prior baseline — not a PR worth flagging
+    if (older.length === 0) return; // No prior baseline â€” not a PR worth flagging
     const olderMax = Math.max(...older.map(s => s.weight || 0), 0);
     if (recentMax > olderMax && olderMax > 0) {
       const gain = (recentMax - olderMax) / olderMax;
@@ -685,11 +685,11 @@ function generatePositiveInsights(
       priority: 75,
       icon: 'trophy-outline',
       message: `New PR on ${pr.name} this week!`,
-      detail: 'Heaviest set yet — note the conditions so you can repeat it.',
+      detail: 'Heaviest set yet â€” note the conditions so you can repeat it.',
     });
   }
 
-  // ── C. Consistency: count consecutive recent weeks with >=1 workout ───────
+  // â”€â”€ C. Consistency: count consecutive recent weeks with >=1 workout â”€â”€â”€â”€â”€â”€â”€
   const weekKey = (d: Date) => format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const weeksWithWorkouts = new Set<string>();
   for (const w of completedWorkouts) {
@@ -707,12 +707,12 @@ function generatePositiveInsights(
       type: 'insight',
       priority: 65,
       icon: 'flame-outline',
-      message: `${streak} weeks straight with workouts — great consistency`,
+      message: `${streak} weeks straight with workouts â€” great consistency`,
       detail: 'Showing up is the hardest part. Keep the streak alive this week.',
     });
   }
 
-  // ── D. Top exercise progression over the last ~month ──────────────────────
+  // â”€â”€ D. Top exercise progression over the last ~month â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // For the most-trained exercise, compare best weight in last 28 days vs. 28-56 days ago.
   const setCount = new Map<string, number>();
   for (const s of workingSets) {
@@ -730,7 +730,7 @@ function generatePositiveInsights(
     const ex = exercises.find(e => e.id === topExerciseId);
     const exId = topExerciseId;
     if (ex) {
-      // Compare within ONE location only — different gyms' machines use
+      // Compare within ONE location only â€” different gyms' machines use
       // different weight scales, so cross-gym comparisons are meaningless.
       // Travel sessions never participate. Focus location = the exercise's
       // most recent non-travel session.
@@ -764,7 +764,7 @@ function generatePositiveInsights(
             priority: 68,
             icon: 'arrow-up-circle-outline',
             message: `${ex.name} up ${pct}% over the last month`,
-            detail: 'Strength is trending up — your programming is working.',
+            detail: 'Strength is trending up â€” your programming is working.',
           });
         }
       }
@@ -774,7 +774,7 @@ function generatePositiveInsights(
   return suggestions;
 }
 
-// ─── Main Entry Point ───────────────────────────────────────────────────────
+// â”€â”€â”€ Main Entry Point â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CoachSuggestionsInput {
   workouts: Workout[];
@@ -809,7 +809,7 @@ export async function getTopSuggestions(
   const negative: CoachSuggestion[] = encouragementOnly
     ? []
     : [
-        // Recovery suggestions stay — they're protective/helpful, not criticism.
+        // Recovery suggestions stay â€” they're protective/helpful, not criticism.
         ...generateRecoverySuggestions(workouts, sets, exercises, routine, templates),
         ...(suppressDeclines ? [] : generateFatigueSuggestions(workouts, sets, exercises, settings)),
         ...(settings.isOnDeload || suppressDeclines ? [] : generateVolumeGapSuggestions(shortfalls)),
@@ -843,7 +843,7 @@ export async function getTopSuggestions(
     return merged.slice(0, maxCount);
   }
   // Balanced/encouragement:
-  //   - At most one negative, ever — never pile on.
+  //   - At most one negative, ever â€” never pile on.
   //   - Lead with positive when both exist, so criticism is paired with a win.
   //   - In encouragement_only mode, the negative pool is empty so we'll just emit positives.
   const result: CoachSuggestion[] = [];

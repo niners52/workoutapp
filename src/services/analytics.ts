@@ -17,6 +17,8 @@ import {
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
 import { getSets, getSetsInDateRange, getExercises, getUserSettings, getWorkouts, getWorkoutsInDateRange } from './storage';
+import { creditedPrimaries } from './muscleGroups';
+import { countWarmupSets, isWarmupSet } from './warmupSets';
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
 
 // Calculate volume (sets) per muscle group for a date range
@@ -71,15 +73,19 @@ export function computeVolumeForDateRange(
   // With multiple primary muscles, each primary muscle group gets credit for the set
   sets.forEach(set => {
     if (deloadWorkoutIds.has(set.workoutId)) return; // Skip deload sets
+    // Warm-ups are prep, not working volume. They stay in session history.
+    if (isWarmupSet(set, exerciseMap.get(set.exerciseId))) return;
     const exercise = exerciseMap.get(set.exerciseId);
     if (!exercise) return;
 
-    // Get primary muscle groups (support both new array and deprecated single field)
-    const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
-      ? exercise.primaryMuscleGroups
-      : exercise.primaryMuscleGroup
-      ? [exercise.primaryMuscleGroup]
-      : [];
+    // Stored groups, with retired names read as their successor (upper_back -> mid_back)
+    const primaryMuscleGroups = creditedPrimaries(
+      exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [],
+    );
 
     // Add volume to each primary muscle group
     primaryMuscleGroups.forEach(muscleGroup => {
@@ -155,12 +161,21 @@ export function computeWeeklyVolume(
     .filter(mg => mg.target > 0)
     .reduce((sum, mg) => sum + mg.target, 0);
 
+  // Reported, not counted: prep sets inside the week, deload sets aside.
+  const deloadWorkoutIds = new Set(workouts.filter(w => w.isDeload).map(w => w.id));
+  const exercisesById = new Map(exercises.map(e => [e.id, e]));
+  const weekSets = sets.filter(s => {
+    const at = new Date(s.loggedAt);
+    return at >= weekStart && at <= weekEnd && !deloadWorkoutIds.has(s.workoutId);
+  });
+
   return {
     weekStart: format(weekStart, 'yyyy-MM-dd'),
     weekEnd: format(weekEnd, 'yyyy-MM-dd'),
     muscleGroups,
     totalSets,
     targetSets,
+    warmupSets: countWarmupSets(weekSets, exercisesById),
   };
 }
 

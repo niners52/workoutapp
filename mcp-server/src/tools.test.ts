@@ -232,7 +232,7 @@ test('get_weekly_volume: mirrors app rules (primary only, unilateral 0.5, deload
   assert.equal(wk0831.sets_by_muscle_group.quads, 1);
   assert.equal(wk0831.sets_by_muscle_group.glutes, 1);
   assert.equal(wk0831.sets_by_muscle_group.triceps, 0, 'secondary muscles earn no credit');
-  assert.equal(wk0831.sets_by_muscle_group.upper_back, 2, 'legacy rear_delts credits upper_back, as the app does since V10');
+  assert.equal(wk0831.sets_by_muscle_group.rear_delts, 2, 'rear_delts is a group of its own again since V19');
   assert.equal(wk0831.sets_by_muscle_group.lats, 2, 'bodyweight sets count like any other set');
   assert.equal(r.weeks[3]!.sets_by_category.legs, 2);
   assert.equal((r as { unmapped_exercises?: unknown[] }).unmapped_exercises, undefined, 'every fixture exercise has a real mapping');
@@ -300,10 +300,10 @@ test('get_weekly_volume: lats remap regression (week of 2026-09-07, real lats-fa
     ({ id, user_id: U, workout_id: 'w0907', exercise_id, weight: 100, reps: 8, logged_at });
   const { client } = createFakeSupabase({
     exercises: [
-      lx('import-pullup', 'Bodyweight Pull-Up', ['lats'], ['upper_back'], 'bodyweight'),
-      lx('wide-grip-lat-pulldown', 'Cable Wide-Grip Lat Pulldown', ['lats'], ['biceps', 'upper_back'], 'cable'),
-      lx('86847ace-fb9f-421b-b32b-776f27c56775', 'Machine Lat pulldown', ['lats'], ['upper_back'], 'machine'),
-      lx('import-seated-row', 'Machine Seated Row', ['upper_back'], [], 'machine'),
+      lx('import-pullup', 'Bodyweight Pull-Up', ['lats'], ['mid_back'], 'bodyweight'),
+      lx('wide-grip-lat-pulldown', 'Cable Wide-Grip Lat Pulldown', ['lats'], ['biceps', 'mid_back'], 'cable'),
+      lx('86847ace-fb9f-421b-b32b-776f27c56775', 'Machine Lat pulldown', ['lats'], ['mid_back'], 'machine'),
+      lx('import-seated-row', 'Machine Seated Row', ['mid_back'], [], 'machine'),
     ],
     workouts: [{ id: 'w0907', user_id: U, template_id: null, started_at: '2026-09-09T11:00:00Z', completed_at: '2026-09-09T12:00:00Z', location_id: null, is_deload: false }],
     workout_sets: [
@@ -317,7 +317,7 @@ test('get_weekly_volume: lats remap regression (week of 2026-09-07, real lats-fa
       set('m3', '86847ace-fb9f-421b-b32b-776f27c56775', '2026-09-13T16:35:12Z'),
       set('r1', 'import-seated-row', '2026-09-11T11:55:00Z'), set('r2', 'import-seated-row', '2026-09-11T12:02:14Z'),
     ],
-    user_settings: [{ user_id: U, week_start_day: 'monday', muscle_group_targets: { lats: 10, upper_back: 12 } }],
+    user_settings: [{ user_id: U, week_start_day: 'monday', muscle_group_targets: { lats: 12, mid_back: 12 } }],
   });
   const r = await getWeeklyVolume(
     { db: new Db(client, U), timeZone: 'America/Chicago', now: () => new Date('2026-09-13T20:00:00Z') },
@@ -326,8 +326,8 @@ test('get_weekly_volume: lats remap regression (week of 2026-09-07, real lats-fa
   const wk = r.weeks[0]!;
   assert.equal(wk.week_start, '2026-09-07');
   assert.equal(wk.sets_by_muscle_group.lats, 12, '6 pull-ups + 3 wide-grip + 3 machine lat pulldown');
-  assert.equal(wk.sets_by_muscle_group.upper_back, 2, 'only the rows; pulldowns no longer credit upper_back');
-  assert.deepEqual(r.weekly_targets, { lats: 10, upper_back: 12 }, 'lats target read from the shared muscle_group_targets column');
+  assert.equal(wk.sets_by_muscle_group.mid_back, 2, 'only the rows; pulldowns no longer credit the row group');
+  assert.deepEqual(r.weekly_targets, { lats: 12, mid_back: 12 }, 'targets read from the shared muscle_group_targets column');
 });
 
 test('get_nutrition_log: per-rule adherence over complete days, read from health_targets', async () => {
@@ -422,6 +422,30 @@ test('get_exercise_history: no variant tags, no best_by_variant', async () => {
   assert.equal(r.recent_sets.some(x => 'variant' in x), false);
 });
 
+test('get_weekly_volume: warm-up sets are reported, not counted', async () => {
+  const prep = { id: 'cuff', user_id: U, name: 'Cable Rotator cuff', base_name: null, primary_muscle_groups: ['rotator_cuff'], secondary_muscle_groups: [], equipment: 'cable', is_favorite: false, is_unilateral: false, default_warmup: true };
+  const press = { id: 'press', user_id: U, name: 'Machine Press', base_name: null, primary_muscle_groups: ['chest'], secondary_muscle_groups: [], equipment: 'machine', is_favorite: false, is_unilateral: false };
+  const s = (id: string, exercise_id: string, extra: Record<string, unknown> = {}) =>
+    ({ id, user_id: U, workout_id: 'w1', exercise_id, weight: 30, reps: 12, logged_at: '2026-09-02T15:30:00Z', ...extra });
+  const { client } = createFakeSupabase({
+    ...tables,
+    exercises: [...tables.exercises!, prep, press],
+    workout_sets: [
+      ...tables.workout_sets!,
+      s('c1', 'cuff'), s('c2', 'cuff'), s('c3', 'cuff'),            // prep: default_warmup
+      s('p1', 'press'), s('p2', 'press'),                            // working
+      s('p3', 'press', { is_warmup: true }),                         // flagged on the set
+      s('c4', 'cuff', { is_warmup: false }),                         // prep done as a working set
+    ],
+    user_settings: [{ user_id: U, week_start_day: 'monday', muscle_group_targets: { chest: 15, rotator_cuff: 0 } }],
+  });
+  const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });
+  const wk = r.weeks[0]!;
+  assert.equal((r as typeof r & { warmup_sets: number }).warmup_sets, 4, '3 prep sets by default + 1 press flagged');
+  assert.equal(wk.sets_by_muscle_group.chest, 5, '3 bench from the base fixture + 2 working press sets');
+  assert.equal(wk.sets_by_muscle_group.rotator_cuff, 1, 'the prep set explicitly marked as working still counts');
+});
+
 test('get_weekly_volume: tolerates a user_settings row missing newer columns', async () => {
   const { client } = createFakeSupabase({ ...tables, user_settings: [{ user_id: U, week_start_day: 'monday' }] });
   const r = await getWeeklyVolume({ db: new Db(client, U), timeZone: TZ, now: () => NOW }, { weeks_back: 1 });
@@ -460,7 +484,7 @@ test('get_prs: one entry per exercise with history, sorted by Epley 1RM', async 
   assert.equal(facePull.best_e1rm_epley?.reps, 15);
   assert.equal(facePull.best_e1rm_epley?.e1rm_lbs, epley1RM(40, 15));
   assert.equal(facePull.heaviest_set?.weight_lbs, 45, 'heaviest set still counts the 45-rep set');
-  assert.deepEqual(facePull.primary_muscle_groups, ['upper_back'], 'legacy rear_delts reads as upper_back');
+  assert.deepEqual(facePull.primary_muscle_groups, ['rear_delts'], 'rear_delts is a group again since V19');
   const bench = r.prs.find(p => p.exercise_id === 'e1')!;
   assert.equal(bench.heaviest_set?.weight_lbs, 225);
   assert.equal(bench.best_e1rm_epley?.e1rm_lbs, 239.2);

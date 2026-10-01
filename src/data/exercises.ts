@@ -1,4 +1,4 @@
-import { Exercise, PrimaryMuscleGroup } from '../types';
+﻿import { Exercise, PrimaryMuscleGroup } from '../types';
 
 // Seed exercise library with all exercises from the spec
 export const SEED_EXERCISES: Exercise[] = [
@@ -64,7 +64,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'chest-supported-machine-row',
     name: 'Chest-Supported Machine Row',
-    primaryMuscleGroup: 'upper_back',
+    primaryMuscleGroup: 'mid_back',
     secondaryMuscleGroups: ['lats', 'biceps'],
     equipment: 'machine',
     location: 'gym',
@@ -80,7 +80,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'face-pull',
     name: 'Face Pull',
-    primaryMuscleGroup: 'upper_back',
+    primaryMuscleGroup: 'rear_delts',
     equipment: 'cable',
     location: 'gym',
   },
@@ -230,7 +230,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'rear-delt-fly-machine',
     name: 'Rear-Delt Fly Machine',
-    primaryMuscleGroup: 'upper_back',
+    primaryMuscleGroup: 'rear_delts',
     equipment: 'machine',
     location: 'gym',
   },
@@ -315,7 +315,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'chest-supported-db-row',
     name: 'Chest-Supported DB Row',
-    primaryMuscleGroup: 'upper_back',
+    primaryMuscleGroup: 'mid_back',
     secondaryMuscleGroups: ['lats', 'biceps'],
     equipment: 'dumbbell',
     location: 'home',
@@ -323,7 +323,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'one-arm-db-row',
     name: 'One-Arm DB Row',
-    primaryMuscleGroup: 'upper_back',
+    primaryMuscleGroup: 'mid_back',
     secondaryMuscleGroups: ['lats', 'biceps'],
     equipment: 'dumbbell',
     location: 'home',
@@ -339,7 +339,7 @@ export const SEED_EXERCISES: Exercise[] = [
   {
     id: 'incline-bench-rear-delt-db-fly',
     name: 'Incline Bench Rear-Delt DB Fly',
-    primaryMuscleGroup: 'upper_back',
+    primaryMuscleGroup: 'rear_delts',
     equipment: 'dumbbell',
     location: 'home',
   },

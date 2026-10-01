@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -35,9 +35,9 @@ import {
 // Map template types to their associated muscle groups
 const TEMPLATE_TYPE_MUSCLES: Record<TemplateType, PrimaryMuscleGroup[]> = {
   push: ['chest', 'front_delts', 'side_delts', 'rotator_cuff', 'triceps'],
-  pull: ['lats', 'upper_back', 'traps', 'biceps', 'forearms'],
+  pull: ['lats', 'mid_back', 'rear_delts', 'traps', 'biceps', 'forearms'],
   lower: ['quads', 'hamstrings', 'glutes', 'adductors', 'calves'],
-  full_body: ['chest', 'front_delts', 'side_delts', 'triceps', 'biceps', 'forearms', 'lats', 'upper_back', 'traps', 'quads', 'hamstrings', 'glutes', 'adductors', 'calves', 'abs', 'lower_back'],
+  full_body: ['chest', 'front_delts', 'side_delts', 'triceps', 'biceps', 'forearms', 'lats', 'mid_back', 'rear_delts', 'traps', 'quads', 'hamstrings', 'glutes', 'adductors', 'calves', 'abs', 'lower_back'],
 };
 import { RootStackParamList } from '../navigation/types';
 import { matchesAllWords } from '../utils/search';
@@ -153,7 +153,7 @@ export function CreateTemplateScreen() {
 
   // Filter exercises based on location and template type
   const filteredExercises = exercises.filter(e => {
-    // Favorites cut applies even in "Show All" mode — it's an explicit choice,
+    // Favorites cut applies even in "Show All" mode â€” it's an explicit choice,
     // not part of the location/type heuristics the Show All toggle bypasses.
     if (showFavoritesOnly && !e.isFavorite) return false;
 
@@ -243,7 +243,7 @@ export function CreateTemplateScreen() {
                 onPress={() => setTemplateType(type)}
               >
                 <Text style={styles.typeIcon}>
-                  {type === 'push' ? '💪' : type === 'pull' ? '🏋️' : type === 'lower' ? '🦵' : '🔄'}
+                  {type === 'push' ? 'ðŸ’ª' : type === 'pull' ? 'ðŸ‹ï¸' : type === 'lower' ? 'ðŸ¦µ' : 'ðŸ”„'}
                 </Text>
                 <Text
                   style={[
@@ -322,17 +322,17 @@ export function CreateTemplateScreen() {
                       onPress={() => moveExercise(index, 'up')}
                       disabled={index === 0}
                     >
-                      <Text style={[styles.reorderText, index === 0 && styles.reorderDisabled]}>↑</Text>
+                      <Text style={[styles.reorderText, index === 0 && styles.reorderDisabled]}>â†‘</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => moveExercise(index, 'down')}
                       disabled={index === selectedExerciseObjects.length - 1}
                     >
-                      <Text style={[styles.reorderText, index === selectedExerciseObjects.length - 1 && styles.reorderDisabled]}>↓</Text>
+                      <Text style={[styles.reorderText, index === selectedExerciseObjects.length - 1 && styles.reorderDisabled]}>â†“</Text>
                     </TouchableOpacity>
                   </View>
                   <TouchableOpacity onPress={() => toggleExercise(exercise.id)}>
-                    <Text style={styles.removeText}>✕</Text>
+                    <Text style={styles.removeText}>âœ•</Text>
                   </TouchableOpacity>
                 </View>
               ))}
@@ -391,7 +391,7 @@ export function CreateTemplateScreen() {
                     </Text>
                   </View>
                   <Text style={[styles.checkmark, isSelected && styles.checkmarkSelected]}>
-                    {isSelected ? '✓' : '○'}
+                    {isSelected ? 'âœ“' : 'â—‹'}
                   </Text>
                 </TouchableOpacity>
               );

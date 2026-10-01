@@ -412,6 +412,7 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
   for (const k of weekKeys) weeks.set(k, emptyMuscleTotals());
 
   let skippedDeloadSets = 0;
+  let warmupSets = 0;
   // Exercises whose sets earn no credit because they have no recognised primary
   // group (empty, unknown, or only the 'miscellaneous' placeholder). Reported
   // loudly: a silent bucket is how 40 sets a week went missing.
@@ -426,6 +427,12 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
     }
     const ex = exerciseById.get(s.exercise_id);
     if (!ex) continue;
+    // Warm-ups are prep, not training volume: counted separately, like deload
+    // sets. The set's own flag wins; otherwise the exercise's default decides.
+    if (s.is_warmup ?? ex.default_warmup ?? false) {
+      warmupSets++;
+      continue;
+    }
     const credit = setCredit(ex.is_unilateral);
     const groups = creditedPrimaries(ex.primary_muscle_groups); // distinct: duplicates never double count
     if (groups.length === 0) {
@@ -455,7 +462,7 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
     time_zone: ctx.timeZone,
     week_start_day: weekStartDay,
     counting_rules:
-      'Primary muscle groups only (each distinct primary gets full credit per set); unilateral exercises count 0.5 per set; deload workouts excluded; bucketed by set logged_at. Matches the app\'s Weekly Volume panel. Exercises with no recognised primary group earn nothing and are listed under unmapped_exercises.',
+      'Primary muscle groups only (each distinct primary gets full credit per set); unilateral exercises count 0.5 per set; deload workouts and warm-up sets excluded (warm-ups counted in warmup_sets); bucketed by set logged_at. Matches the app\'s Weekly Volume panel. Exercises with no recognised primary group earn nothing and are listed under unmapped_exercises.',
     weekly_targets: targets,
     categories: Object.fromEntries(ANALYTICS_CATEGORIES.map(c => [c.category, c.muscleGroups])),
     weeks: weekKeys.map(key => {
@@ -474,6 +481,7 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
       };
     }),
     skipped_deload_sets: skippedDeloadSets,
+    warmup_sets: warmupSets,
     ...(unmappedList.length
       ? {
           warning: `${unmappedList.reduce((n, u) => n + u.sets, 0)} sets in this window belong to exercises with no recognised primary muscle group and were not credited anywhere. Fix their mapping in the app.`,
