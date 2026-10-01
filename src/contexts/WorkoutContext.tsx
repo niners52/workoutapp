@@ -123,6 +123,8 @@ interface WorkoutContextType {
   logSet: (reps: number, weight: number, exerciseId?: string, variant?: string) => Promise<void>;
   removeSet: (setId: string) => Promise<void>;
   editSet: (setId: string, reps: number, weight: number) => Promise<void>;
+  /** Mark one logged set as warm-up (or back to a working set). */
+  setWarmup: (setId: string, isWarmup: boolean) => Promise<void>;
 
   // Rest timer actions
   startRestTimer: (seconds?: number) => void;
@@ -774,7 +776,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
 
     // A set on an exercise with variants always carries one. Callers without a
     // toggle (the Watch) get whatever was done last on it in this workout.
-    const variants = variantsFor(await getExerciseById(targetExerciseId));
+    const exercise = await getExerciseById(targetExerciseId);
+    const variants = variantsFor(exercise);
     const setVariant = variant ?? defaultVariant(variants, activeWorkout.sets.filter(s => s.exerciseId === targetExerciseId), []);
 
     const set: WorkoutSet = {
@@ -785,6 +788,8 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
       weight,
       loggedAt: new Date().toISOString(),
       ...(setVariant ? { variant: setVariant } : {}),
+      // Prep movements (rotator cuff work) log as warm-ups by default.
+      ...(exercise?.defaultWarmup ? { isWarmup: true } : {}),
     };
 
     await addSet(set);
@@ -822,6 +827,18 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
         sets: prev.sets.filter(s => s.id !== setId),
       };
     });
+  }, [activeWorkout]);
+
+  /** Flip one set between warm-up and working. Only this set changes. */
+  const setWarmup = useCallback(async (setId: string, isWarmup: boolean) => {
+    if (!activeWorkout) return;
+    const existing = activeWorkout.sets.find(s => s.id === setId);
+    if (!existing) return;
+
+    const updated: WorkoutSet = { ...existing, isWarmup };
+    await updateSet(updated);
+    syncSet(updated).catch(e => console.log('Sync error:', e));
+    setActiveWorkout(prev => (prev ? { ...prev, sets: prev.sets.map(s => (s.id === setId ? updated : s)) } : null));
   }, [activeWorkout]);
 
   const editSet = useCallback(async (setId: string, reps: number, weight: number) => {
@@ -1051,6 +1068,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     logSet,
     removeSet,
     editSet,
+    setWarmup,
     startRestTimer,
     stopRestTimer,
     resetRestTimer,

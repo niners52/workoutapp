@@ -47,7 +47,9 @@ export const colors = {
   muscleColors: {
     chest: '#FFC52F', // Yellow
     lats: '#4A7C9B', // Steel blue
-    upper_back: '#5B8BA8', // Light steel blue
+    mid_back: '#5B8BA8', // Light steel blue
+    rear_delts: '#7FA8C4', // Paler steel blue — next to the delts it sits with
+    upper_back: '#5B8BA8', // legacy, pre-V19 rows only
     front_delts: '#FFD65A', // Light yellow
     side_delts: '#FFE082', // Bright yellow
     traps: '#87A9C4', // Slate blue

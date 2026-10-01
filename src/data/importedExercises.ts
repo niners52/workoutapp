@@ -1,4 +1,4 @@
-// Auto-generated imported exercises from Setgraph
+﻿// Auto-generated imported exercises from Setgraph
 import { Exercise } from '../types';
 
 export const IMPORTED_EXERCISES: Exercise[] = [
@@ -13,7 +13,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-dumbbell-shrugs",
     "name": "Dumbbell Shrugs",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "traps",
     "secondaryMuscleGroups": [],
     "equipment": "dumbbell",
     "location": "both"
@@ -61,7 +61,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-bentover-row",
     "name": "Bentover Row",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "mid_back",
     "secondaryMuscleGroups": [],
     "equipment": "dumbbell",
     "location": "both"
@@ -117,7 +117,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-standing-row-bands",
     "name": "Standing Row (Bands)",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "mid_back",
     "secondaryMuscleGroups": [],
     "equipment": "other",
     "location": "both"
@@ -125,7 +125,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-external-rotation-band",
     "name": "External Rotation (Band)",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "rotator_cuff",
     "secondaryMuscleGroups": [],
     "equipment": "other",
     "location": "both"
@@ -141,7 +141,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-passive-external",
     "name": "Passive External Rotation",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "rotator_cuff",
     "secondaryMuscleGroups": [],
     "equipment": "other",
     "location": "both"
@@ -165,7 +165,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-y-raise",
     "name": "Y Raise",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "rear_delts",
     "secondaryMuscleGroups": [],
     "equipment": "dumbbell",
     "location": "both"
@@ -269,7 +269,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-seated-row",
     "name": "Seated Row",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "mid_back",
     "secondaryMuscleGroups": [],
     "equipment": "cable",
     "location": "both"
@@ -285,7 +285,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-low-cable-row",
     "name": "Low Cable Row",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "mid_back",
     "secondaryMuscleGroups": [],
     "equipment": "cable",
     "location": "both"
@@ -317,7 +317,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-dumbbell-barbell-row",
     "name": "Dumbbell/Barbell Row",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "mid_back",
     "secondaryMuscleGroups": [],
     "equipment": "dumbbell",
     "location": "both"
@@ -381,7 +381,7 @@ export const IMPORTED_EXERCISES: Exercise[] = [
   {
     "id": "import-wide-grip-row",
     "name": "Wide Grip Row",
-    "primaryMuscleGroup": "upper_back",
+    "primaryMuscleGroup": "mid_back",
     "secondaryMuscleGroups": [],
     "equipment": "cable",
     "location": "both"

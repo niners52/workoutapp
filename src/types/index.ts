@@ -104,6 +104,14 @@ export type AnalyticsCategory = 'back' | 'shoulders' | 'chest' | 'arms' | 'legs'
 // All individual muscle groups that can be tracked
 export type PrimaryMuscleGroup =
   | 'lats'
+  /** Rows: horizontal pulling. Split out of upper_back in V19. */
+  | 'mid_back'
+  /** Face pulls, reverse flyes, rear-delt work. Split out of upper_back in V19. */
+  | 'rear_delts'
+  /**
+   * Deprecated: split into mid_back and rear_delts in V19. Kept so old stored
+   * rows still type-check; canonicalMuscleGroup() reads it as mid_back.
+   */
   | 'upper_back'
   | 'traps'
   | 'front_delts'
@@ -124,7 +132,7 @@ export type PrimaryMuscleGroup =
 
 // Legacy types kept for backward compatibility
 export type ParentMuscleGroup = 'back' | 'shoulders';
-export type ChildMuscleGroup = 'lats' | 'upper_back' | 'front_delts' | 'side_delts';
+export type ChildMuscleGroup = 'lats' | 'mid_back' | 'front_delts' | 'side_delts';
 export type StandaloneMuscleGroup =
   | 'chest'
   | 'triceps'
@@ -151,7 +159,9 @@ export interface AnalyticsCategoryConfig {
 
 // 6 main categories for analytics display
 export const ANALYTICS_CATEGORIES: AnalyticsCategoryConfig[] = [
-  { category: 'back', name: 'Back', muscleGroups: ['lats', 'upper_back', 'lower_back'] },
+  // rear_delts sits under back only. Category totals sum their groups, so a
+  // group in two categories would be counted twice in the roll-up.
+  { category: 'back', name: 'Back', muscleGroups: ['lats', 'mid_back', 'rear_delts', 'lower_back'] },
   { category: 'shoulders', name: 'Shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps', 'rotator_cuff'] },
   { category: 'chest', name: 'Chest', muscleGroups: ['chest'] },
   { category: 'arms', name: 'Arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
@@ -166,7 +176,7 @@ export interface MuscleGroupHierarchy {
 }
 
 export const MUSCLE_GROUP_HIERARCHY: MuscleGroupHierarchy[] = [
-  { parent: 'back', children: ['lats', 'upper_back'] },
+  { parent: 'back', children: ['lats', 'mid_back'] },
   { parent: 'shoulders', children: ['front_delts', 'side_delts'] },
 ];
 
@@ -187,10 +197,12 @@ export const STANDALONE_MUSCLE_GROUPS: StandaloneMuscleGroup[] = [
   'miscellaneous',
 ];
 
+// upper_back is deliberately absent: V19 split it into mid_back and rear_delts.
 export const ALL_TRACKABLE_MUSCLE_GROUPS: (PrimaryMuscleGroup)[] = [
   'chest',
   'lats',
-  'upper_back',
+  'mid_back',
+  'rear_delts',
   'front_delts',
   'side_delts',
   'triceps',
@@ -218,7 +230,9 @@ export const MUSCLE_GROUP_DISPLAY_NAMES: Record<MuscleGroup, string> = {
   core: 'Core',
   // Individual muscle groups
   lats: 'Lats',
-  upper_back: 'Upper Back',
+  mid_back: 'Mid Back',
+  rear_delts: 'Rear Delts',
+  upper_back: 'Upper Back', // legacy, pre-V19 rows only
   traps: 'Traps',
   front_delts: 'Front Delts',
   side_delts: 'Side Delts',
@@ -317,6 +331,8 @@ export interface Exercise {
   notes?: string; // Personal notes (bench angle, cable height, grip width, etc.)
   targetSets?: number; // Per-exercise default target set count; falls back to UserSettings.defaultTargetSets (doubled if unilateral) when undefined
   targetReps?: string; // Display target, e.g. "8" or "8-15". Informational — not enforced by the logger.
+  /** Prep movement: its sets are logged as warm-ups unless the toggle says otherwise. */
+  defaultWarmup?: boolean;
 }
 
 /**
@@ -375,6 +391,12 @@ export interface WorkoutSet {
    * because the loads differ. Absent on exercises without variants.
    */
   variant?: string;
+  /**
+   * Prep work rather than a working set: kept in session history, excluded
+   * from weekly volume and reported separately. Defaults from the exercise's
+   * defaultWarmup when the set is logged.
+   */
+  isWarmup?: boolean;
   // ─── Aerobic / cardio fields (modality-gated) ─────────────────────────────
   durationMin?: number;
   intensityRPE?: number;     // 6-20 Borg scale, or 1-10 modified — store raw
@@ -503,7 +525,7 @@ export const DEFAULT_HEALTH_TARGETS: HealthTargets = {
   focusGroups: [
     { id: 'upper-chest', label: 'Upper chest (incline pressing)', muscleGroup: 'chest', exerciseNameIncludes: 'incline' },
     { id: 'traps', label: 'Traps', muscleGroup: 'traps' },
-    { id: 'mid-back', label: 'Mid-back (rows)', muscleGroup: 'upper_back' },
+    { id: 'mid-back', label: 'Mid-back (rows)', muscleGroup: 'mid_back' },
     { id: 'hamstrings', label: 'Hamstrings', muscleGroup: 'hamstrings' },
     { id: 'lats', label: 'Lats', muscleGroup: 'lats' },
   ],
@@ -591,6 +613,33 @@ export interface UserSettings {
   healthTargets: HealthTargets;
 }
 
+/**
+ * Weekly working-set target per muscle group — 125 sets over 16 groups
+ * (V19 revision). Warm-up sets do not count toward these, which is why the
+ * rotator-cuff prep work no longer has a target of its own.
+ */
+export const WEEKLY_SET_TARGETS: MuscleGroupTargets = {
+  chest: 15,
+  lats: 12,
+  mid_back: 12,
+  rear_delts: 6,
+  side_delts: 9,
+  traps: 6,
+  triceps: 9,
+  biceps: 9,
+  quads: 12,
+  hamstrings: 9,
+  glutes: 6,
+  lower_back: 6,
+  adductors: 3,
+  calves: 2,
+  abs: 6,
+  front_delts: 3,
+  rotator_cuff: 0,
+  forearms: 0,
+  miscellaneous: 0,
+};
+
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   healthTargets: DEFAULT_HEALTH_TARGETS,
   weekStartDay: 'monday',
@@ -601,25 +650,9 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   minimumSetsPerExercise: 3,
   defaultTargetSets: 3,
   moveCompletedToBottom: true,
-  muscleGroupTargets: {
-    chest: 10,
-    lats: 10, // storage V16 sets existing users to this too (LATS_WEEKLY_TARGET)
-    upper_back: 12, // formerly 6 + 6 from rear_delts (merged in V10)
-    rotator_cuff: 12, // rehab/prehab work; keeps those sets out of "miscellaneous" and out of chest
-    front_delts: 6,
-    side_delts: 10,
-    triceps: 6,
-    biceps: 6,
-    quads: 10,
-    hamstrings: 6,
-    glutes: 6,
-    calves: 6,
-    abs: 6,
-    forearms: 0,
-    traps: 6,
-    lower_back: 0,
-    miscellaneous: 0,
-  },
+  // Weekly working-set targets, revised in V19 (125 sets across 16 groups).
+  // Rotator cuff is 0: that work is warm-up now, counted separately.
+  muscleGroupTargets: WEEKLY_SET_TARGETS,
   dailyGoals: DEFAULT_DAILY_GOALS,
   weeklyGoals: DEFAULT_WEEKLY_GOALS,
   // Body fat calculation defaults
@@ -686,6 +719,8 @@ export interface WeeklyVolume {
   muscleGroups: MuscleGroupVolume[];
   totalSets: number;
   targetSets: number;
+  /** Prep sets logged this week, excluded from totalSets and the per-group counts. */
+  warmupSets: number;
 }
 
 // Setgraph Import

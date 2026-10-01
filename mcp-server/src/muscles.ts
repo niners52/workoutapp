@@ -14,7 +14,8 @@
 export const PRIMARY_MUSCLE_GROUPS = [
   'chest',
   'lats',
-  'upper_back',
+  'mid_back',
+  'rear_delts',
   'front_delts',
   'side_delts',
   'triceps',
@@ -41,7 +42,9 @@ export const ANALYTICS_CATEGORIES: ReadonlyArray<{
   category: AnalyticsCategory;
   muscleGroups: readonly PrimaryMuscleGroup[];
 }> = [
-  { category: 'back', muscleGroups: ['lats', 'upper_back', 'lower_back'] },
+  // rear_delts rolls up under back only: category totals sum their groups, so
+  // a group in two categories would be double counted.
+  { category: 'back', muscleGroups: ['lats', 'mid_back', 'rear_delts', 'lower_back'] },
   { category: 'shoulders', muscleGroups: ['front_delts', 'side_delts', 'traps', 'rotator_cuff'] },
   { category: 'chest', muscleGroups: ['chest'] },
   { category: 'arms', muscleGroups: ['triceps', 'biceps', 'forearms'] },
@@ -52,10 +55,13 @@ export const ANALYTICS_CATEGORIES: ReadonlyArray<{
 /**
  * Groups the app retired via local migrations. Cloud rows written before those
  * migrations can still carry the old name, so read them as their successor.
- * Mirrors src/services/storage.ts migrateToV10 (rear_delts -> upper_back).
+ * Mirrors src/services/muscleGroups.ts LEGACY_MUSCLE_GROUPS.
  */
 const LEGACY_ALIASES: Record<string, PrimaryMuscleGroup> = {
-  rear_delts: 'upper_back',
+  // V19 split upper_back into mid_back (rows) and rear_delts. Rear-delt
+  // exercises were remapped explicitly, so a row still saying upper_back is a
+  // row: read it as mid_back.
+  upper_back: 'mid_back',
 };
 
 /**

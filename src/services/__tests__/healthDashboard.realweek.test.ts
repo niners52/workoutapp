@@ -38,7 +38,7 @@ const vol = (muscleGroup: string, sets: number, target: number): MuscleGroupVolu
   ({ muscleGroup, sets, target, exercises: [] }) as unknown as MuscleGroupVolume;
 
 const week = [
-  vol('chest', 11, 12), vol('lats', 3, 0), vol('upper_back', 0, 12), vol('side_delts', 0, 6),
+  vol('chest', 11, 12), vol('lats', 3, 0), vol('mid_back', 0, 12), vol('side_delts', 0, 6),
   vol('triceps', 3, 12), vol('biceps', 3, 12), vol('quads', 0, 12), vol('hamstrings', 0, 6),
   vol('glutes', 0, 3), vol('calves', 0, 3), vol('abs', 3, 6), vol('traps', 3, 6), vol('lower_back', 0, 6),
 ];

@@ -1,7 +1,7 @@
-/**
+﻿/**
  * Strength Standards Service
  *
- * Calculates strength levels (Beginner → Elite) for muscle groups
+ * Calculates strength levels (Beginner â†’ Elite) for muscle groups
  * based on e1RM / bodyweight ratios from 10 key compound exercises.
  *
  * All weights are in lbs (internal storage unit).
@@ -10,7 +10,7 @@
 import { Exercise, WorkoutSet, Workout, PrimaryMuscleGroup, Equipment } from '../types';
 import { estimated1RM } from './units';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type StrengthLevel =
   | 'untrained'
@@ -39,14 +39,14 @@ export const STRENGTH_LEVEL_LABELS: Record<StrengthLevel, string> = {
 };
 
 // Sequential single-hue ramp: strength is a magnitude, so brightness carries
-// it — dim bronze (beginner) up to bright cream-gold (elite) on the navy body.
+// it â€” dim bronze (beginner) up to bright cream-gold (elite) on the navy body.
 // The old blue/green/gold/orange/red rainbow read red-as-problem.
 export const STRENGTH_LEVEL_COLORS: Record<StrengthLevel, string> = {
-  untrained: '#16304F',   // body fill — reads as "no data"
+  untrained: '#16304F',   // body fill â€” reads as "no data"
   beginner: '#6B5714',
   novice: '#9A7A1A',
   intermediate: '#C9A022',
-  advanced: '#F2C52F',    // ≈ app primary gold
+  advanced: '#F2C52F',    // â‰ˆ app primary gold
   elite: '#FFE894',       // brightest; maps add a light ring as a second cue
 };
 
@@ -85,7 +85,7 @@ export interface MuscleStrengthResult {
   allExercises: ExerciseStrengthResult[];
 }
 
-// ─── Standards Data ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Standards Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Ratios = e1RM / bodyweight. Based on strength standards literature.
 // Body weight brackets: 130, 150, 170, 190, 210, 230, 250 lbs
 
@@ -154,7 +154,7 @@ const STANDARDS: StrengthStandard[] = [
     id: 'barbell_row',
     exerciseNamePatterns: ['barbell row', 'bent over row', 'pendlay row', 'bb row'],
     equipmentFilter: ['barbell'],
-    muscleGroups: ['lats', 'upper_back'],
+    muscleGroups: ['lats', 'mid_back'],
     levels: {
       '130': { beginner: 0.40, novice: 0.60, intermediate: 0.80, advanced: 1.05, elite: 1.25 },
       '150': { beginner: 0.40, novice: 0.60, intermediate: 0.80, advanced: 1.05, elite: 1.25 },
@@ -242,7 +242,7 @@ const STANDARDS: StrengthStandard[] = [
   },
 ];
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const BW_BRACKETS = [130, 150, 170, 190, 210, 230, 250];
 
@@ -277,7 +277,7 @@ function getThresholds(standard: StrengthStandard, bodyWeightLbs: number): Level
   };
 }
 
-// ─── Exercise Matching ──────────────────────────────────────────────────────
+// â”€â”€â”€ Exercise Matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function matchExerciseToStandard(exercise: Exercise): StrengthStandard | null {
   const name = exercise.name.toLowerCase();
@@ -298,7 +298,7 @@ export function matchExerciseToStandard(exercise: Exercise): StrengthStandard | 
   return null;
 }
 
-// ─── Level Calculation ──────────────────────────────────────────────────────
+// â”€â”€â”€ Level Calculation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function calculateStrengthLevel(
   e1rmLbs: number,
@@ -350,7 +350,7 @@ export function calculateStrengthLevel(
   };
 }
 
-// ─── Main Calculation ───────────────────────────────────────────────────────
+// â”€â”€â”€ Main Calculation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function calculateAllMuscleStrengthLevels(
   exercises: Exercise[],
@@ -443,7 +443,7 @@ export function calculateAllMuscleStrengthLevels(
         });
       } else {
         existing.allExercises.push(result);
-        // Compare levels — use highest
+        // Compare levels â€” use highest
         const existingIdx = STRENGTH_LEVELS.indexOf(existing.level);
         const newIdx = STRENGTH_LEVELS.indexOf(result.level);
         if (newIdx > existingIdx) {

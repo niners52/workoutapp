@@ -95,14 +95,15 @@ const volumeFor = (exercises: Exercise[]) => {
   return Object.fromEntries(v.muscleGroups.map(mg => [mg.muscleGroup, mg.sets]));
 };
 
-test('week of 2026-09-07: lats recounts from 3 to 12 raw sets; pulldowns stop crediting upper_back', () => {
+test('week of 2026-09-07: lats recounts from 3 to 12 raw sets; pulldowns stop crediting the back row group', () => {
   const pre = volumeFor(before);
   const post = volumeFor(after);
   expect(pre.lats).toBe(3);
   expect(post.lats).toBe(12);
   expect(post.lats).toBeGreaterThanOrEqual(9);
-  expect(pre.upper_back - post.upper_back).toBe(12);
-  expect(post.upper_back).toBe(3); // only the seated rows
+  // These fixtures predate the V19 split, so their stored upper_back reads as mid_back.
+  expect(pre.mid_back - post.mid_back).toBe(12);
+  expect(post.mid_back).toBe(3); // only the seated rows
 });
 
 test('focus rows: lats is appended once and never duplicated', () => {

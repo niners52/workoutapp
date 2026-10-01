@@ -25,6 +25,8 @@ export interface ExerciseRow {
   is_unilateral?: boolean | null;
   /** Explicit bodyweight flag; when absent, equipment === 'bodyweight' decides. */
   is_bodyweight?: boolean | null;
+  /** Prep movement: its sets log as warm-ups, which weekly volume leaves out. */
+  default_warmup?: boolean | null;
   notes?: string | null;
 }
 
@@ -50,10 +52,15 @@ export interface SetRow {
   logged_at: string;
   /** How the set was done on an exercise with variants ('Wide' / 'Narrow'); absent before the column exists. */
   variant?: string | null;
+  /** Prep set: kept in history, excluded from weekly volume. */
+  is_warmup?: boolean | null;
 }
 
 /** Subset of SetRow fetched for whole-history scans. */
-export type SetSummaryRow = Pick<SetRow, 'workout_id' | 'exercise_id' | 'reps' | 'weight' | 'logged_at' | 'variant'>;
+export type SetSummaryRow = Pick<
+  SetRow,
+  'workout_id' | 'exercise_id' | 'reps' | 'weight' | 'logged_at' | 'variant' | 'is_warmup'
+>;
 
 export interface BodyMeasurementRow {
   id: string;
@@ -276,8 +283,10 @@ export class Db {
   }
 
   listSetsSince(isoLowerBound: string): Promise<SetSummaryRow[]> {
+    // '*' rather than a column list: variant and is_warmup arrive this way as
+    // soon as the columns exist, and nothing breaks on a database without them.
     return this.runAll('workout_sets', () =>
-      this.scoped<SetSummaryRow>('workout_sets', 'workout_id,exercise_id,reps,weight,logged_at')
+      this.scoped<SetSummaryRow>('workout_sets', '*')
         .gte('logged_at', isoLowerBound)
         .order('logged_at', { ascending: true }),
     );
@@ -285,7 +294,7 @@ export class Db {
 
   listAllSets(): Promise<SetSummaryRow[]> {
     return this.runAll('workout_sets', () =>
-      this.scoped<SetSummaryRow>('workout_sets', 'workout_id,exercise_id,reps,weight,logged_at')
+      this.scoped<SetSummaryRow>('workout_sets', '*')
         .order('logged_at', { ascending: true }),
     );
   }

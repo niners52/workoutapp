@@ -251,7 +251,8 @@ export function inferMuscleGroups(name: string): PrimaryMuscleGroup[] {
 
   // Back
   if (/\b(lat pulldown|pulldown|pull[- ]over|pullover)\b/.test(n)) muscles.add('lats');
-  if (/\b(row|face pull|rear delt|y[- ]raise|reverse fly)\b/.test(n)) muscles.add('upper_back');
+  if (/\b(face pull|rear delt|y[- ]raise|reverse fly|reverse pec)\b/.test(n)) muscles.add('rear_delts');
+  else if (/\brow\b/.test(n)) muscles.add('mid_back');
   if (/\b(back extension|hyperextension)\b/.test(n)) muscles.add('lower_back');
   if (/\b(shrug|trap)\b/.test(n)) muscles.add('traps');
 
@@ -325,7 +326,7 @@ export function chooseTemplateType(muscles: Set<PrimaryMuscleGroup>): TemplateTy
   // Heuristic: routine days that hit many groups are full body; otherwise pick the dominant pattern.
   if (muscles.size === 0) return 'full_body';
   const hasUpperPush = muscles.has('chest') || muscles.has('front_delts') || muscles.has('triceps');
-  const hasUpperPull = muscles.has('lats') || muscles.has('upper_back') || muscles.has('biceps');
+  const hasUpperPull = muscles.has('lats') || muscles.has('mid_back') || muscles.has('rear_delts') || muscles.has('biceps');
   const hasLower = muscles.has('quads') || muscles.has('hamstrings') || muscles.has('glutes') || muscles.has('calves');
   const tally = [hasUpperPush, hasUpperPull, hasLower].filter(Boolean).length;
   if (tally >= 3) return 'full_body';

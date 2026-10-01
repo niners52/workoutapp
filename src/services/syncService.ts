@@ -155,6 +155,8 @@ function exerciseRow(exercise: Exercise, userId: string) {
     // Per-exercise target sets lived only on the phone until now, so a restore
     // reset every exercise to the global default.
     target_sets: exercise.targetSets ?? null,
+    // Prep movements log their sets as warm-ups, which stay out of weekly volume.
+    default_warmup: exercise.defaultWarmup ?? false,
     notes: exercise.notes || null,
   };
 }
@@ -185,6 +187,7 @@ function setRow(set: WorkoutSet, userId: string) {
     weight: set.weight,
     logged_at: set.loggedAt || new Date().toISOString(),
     ...(set.variant ? { variant: set.variant } : {}),
+    ...(set.isWarmup !== undefined ? { is_warmup: set.isWarmup } : {}),
   };
 }
 

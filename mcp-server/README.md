@@ -225,7 +225,10 @@ Example calls (as the model would issue them):
 - Only **primary** muscle groups earn credit; each primary group on an exercise gets a full
   set. Secondary groups are returned on the exercise but never counted.
 - Unilateral exercises count 0.5 per set.
-- Sets from deload workouts are excluded (reported as `skipped_deload_sets`).
+- Sets from deload workouts are excluded (reported as `skipped_deload_sets`), and so are
+  warm-up sets (reported as `warmup_sets`). A set is a warm-up when `workout_sets.is_warmup`
+  says so, or when it is null and the exercise has `default_warmup` — the cable rotator-cuff
+  prep work, about 8 sets a session that used to read as training volume.
 - Sets are bucketed by `logged_at` in `TIMEZONE`, using `week_start_day` from your settings
   (Sunday if unset). The current week is always included.
 - `total_sets` / `target_sets` sum only muscle groups with a target, as the app does.
@@ -233,9 +236,15 @@ Example calls (as the model would issue them):
   muscle: sets whose exercise has no other group are credited nowhere and the response
   carries `unmapped_exercises` (id, name, stored groups, set count) plus a `warning`, so a
   bad mapping is visible rather than silently inflating a group.
-- `rotator_cuff` is its own group under the shoulders category (app default target 12).
-- `lats` is its own group again (app default target 10); pulldowns, pull-ups, straight-arm
-  pulldowns and pullovers are lats-primary, rows stay `upper_back`.
+- `rotator_cuff` has no weekly target now that its work is warm-up; sets logged as working
+  sets still show up under the group.
+- The back category is `lats`, `mid_back`, `rear_delts`, `lower_back`. Pulldowns, pull-ups,
+  straight-arm pulldowns and pullovers are lats-primary; rows are `mid_back`; face pulls,
+  reverse pec deck, rear-delt flyes and Y raises are `rear_delts`. Rear delts sit under back
+  rather than shoulders only because a group in two categories would double count.
+- `upper_back` is the pre-2026-09-30 name for `mid_back` and is still accepted as an alias
+  on input; nothing is stored under it.
+- Weekly targets total 125 sets across 16 groups.
 
 ### Exercise variants
 

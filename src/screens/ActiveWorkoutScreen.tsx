@@ -35,6 +35,7 @@ import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
 import { defaultVariant, setsForVariant, variantsFor } from '../services/exerciseVariants';
 import { targetSetsFor } from '../services/targetSets';
 import { doneThisWeekByExercise, type DoneThisWeek } from '../services/weekProgress';
+import { isWarmupSet } from '../services/warmupSets';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -76,6 +77,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     restTimer,
     logSet,
     removeSet,
+    setWarmup,
     finishWorkout,
     cancelWorkout,
     updateActiveWorkoutLocation,
@@ -1036,6 +1038,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     onToggle={() => toggleExercise(exerciseId)}
                     onLogSet={handleLogSet}
                     onDeleteSet={handleDeleteSet}
+                    onSetWarmup={setWarmup}
                     onRemove={() => handleRemoveExercise(exercise)}
                     onOpenRestTimer={() => setRestTimerModalVisible(true)}
                     onSwap={() => handleOpenSwapModal(exercise)}
@@ -1797,6 +1800,7 @@ interface ExerciseCardProps {
   onToggle: () => void;
   onLogSet: () => void;
   onDeleteSet: (setId: string) => void;
+  onSetWarmup?: (setId: string, isWarmup: boolean) => void;
   onRemove: () => void;
   onOpenRestTimer: () => void;
   onSwap: () => void;
@@ -1838,6 +1842,7 @@ function ExerciseCard({
   onToggle,
   onLogSet,
   onDeleteSet,
+  onSetWarmup,
   onRemove,
   onOpenRestTimer,
   onSwap,
@@ -2049,13 +2054,26 @@ function ExerciseCard({
               <Text style={styles.currentSetsTitle}>This session</Text>
               {currentSets.map((set, index) => {
                 const prData = sessionPRs.get(set.id);
+                const warmup = isWarmupSet(set, exercise);
                 return (
                   <View key={set.id} style={styles.currentSetRow}>
-                    <Text style={styles.currentSetNumber}>Set {index + 1}</Text>
+                    <Text style={styles.currentSetNumber}>{warmup ? 'Warm-up' : `Set ${index + 1}`}</Text>
                     <Text style={styles.currentSetDetail}>
                       {formatWeight(set.weight, units)} × {set.reps} reps
                       {set.variant ? <Text style={styles.setVariantTag}>{`  ${set.variant}`}</Text> : null}
                     </Text>
+                    {/* Warm-ups stay in history but out of weekly volume. */}
+                    <TouchableOpacity
+                      style={[styles.warmupToggle, warmup && styles.warmupToggleOn]}
+                      onPress={() => onSetWarmup?.(set.id, !warmup)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: warmup }}
+                      accessibilityLabel={warmup ? 'Count as a working set' : 'Mark as warm-up'}
+                      testID={`warmup-${set.id}`}
+                    >
+                      <Text style={[styles.warmupToggleText, warmup && styles.warmupToggleTextOn]}>W</Text>
+                    </TouchableOpacity>
                     {prData && (
                       <View style={[styles.prBadge, prData.isMilestone && styles.prBadgeMilestone]}>
                         <Text style={[styles.prBadgeText, prData.isMilestone && styles.prBadgeTextMilestone]}>
@@ -2374,6 +2392,25 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.healthGood,
     marginTop: 2,
+  },
+  warmupToggle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: colors.backgroundTertiary,
+  },
+  warmupToggleOn: {
+    backgroundColor: colors.warningDim,
+  },
+  warmupToggleText: {
+    fontSize: typography.size.xs,
+    fontWeight: typography.weight.bold,
+    color: colors.textTertiary,
+  },
+  warmupToggleTextOn: {
+    color: colors.warning,
   },
   setVariantTag: {
     fontSize: typography.size.xs,
