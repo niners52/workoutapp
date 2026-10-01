@@ -27,7 +27,14 @@ function VolumeRowView({ row, onPress }: { row: VolumeRow; onPress: () => void }
   const met = row.gap !== null && row.gap <= 0;
   const gapColor = row.tone === 'normal' ? colors.text : toneColor(row.tone);
   const barColor = row.tone === 'warning' || row.tone === 'danger' ? toneColor(row.tone) : met ? colors.textTertiary : colors.primary;
-  const gapText = row.target === null ? `${sets(row.sets)} sets` : met ? `${sets(row.sets)}/${row.target} ✓` : `${sets(row.gap!)} to go`;
+  const gapText =
+    row.target === null
+      ? row.share
+        ? `${sets(row.sets)} of ${row.share.ofTarget}`
+        : `${sets(row.sets)} sets`
+      : met
+        ? `${sets(row.sets)}/${row.target} ✓`
+        : `${sets(row.gap!)} to go`;
 
   return (
     <TouchableOpacity style={styles.volumeRow} onPress={onPress} activeOpacity={0.7} testID={`volume-row-${row.key}`}>
@@ -46,6 +53,15 @@ function VolumeRowView({ row, onPress }: { row: VolumeRow; onPress: () => void }
           </View>
           <Text style={styles.volumeSub}>
             {sets(row.sets)} of {row.target} sets
+          </Text>
+        </>
+      ) : row.share ? (
+        <>
+          <View style={styles.track}>
+            <View style={[styles.fill, { width: pct(row.sets / row.share.ofTarget), backgroundColor: colors.primary }]} />
+          </View>
+          <Text style={styles.volumeSub}>
+            {sets(row.sets)} of the {row.share.ofTarget} {row.share.groupLabel.toLowerCase()} sets
           </Text>
         </>
       ) : (

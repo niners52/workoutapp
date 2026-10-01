@@ -36,10 +36,12 @@ const week = new Date(2026, 8, 9); // Wednesday of the week of Mon 2026-09-07
 const workouts = [{ id: 'w1', startedAt: '2026-09-09T11:00:00Z', completedAt: '2026-09-09T12:00:00Z', templateId: null } as Workout];
 
 describe('targets', () => {
-  test('16 targeted groups totalling 125 sets, and rotator cuff is no longer one of them', () => {
+  // Revised again on 2026-10-01 with the full-body program: traps 9, abs 9,
+  // calves 3, adductors 0.
+  test('15 targeted groups totalling 129 sets, and rotator cuff is no longer one of them', () => {
     const targeted = Object.entries(WEEKLY_SET_TARGETS).filter(([, v]) => v > 0);
-    expect(targeted).toHaveLength(16);
-    expect(targeted.reduce((sum, [, v]) => sum + v, 0)).toBe(125);
+    expect(targeted).toHaveLength(15);
+    expect(targeted.reduce((sum, [, v]) => sum + v, 0)).toBe(129);
     expect(WEEKLY_SET_TARGETS.rotator_cuff).toBe(0);
     expect(WEEKLY_SET_TARGETS.mid_back).toBe(12);
     expect(WEEKLY_SET_TARGETS.rear_delts).toBe(6);

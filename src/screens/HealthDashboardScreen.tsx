@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { format, parseISO, startOfWeek } from 'date-fns';
+import { addDays, format, parseISO, startOfWeek } from 'date-fns';
 import { colors, typography, spacing, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
@@ -37,6 +37,7 @@ import {
   carbsTile,
   dayVerdict,
   fatTile,
+  isDeloadWeek,
   loggingTile,
   openReminders,
   proteinTile,
@@ -58,6 +59,7 @@ import {
   getRoutines,
   getSets,
   getTemplates,
+  getLastUsedLocationId,
   getUserSettings,
   getWorkouts,
   replaceExerciseInTemplates,
@@ -69,10 +71,11 @@ import { StrengthProgressCard } from '../components/strength';
 import { useBodyWeight } from '../hooks/useBodyWeight';
 import { syncTemplate } from '../services/syncService';
 import { getTrainingWeekStart } from '../services/missedExercises';
-import { remainingThisWeek, type RemainingExercise } from '../services/weekProgress';
+import { weekGaps, type WeekGapsView } from '../services/weekGaps';
+import { weekStartFor } from '../services/weekProgress';
 import { getTemplatesForDay } from '../services/analytics';
 import { DAY_NAMES } from '../types';
-import { LeftThisWeekCard, RecurringSwapCard } from '../components/goals';
+import { WhatsLeftCard, RecurringSwapCard } from '../components/goals';
 import { InsightsCard } from '../components/insights/InsightsCard';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
@@ -101,7 +104,7 @@ export function HealthDashboardScreen() {
   const [nutrition, setNutrition] = useState<NutritionLoad | null>(null);
   const [volume, setVolume] = useState<MuscleGroupVolume[] | null>(null);
   const [volumeError, setVolumeError] = useState(false);
-  const [remaining, setRemaining] = useState<RemainingExercise[] | null>(null);
+  const [gaps, setGaps] = useState<WeekGapsView | null>(null);
   const [recurringSwaps, setRecurringSwaps] = useState<RecurringSwap[] | null>(null);
   const [strength, setStrength] = useState<StrengthHighlight[] | null>(null);
   const [sleep, setSleep] = useState<SleepInput | null>(null);
@@ -119,35 +122,49 @@ export function HealthDashboardScreen() {
   // after the Apple Health sync, which never changes sets) and shared by both views.
   const loadTraining = useCallback(async () => {
     try {
-      const [sets, workouts, exercises, settings, dismissals, routines, templates, swaps, swapDismissals] = await Promise.all([
+      const [sets, workouts, exercises, settings, locationId, routines, templates, swaps, swapDismissals] = await Promise.all([
         getSets(),
         getWorkouts(),
         getExercises(),
         getUserSettings(),
-        getMissedExerciseDismissals(),
+        getLastUsedLocationId(),
         getRoutines(),
         getTemplates(),
         getExerciseSwaps(),
         getDismissedSwapPromotions(),
       ]);
       // Same counting rules as the Weekly Volume panel.
-      setVolume(computeWeeklyVolume(sets, workouts, exercises, settings, new Date()).muscleGroups);
+      const now = new Date();
+      const muscleGroups = computeWeeklyVolume(sets, workouts, exercises, settings, now).muscleGroups;
+      setVolume(muscleGroups);
       setVolumeError(false);
 
-      // Everything this week's routine asks for, day by day, so a Thursday
-      // evening can pick up what Monday and Tuesday left behind.
+      // What the rest of the week already plans to train, so tonight's list is
+      // only the muscles nothing else will cover.
       const routine = routines.find(r => r.isActive);
       const templateById = new Map(templates.map(t => [t.id, t]));
-      const planned = routine
-        ? DAY_NAMES.flatMap((dayLabel, day) =>
-            getTemplatesForDay(routine, day)
-              .flatMap(id => templateById.get(id)?.exerciseIds ?? [])
-              .map(exerciseId => ({ exerciseId, dayLabel })),
-          )
+      const weekStart = weekStartFor(settings.weekStartDay, now);
+      const upcoming = routine
+        ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+            .filter(date => date > now)
+            .map(date => ({
+              dayLabel: DAY_NAMES[date.getDay()],
+              exerciseIds: getTemplatesForDay(routine, date.getDay()).flatMap(id => templateById.get(id)?.exerciseIds ?? []),
+            }))
         : [];
-      const weekKey = getTrainingWeekStart(settings.weekStartDay);
-      const dropped = new Set(dismissals.filter(d => d.weekStart === weekKey).map(d => d.exerciseId));
-      setRemaining(remainingThisWeek(planned, workouts, sets, exercises, settings.weekStartDay, new Date(), dropped));
+      setGaps(
+        weekGaps({
+          volume: muscleGroups,
+          upcoming,
+          exercises,
+          sets,
+          focusMuscleGroups: (settings.healthTargets ?? DEFAULT_HEALTH_TARGETS).focusGroups.map(f => f.muscleGroup as string),
+          locationId,
+          weekStartDay: settings.weekStartDay,
+          now,
+          deload: isDeloadWeek((settings.healthTargets ?? DEFAULT_HEALTH_TARGETS).deloadWeekStart, now, settings.weekStartDay),
+        }),
+      );
 
       const ignored = new Set(swapDismissals);
       setRecurringSwaps(
@@ -218,19 +235,6 @@ export function HealthDashboardScreen() {
     setRefreshing(false);
   }, [syncHealthKit, loadTraining, loadHealth]);
 
-  // Drop a row for the rest of this training week (a swap you meant, say).
-  const handleDismissRemaining = useCallback(
-    async (exerciseId: string) => {
-      setRemaining(prev => prev?.filter(m => m.exercise.id !== exerciseId) ?? prev);
-      try {
-        await dismissMissedExercise(exerciseId, getTrainingWeekStart(weekStartDay));
-      } catch (e) {
-        console.error('[HealthDashboard] Dismiss remaining exercise error:', e);
-      }
-    },
-    [weekStartDay],
-  );
-
   // "Do this every week" -> rewrite the templates, and stop treating the
   // original as work still owed.
   const handleMakeSwapPermanent = useCallback(
@@ -264,9 +268,10 @@ export function HealthDashboardScreen() {
     await dismissSwapPromotion(swap.key).catch(e => console.error('[HealthDashboard] Dismiss swap error:', e));
   }, []);
 
-  // One tap: an active workout preloaded with everything still outstanding.
+  // One tap: an active workout holding the best exercise for each muscle
+  // nothing else this week will cover.
   const handleStartRemaining = useCallback(async () => {
-    const ids = remaining?.map(m => m.exercise.id) ?? [];
+    const ids = [...new Set((gaps?.uncovered ?? []).flatMap(g => g.suggestions.slice(0, 1).map(s => s.exerciseId)))];
     if (ids.length === 0) return;
     try {
       // Returns null if the user chose to keep an in-progress workout.
@@ -276,7 +281,7 @@ export function HealthDashboardScreen() {
       console.error('[HealthDashboard] Start remaining workout error:', e);
       Alert.alert('Error', 'Could not start the workout.');
     }
-  }, [remaining, startWorkout, navigation]);
+  }, [gaps, startWorkout, navigation]);
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) navigation.navigate('MainTabs', { screen: 'Train' });
@@ -382,13 +387,12 @@ export function HealthDashboardScreen() {
         <View style={styles.tierHeader}>
           <Text style={styles.tierTitle}>This week</Text>
         </View>
-        {remaining && remaining.length > 0 && (
+        {gaps && gaps.all.length > 0 && (
           <View style={styles.catchUp}>
-            <Text style={styles.catchUpTitle}>Left this week ({remaining.length})</Text>
-            <LeftThisWeekCard
-              items={remaining}
-              onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
-              onDismiss={handleDismissRemaining}
+            <Text style={styles.catchUpTitle}>Left this week — by muscle</Text>
+            <WhatsLeftCard
+              view={gaps}
+              onPressGroup={muscleGroup => navigation.navigate('MuscleGroupDetail', { muscleGroup, weekStart })}
               onStart={handleStartRemaining}
             />
           </View>
