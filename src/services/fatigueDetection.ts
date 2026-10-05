@@ -4,6 +4,7 @@ import {
   WorkoutSet,
   Exercise,
   UserSettings,
+  WorkoutLocation,
   TRAVEL_LOCATION_ID,
 } from '../types';
 import { buildLocationResolver } from './locationMatch';
@@ -18,6 +19,8 @@ export interface ExerciseFatigueSignal {
   declinePercent: number;
   message: string;
   detail: string;
+  /** The gym the comparison is from, when the exercise is trained at more than one. */
+  locationLabel?: string;
 }
 
 export interface OverallFatigueSignal {
@@ -75,11 +78,55 @@ function buildWorkoutLocationMap(workouts: Workout[]): Map<string, string | unde
  * - Callers' existing minimum-session checks (>= 4) then apply WITHIN the
  *   location, which implements "not enough history at this gym → no comparison".
  */
+/**
+ * A trend is only news if it is current. The session window is 8 weeks, so
+ * without these two bounds the coach can compare a session from six weeks ago
+ * against one from seven and announce it as "vs 2 weeks ago" — and if those
+ * sessions are at a gym the user has not been to lately, there is nothing they
+ * can act on. STALE_RECENT_DAYS: how old the latest session may be.
+ * MAX_COMPARISON_DAYS: how far apart the two ends of the comparison may sit.
+ */
+const STALE_RECENT_DAYS = 10;
+const MAX_COMPARISON_DAYS = 35;
+
+/** Whether a comparison over these sessions is current enough to report. */
+function comparisonIsCurrent(sessions: ExerciseSession[], oldest: Date, now: Date): boolean {
+  const latest = sessions[0]?.date;
+  if (!latest) return false;
+  if (differenceInDays(now, latest) > STALE_RECENT_DAYS) return false;
+  return differenceInDays(latest, oldest) <= MAX_COMPARISON_DAYS;
+}
+
+/** "vs 2 weeks ago" only when it really was 2 weeks ago. */
+function agoLabel(from: Date, to: Date): string {
+  const days = Math.max(1, differenceInDays(from, to));
+  if (days <= 10) return `vs ${days} day${days === 1 ? '' : 's'} ago`;
+  const weeks = Math.round(days / 7);
+  return `vs ${weeks} week${weeks === 1 ? '' : 's'} ago`;
+}
+
 function filterToComparableLocation(sessions: ExerciseSession[]): ExerciseSession[] {
   const nonTravel = sessions.filter(s => s.locationId !== TRAVEL_LOCATION_ID);
   if (nonTravel.length === 0) return [];
   const focusLocation = nonTravel[0].locationId;
   return nonTravel.filter(s => s.locationId === focusLocation);
+}
+
+/**
+ * The gym to name in a message, or undefined when there is nothing to
+ * disambiguate: one location (or none recorded) means the weight can only have
+ * come from there.
+ */
+function locationLabelFor(
+  allSessions: ExerciseSession[],
+  comparable: ExerciseSession[],
+  locations?: WorkoutLocation[]
+): string | undefined {
+  const distinct = new Set(allSessions.map(s => s.locationId));
+  if (distinct.size < 2) return undefined;
+  const id = comparable[0]?.locationId;
+  if (!id) return undefined;
+  return locations?.find(l => l.id === id)?.name ?? undefined;
 }
 
 function buildExerciseSessions(
@@ -149,33 +196,39 @@ function analyzeExerciseStrengthTrend(
   exerciseName: string,
   exerciseId: string,
   sessions: ExerciseSession[],
-  sensitivity: number
+  sensitivity: number,
+  locationLabel?: string,
+  now: Date = new Date()
 ): ExerciseFatigueSignal | null {
   if (sessions.length < 4) return null;
 
   // Recent: sessions 0-1 (last 2)
   const recentWeights = sessions.slice(0, 2).map(s => s.topWeight);
   // Baseline: sessions 2-5 (next 4, or however many are available)
-  const baselineWeights = sessions.slice(2, 6).map(s => s.topWeight);
+  const baseline = sessions.slice(2, 6);
+  const baselineWeights = baseline.map(s => s.topWeight);
 
   const recentAvg = avg(recentWeights);
   const baselineAvg = avg(baselineWeights);
 
   if (baselineAvg === 0) return null;
+  if (!comparisonIsCurrent(sessions, baseline[baseline.length - 1]!.date, now)) return null;
 
   const declinePercent = ((baselineAvg - recentAvg) / baselineAvg) * 100;
 
   if (declinePercent <= sensitivity) return null;
 
   const rounded = Math.round(declinePercent);
+  const at = locationLabel ? ` at ${locationLabel}` : '';
   return {
     exerciseId,
     exerciseName,
     signalType: 'strength_decline',
     severity: Math.min(95, 60 + rounded),
     declinePercent: rounded,
-    message: `${exerciseName} down ${rounded}% over last ${sessions.slice(0, 2).length} sessions`,
-    detail: `Avg top set: ${Math.round(baselineAvg)} → ${Math.round(recentAvg)} lbs. Consider dropping weight 10-15%.`,
+    locationLabel,
+    message: `${exerciseName} down ${rounded}%${at} over last ${sessions.slice(0, 2).length} sessions`,
+    detail: `Avg top set${at}: ${Math.round(baselineAvg)} → ${Math.round(recentAvg)} lbs. Consider dropping weight 10-15%.`,
   };
 }
 
@@ -185,7 +238,9 @@ function analyzeExerciseRepTrend(
   exerciseName: string,
   exerciseId: string,
   sessions: ExerciseSession[],
-  sensitivity: number
+  sensitivity: number,
+  locationLabel?: string,
+  now: Date = new Date()
 ): ExerciseFatigueSignal | null {
   if (sessions.length < 4) return null;
 
@@ -232,24 +287,31 @@ function analyzeExerciseRepTrend(
     return avg(reps);
   };
 
+  const baselineSessions = sessions.slice(2, 4);
   const recentReps = getAvgRepsAtWeight(sessions.slice(0, 2));
-  const baselineReps = getAvgRepsAtWeight(sessions.slice(2, 4));
+  const baselineReps = getAvgRepsAtWeight(baselineSessions);
 
   if (baselineReps === 0 || recentReps === 0) return null;
+  if (!comparisonIsCurrent(sessions, baselineSessions[baselineSessions.length - 1]!.date, now)) return null;
 
   const declinePercent = ((baselineReps - recentReps) / baselineReps) * 100;
 
   if (declinePercent <= sensitivity) return null;
 
   const rounded = Math.round(declinePercent);
+  // The weight is only meaningful next to the gym it was lifted at: 16.25 lbs
+  // is a Vasa cable stack and does not exist at Planet Fitness.
+  const at = locationLabel ? ` at ${locationLabel}` : '';
+  const ago = agoLabel(sessions[0]!.date, baselineSessions[baselineSessions.length - 1]!.date);
   return {
     exerciseId,
     exerciseName,
     signalType: 'rep_drop',
     severity: Math.min(90, 55 + rounded),
     declinePercent: rounded,
-    message: `${exerciseName}: fewer reps at ${workingWeight} lbs vs 2 weeks ago`,
-    detail: `Avg ${baselineReps.toFixed(1)} → ${recentReps.toFixed(1)} reps at ${workingWeight} lbs. Focus on form and recovery.`,
+    locationLabel,
+    message: `${exerciseName}: fewer reps at ${workingWeight} lbs${at} ${ago}`,
+    detail: `Avg ${baselineReps.toFixed(1)} → ${recentReps.toFixed(1)} reps at ${workingWeight} lbs${at}. Focus on form and recovery.`,
   };
 }
 
@@ -407,7 +469,8 @@ export function analyzeFatigue(
   workouts: Workout[],
   sets: WorkoutSet[],
   exercises: Exercise[],
-  settings: UserSettings
+  settings: UserSettings,
+  locations?: WorkoutLocation[]
 ): FatigueAnalysis {
   const sensitivity = settings.fatigueSensitivity ?? 10;
   const workoutDateMap = buildWorkoutDateMap(workouts);
@@ -431,18 +494,18 @@ export function analyzeFatigue(
     const exercise = exerciseMap.get(exerciseId);
     if (!exercise) continue;
 
-    const sessions = filterToComparableLocation(
-      buildExerciseSessions(exerciseId, sets, workoutDateMap, locationMap)
-    );
+    const allSessions = buildExerciseSessions(exerciseId, sets, workoutDateMap, locationMap);
+    const sessions = filterToComparableLocation(allSessions);
     if (sessions.length < 4) continue;
+    const locationLabel = locationLabelFor(allSessions, sessions, locations);
 
     const strengthSignal = analyzeExerciseStrengthTrend(
-      exercise.name, exerciseId, sessions, sensitivity
+      exercise.name, exerciseId, sessions, sensitivity, locationLabel
     );
     if (strengthSignal) exerciseSignals.push(strengthSignal);
 
     const repSignal = analyzeExerciseRepTrend(
-      exercise.name, exerciseId, sessions, sensitivity
+      exercise.name, exerciseId, sessions, sensitivity, locationLabel
     );
     if (repSignal) exerciseSignals.push(repSignal);
   }
@@ -477,7 +540,8 @@ export function getExerciseFatigueWarnings(
   workouts: Workout[],
   sets: WorkoutSet[],
   exercises: Exercise[],
-  settings: UserSettings
+  settings: UserSettings,
+  locations?: WorkoutLocation[]
 ): Map<string, ExerciseFatigueSignal> {
   const result = new Map<string, ExerciseFatigueSignal>();
 
@@ -494,21 +558,21 @@ export function getExerciseFatigueWarnings(
     const exercise = exerciseMap.get(exerciseId);
     if (!exercise) continue;
 
-    const sessions = filterToComparableLocation(
-      buildExerciseSessions(exerciseId, sets, workoutDateMap, locationMap)
-    );
+    const allSessions = buildExerciseSessions(exerciseId, sets, workoutDateMap, locationMap);
+    const sessions = filterToComparableLocation(allSessions);
     if (sessions.length < 4) continue;
+    const locationLabel = locationLabelFor(allSessions, sessions, locations);
 
     // Pick the highest severity signal
     const signals: ExerciseFatigueSignal[] = [];
 
     const strengthSignal = analyzeExerciseStrengthTrend(
-      exercise.name, exerciseId, sessions, sensitivity
+      exercise.name, exerciseId, sessions, sensitivity, locationLabel
     );
     if (strengthSignal) signals.push(strengthSignal);
 
     const repSignal = analyzeExerciseRepTrend(
-      exercise.name, exerciseId, sessions, sensitivity
+      exercise.name, exerciseId, sessions, sensitivity, locationLabel
     );
     if (repSignal) signals.push(repSignal);
 

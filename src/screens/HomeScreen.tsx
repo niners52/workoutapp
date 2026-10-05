@@ -60,6 +60,7 @@ import {
   saveManualSleepEntry,
   getSleepFallbackDismissed,
   setSleepFallbackDismissed,
+  getLocations,
 } from '../services/storage';
 import { getSleepData as getCachedSleepData, clearCacheForDate, getSleepAverage } from '../services/healthKitCache';
 import { DAY_NAMES, DEFAULT_DAILY_GOALS, DEFAULT_WEEKLY_GOALS, Challenge, Partnership, CHALLENGE_TYPE_NAMES, Supplement, MUSCLE_GROUP_DISPLAY_NAMES } from '../types';
@@ -422,6 +423,7 @@ export function HomeScreen() {
             routine: currentRoutine,
             settings: freshSettings,
             shortfalls: shortfallData,
+            locations: await getLocations(),
           }, 2);
 
           // Merge top insight into coach suggestions (max 3 total)

@@ -72,10 +72,11 @@ import { useBodyWeight } from '../hooks/useBodyWeight';
 import { syncTemplate } from '../services/syncService';
 import { getTrainingWeekStart } from '../services/missedExercises';
 import { weekGaps, type WeekGapsView } from '../services/weekGaps';
+import { routineChanges, type RoutineChange } from '../services/routineChanges';
 import { weekStartFor } from '../services/weekProgress';
 import { getTemplatesForDay } from '../services/analytics';
 import { DAY_NAMES } from '../types';
-import { WhatsLeftCard, RecurringSwapCard } from '../components/goals';
+import { WhatsLeftCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
 import { InsightsCard } from '../components/insights/InsightsCard';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
@@ -105,6 +106,7 @@ export function HealthDashboardScreen() {
   const [volume, setVolume] = useState<MuscleGroupVolume[] | null>(null);
   const [volumeError, setVolumeError] = useState(false);
   const [gaps, setGaps] = useState<WeekGapsView | null>(null);
+  const [changes, setChanges] = useState<RoutineChange[] | null>(null);
   const [recurringSwaps, setRecurringSwaps] = useState<RecurringSwap[] | null>(null);
   const [strength, setStrength] = useState<StrengthHighlight[] | null>(null);
   const [sleep, setSleep] = useState<SleepInput | null>(null);
@@ -165,6 +167,9 @@ export function HealthDashboardScreen() {
           deload: isDeloadWeek((settings.healthTargets ?? DEFAULT_HEALTH_TARGETS).deloadWeekStart, now, settings.weekStartDay),
         }),
       );
+
+      // A log of what happened to the plan: swapped, or asked for and not done.
+      setChanges(routineChanges({ workouts, sets, exercises, swaps, templates, weekStartDay: settings.weekStartDay, now }));
 
       const ignored = new Set(swapDismissals);
       setRecurringSwaps(
@@ -437,6 +442,16 @@ export function HealthDashboardScreen() {
           <Text style={styles.tierTitle}>Medical</Text>
         </View>
         <RemindersCard items={reminderViews} onToggleDone={handleToggleDone} onManage={() => navigation.navigate('HealthReminders')} />
+
+        {changes && changes.length > 0 && (
+          <View style={styles.catchUp}>
+            <Text style={styles.catchUpTitle}>Changed this week ({changes.length})</Text>
+            <RoutineChangesCard
+              items={changes}
+              onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
+            />
+          </View>
+        )}
 
         <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('TrainingOverview')} style={styles.trainingLink}>
           <Card style={styles.trainingCard}>

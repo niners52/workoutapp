@@ -7,3 +7,4 @@ export { WeeklyTotals } from './WeeklyTotals';
 export { CatchUpCard } from './CatchUpCard';
 export { WhatsLeftCard } from './WhatsLeftCard';
 export { RecurringSwapCard } from './RecurringSwapCard';
+export { RoutineChangesCard } from './RoutineChangesCard';

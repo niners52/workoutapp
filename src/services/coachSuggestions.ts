@@ -15,6 +15,7 @@ import {
   PrimaryMuscleGroup,
   MUSCLE_GROUP_DISPLAY_NAMES,
   TRAVEL_LOCATION_ID,
+  WorkoutLocation,
 } from '../types';
 import { buildLocationResolver } from './locationMatch';
 import { MuscleGroupShortfall } from './analytics';
@@ -383,13 +384,14 @@ function generateFatigueSuggestions(
   workouts: Workout[],
   sets: WorkoutSet[],
   exercises: Exercise[],
-  settings: UserSettings
+  settings: UserSettings,
+  locations?: WorkoutLocation[]
 ): CoachSuggestion[] {
   if (settings.fatigueDetectionEnabled === false || settings.isOnDeload) {
     return [];
   }
 
-  const analysis = analyzeFatigue(workouts, sets, exercises, settings);
+  const analysis = analyzeFatigue(workouts, sets, exercises, settings, locations);
   const suggestions: CoachSuggestion[] = [];
 
   // Top 2 exercise signals
@@ -784,13 +786,15 @@ export interface CoachSuggestionsInput {
   routine: Routine | undefined;
   settings: UserSettings;
   shortfalls: MuscleGroupShortfall[];
+  /** Gym names, so a weight can be reported next to the stack it came from. */
+  locations?: WorkoutLocation[];
 }
 
 export async function getTopSuggestions(
   input: CoachSuggestionsInput,
   maxCount: number = 2
 ): Promise<CoachSuggestion[]> {
-  const { workouts, sets, exercises, templates, routine, settings, shortfalls } = input;
+  const { workouts, sets, exercises, templates, routine, settings, shortfalls, locations } = input;
   const context = computeCoachContext(workouts);
   // Auto-encourage: regardless of the user's setting, a 7+ day break flips us into
   // encouragement-only mode for 14 days. The user can still see the wins; we just
@@ -811,7 +815,7 @@ export async function getTopSuggestions(
     : [
         // Recovery suggestions stay â€” they're protective/helpful, not criticism.
         ...generateRecoverySuggestions(workouts, sets, exercises, routine, templates),
-        ...(suppressDeclines ? [] : generateFatigueSuggestions(workouts, sets, exercises, settings)),
+        ...(suppressDeclines ? [] : generateFatigueSuggestions(workouts, sets, exercises, settings, locations)),
         ...(settings.isOnDeload || suppressDeclines ? [] : generateVolumeGapSuggestions(shortfalls)),
         ...(settings.isOnDeload || suppressDeclines ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),
         ...(settings.isOnDeload || suppressDeclines ? [] : generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings)),
