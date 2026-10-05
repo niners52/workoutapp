@@ -221,7 +221,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
       if (userSettings.fatigueDetectionEnabled !== false && !userSettings.isOnDeload) {
         const warnings = getExerciseFatigueWarnings(
           activeWorkout.exerciseIds,
-          workouts, sets, exercises, userSettings
+          workouts, sets, exercises, userSettings, locations
         );
         setFatigueWarnings(warnings);
       }
