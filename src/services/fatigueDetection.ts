@@ -192,6 +192,30 @@ function avg(values: number[]): number {
 
 // ─── 1. Exercise Strength Trend ──────────────────────────────────────────────
 
+/**
+ * Whether a drop in top weight is explained by working in a higher rep range.
+ *
+ * Total work is the rep-range-neutral measure: 25 lbs for 6 and 15 lbs for 14
+ * are the same session with a different prescription, and the second is not a
+ * loss of strength. The signal only fires when the work went down as well as
+ * the load. Where the work really did drop — which is what a deliberate move
+ * to lighter sets usually looks like too — the coach still says so, and the
+ * card's dismissal is the user's way of saying it was on purpose.
+ */
+function isRepRangeChange(recent: ExerciseSession[], baseline: ExerciseSession[]): boolean {
+  const recentVolume = avg(recent.map(s => s.totalVolume));
+  const baselineVolume = avg(baseline.map(s => s.totalVolume));
+  if (baselineVolume <= 0) return false;
+
+  const workHeld = recentVolume >= baselineVolume * 0.95;
+  const repsUp = avgReps(recent) > avgReps(baseline) * 1.1;
+  return workHeld && repsUp;
+}
+
+function avgReps(sessions: ExerciseSession[]): number {
+  return avg(sessions.flatMap(s => s.sets.map(set => set.reps)));
+}
+
 function analyzeExerciseStrengthTrend(
   exerciseName: string,
   exerciseId: string,
@@ -213,6 +237,7 @@ function analyzeExerciseStrengthTrend(
 
   if (baselineAvg === 0) return null;
   if (!comparisonIsCurrent(sessions, baseline[baseline.length - 1]!.date, now)) return null;
+  if (isRepRangeChange(sessions.slice(0, 2), baseline)) return null;
 
   const declinePercent = ((baselineAvg - recentAvg) / baselineAvg) * 100;
 

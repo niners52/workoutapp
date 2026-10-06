@@ -105,7 +105,13 @@ test('day verdict: Sep 8 names every rule it missed', () => {
   if (v.kind !== 'verdict') throw new Error('expected a verdict');
   expect(v.failed).toEqual(['calories', 'protein', 'fat', 'calcium']);
   expect(v.passed).toEqual(['sodium']);
-  expect(v.detail).toBe('Missed: Calories in band, Protein floor, Fat floor, Calcium band');
+  // Each miss carries its distance now: naming the rules alone never said
+  // whether a day was 2 g short or 25.
+  expect(v.detail).toBe(
+    'Missed: calories in band 1,573.3 kcal (526.7 under 2,100) · protein floor 156.2 g (13.8 under 170) · ' +
+      'fat floor 33.6 g (26.4 under 60) · calcium band 1,857.6 mg (657.6 over 1,200)',
+  );
+  expect(v.misses.every(m => !m.near)).toBe(true);
 });
 
 test('day verdict: green only when all five rules pass', () => {

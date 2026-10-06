@@ -39,6 +39,7 @@ test('reports the level and the pounds to the next one', () => {
       nextLevelLabel: 'Advanced',
       poundsToNext: 12,
       previousLevelLabel: null,
+      atThreshold: false,
     },
   ]);
 });
@@ -72,9 +73,12 @@ test('the same lift covering two muscles appears once, and the list is capped', 
     ['lats', result('Pull-Up', 'novice', 180, 200)],
     ['biceps', result('Curl', 'beginner', 60, 100)],
   ]);
-  // Closest first: bench 12 lb, pull-up 20, curl 40, squat 60 (squat drops off).
+  // Strongest first, then closest: intermediate bench, then the two novices
+  // by distance (pull-up 20 lb, squat 60), and the beginner curl drops off.
+  // Sorting on distance alone used to promote whatever sat nearest a
+  // threshold, which was reliably the weakest lift on the list.
   const out = strengthHighlights(now, null, 3);
-  expect(out.map(h => h.exerciseName)).toEqual(['Bench Press', 'Pull-Up', 'Curl']);
+  expect(out.map(h => h.exerciseName)).toEqual(['Bench Press', 'Pull-Up', 'Squat']);
 });
 
 test('muscles with no qualifying lift are skipped', () => {

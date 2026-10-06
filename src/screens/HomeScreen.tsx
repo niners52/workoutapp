@@ -996,7 +996,8 @@ export function HomeScreen() {
           <CoachSuggestionsCard
             suggestions={coachSuggestions}
             onDismiss={async (id) => {
-              await dismissSuggestion(id, 24);
+              const hours = coachSuggestions.find(s => s.id === id)?.dismissForHours ?? 24;
+              await dismissSuggestion(id, hours);
               setCoachSuggestions(prev => prev.filter(s => s.id !== id));
             }}
             onMuscleGroupPress={handleMuscleGroupPress}

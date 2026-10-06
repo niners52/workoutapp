@@ -234,6 +234,9 @@ export function CarbsTileView({ state, onPress }: { state: CarbsTile; onPress?: 
 
 // ─── Day verdict: the composite call on a complete day ──────────────────────
 
+/** 1,604 / 37.5 — thousands separated, one decimal only when it matters. */
+const fmt = (v: number): string => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+
 export function DayVerdictCard({ state, label, onPress }: { state: DayVerdict; label?: string; onPress?: () => void }) {
   const verdict = state.kind === 'verdict' ? state : null;
   const tone: Tone = verdict ? verdict.tone : 'muted';
@@ -246,9 +249,21 @@ export function DayVerdictCard({ state, label, onPress }: { state: DayVerdict; l
           <Text testID="day-verdict-headline" style={[styles.headline, styles.headlineSmall, { color: headlineColor(tone) }]}>
             {state.headline}
           </Text>
-          <Text testID="day-verdict-detail" style={styles.detail}>
-            {state.detail}
-          </Text>
+          {verdict && verdict.misses.length > 0 ? (
+            <View testID="day-verdict-detail">
+              {verdict.misses.map(miss => (
+                <Text key={miss.rule} style={styles.detail}>
+                  {miss.direction === 'unreadable'
+                    ? `${miss.label} — unreadable`
+                    : `${miss.label} — ${fmt(miss.value!)} ${miss.unit}, ${fmt(miss.delta!)} ${miss.direction} ${fmt(miss.bound!)}${miss.near ? ' (just short)' : ''}`}
+                </Text>
+              ))}
+            </View>
+          ) : (
+            <Text testID="day-verdict-detail" style={styles.detail}>
+              {state.detail}
+            </Text>
+          )}
         </View>
       </View>
       {verdict && verdict.passed.length > 0 && (

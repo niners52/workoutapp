@@ -12,7 +12,16 @@ import {
   type MuscleStrengthResult,
   type StrengthLevel,
 } from './strengthStandards';
+
 import type { PrimaryMuscleGroup } from '../types';
+
+/**
+ * How far into the next level still counts as "nearly there". Below the lower
+ * bound the gap is rounding, not a goal: being one pound off Novice says
+ * nothing worth putting on the homepage.
+ */
+const TRIVIAL_POUNDS_TO_NEXT = 3;
+
 
 export interface StrengthHighlight {
   exerciseName: string;
@@ -24,6 +33,8 @@ export interface StrengthHighlight {
   poundsToNext: number | null;
   /** Level at the start-of-training snapshot, when it was lower. */
   previousLevelLabel: string | null;
+  /** The next level is within a couple of pounds — say so instead of counting. */
+  atThreshold: boolean;
 }
 
 function nextLevel(level: StrengthLevel): StrengthLevel | null {
@@ -63,7 +74,11 @@ export function strengthHighlights(
       nextLevelLabel: next ? STRENGTH_LEVEL_LABELS[next] : null,
       poundsToNext,
       previousLevelLabel: levelUp && startLevel ? STRENGTH_LEVEL_LABELS[startLevel] : null,
-      // Level-ups first, then whoever needs the fewest pounds.
+      atThreshold: poundsToNext !== null && poundsToNext < TRIVIAL_POUNDS_TO_NEXT,
+      // Level-ups first, then the strongest lifts, then whoever needs the
+      // fewest pounds. Sorting on closeness alone promoted whatever happened
+      // to sit a pound under a threshold, which was usually a lift at the
+      // bottom of the scale.
       sortKey: poundsToNext ?? Number.MAX_SAFE_INTEGER,
       levelUp,
     });
@@ -78,8 +93,15 @@ export function strengthHighlights(
     }
   }
 
+  const levelRank = (l: StrengthLevel) => STRENGTH_LEVELS.indexOf(l);
   return [...byExercise.values()]
-    .sort((a, b) => Number(b.levelUp) - Number(a.levelUp) || a.sortKey - b.sortKey)
+    .sort(
+      (a, b) =>
+        Number(b.levelUp) - Number(a.levelUp) ||
+        levelRank(b.level) - levelRank(a.level) ||
+        a.sortKey - b.sortKey ||
+        a.exerciseName.localeCompare(b.exerciseName),
+    )
     .slice(0, limit)
     .map(({ sortKey: _sortKey, levelUp: _levelUp, ...highlight }) => highlight);
 }
