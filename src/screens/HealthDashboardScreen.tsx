@@ -60,6 +60,7 @@ import {
   getSets,
   getTemplates,
   getLastUsedLocationId,
+  getLocations,
   getUserSettings,
   getWorkouts,
   replaceExerciseInTemplates,
@@ -126,7 +127,7 @@ export function HealthDashboardScreen() {
   // after the Apple Health sync, which never changes sets) and shared by both views.
   const loadTraining = useCallback(async () => {
     try {
-      const [sets, workouts, exercises, settings, locationId, routines, templates, swaps, swapDismissals] = await Promise.all([
+      const [sets, workouts, exercises, settings, locationId, routines, templates, swaps, swapDismissals, locations] = await Promise.all([
         getSets(),
         getWorkouts(),
         getExercises(),
@@ -136,6 +137,7 @@ export function HealthDashboardScreen() {
         getTemplates(),
         getExerciseSwaps(),
         getDismissedSwapPromotions(),
+        getLocations(),
       ]);
       // Same counting rules as the Weekly Volume panel.
       const now = new Date();
@@ -171,7 +173,9 @@ export function HealthDashboardScreen() {
       );
 
       // A log of what happened to the plan: swapped, or asked for and not done.
-      setChanges(routineChanges({ workouts, sets, exercises, swaps, templates, weekStartDay: settings.weekStartDay, now }));
+      setChanges(
+        routineChanges({ workouts, sets, exercises, swaps, templates, weekStartDay: settings.weekStartDay, now, routine, locations }),
+      );
 
       const ignored = new Set(swapDismissals);
       setRecurringSwaps(
