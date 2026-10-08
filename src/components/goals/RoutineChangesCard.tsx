@@ -10,9 +10,26 @@ interface RoutineChangesCardProps {
   onPressExercise: (exerciseId: string) => void;
 }
 
+const ICONS: Record<RoutineChange['kind'], React.ComponentProps<typeof Ionicons>['name']> = {
+  swap: 'swap-horizontal-outline',
+  missed: 'remove-circle-outline',
+  skippedDay: 'calendar-clear-outline',
+};
+
+function detailFor(item: RoutineChange): string {
+  if (item.kind === 'skippedDay') {
+    if (!item.instead) return `Not done ${item.dayLabel}`;
+    const where = item.instead.locationName ? `a ${item.instead.locationName} workout` : 'another workout';
+    return `Not done ${item.dayLabel} · did ${where} instead (${item.instead.sets} sets)`;
+  }
+  const verb = item.kind === 'swap' ? 'Swapped' : 'Not done';
+  return `${verb} ${item.dayLabel}${item.templateName ? ` · ${item.templateName}` : ''}`;
+}
+
 /**
- * The week's change log: what was swapped for what, and what the plan asked
- * for that did not happen. Tapping a row opens that exercise's history.
+ * The week's change log: what was swapped for what, what the plan asked for
+ * that did not happen, and scheduled days that never ran. Tapping an exercise
+ * row opens its history.
  */
 export function RoutineChangesCard({ items, onPressExercise }: RoutineChangesCardProps) {
   return (
@@ -22,11 +39,12 @@ export function RoutineChangesCard({ items, onPressExercise }: RoutineChangesCar
           key={`${item.kind}-${item.exerciseId}-${item.at}`}
           testID={`routine-change-${item.kind}-${item.exerciseId}`}
           style={[styles.row, index === 0 && styles.rowFirst, index < items.length - 1 && styles.rowBorder]}
-          onPress={() => onPressExercise(item.kind === 'swap' ? item.replacementId ?? item.exerciseId : item.exerciseId)}
+          onPress={() => item.kind !== 'skippedDay' && onPressExercise(item.kind === 'swap' ? item.replacementId ?? item.exerciseId : item.exerciseId)}
+          disabled={item.kind === 'skippedDay'}
           activeOpacity={0.7}
         >
           <Ionicons
-            name={item.kind === 'swap' ? 'swap-horizontal-outline' : 'remove-circle-outline'}
+            name={ICONS[item.kind]}
             size={20}
             color={item.kind === 'swap' ? colors.primary : colors.warning}
             style={styles.icon}
@@ -39,10 +57,7 @@ export function RoutineChangesCard({ items, onPressExercise }: RoutineChangesCar
             ) : (
               <Text style={styles.name}>{item.exerciseName}</Text>
             )}
-            <Text style={styles.detail}>
-              {item.kind === 'swap' ? 'Swapped' : 'Not done'} {item.dayLabel}
-              {item.templateName ? ` · ${item.templateName}` : ''}
-            </Text>
+            <Text style={styles.detail}>{detailFor(item)}</Text>
           </View>
         </TouchableOpacity>
       ))}
