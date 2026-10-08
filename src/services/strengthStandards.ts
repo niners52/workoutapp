@@ -357,7 +357,14 @@ export function calculateAllMuscleStrengthLevels(
   sets: WorkoutSet[],
   workouts: Workout[],
   bodyWeightLbs: number,
-  options?: { beforeDate?: Date }
+  /**
+   * `activeSince` keeps lifts you have stopped doing out of the result. A
+   * barbell deadlift last pulled sixteen months ago still has a level, but
+   * calling it your current standing — and offering the pound that would make
+   * it Novice — is noise. The best e1RM is still the best ever on the lifts
+   * that qualify; only eligibility is gated.
+   */
+  options?: { beforeDate?: Date; activeSince?: Date }
 ): Map<PrimaryMuscleGroup, MuscleStrengthResult> {
   const results = new Map<PrimaryMuscleGroup, MuscleStrengthResult>();
 
@@ -394,6 +401,15 @@ export function calculateAllMuscleStrengthLevels(
       s => s.exerciseId === exercise.id && s.reps > 0
     );
     if (exerciseSets.length === 0) continue;
+
+    if (options?.activeSince) {
+      const since = options.activeSince.toISOString();
+      const trainedRecently = exerciseSets.some(s => {
+        const when = workoutDates.get(s.workoutId) ?? s.loggedAt;
+        return when >= since;
+      });
+      if (!trainedRecently) continue;
+    }
 
     // Find best e1RM
     let bestE1rm = 0;

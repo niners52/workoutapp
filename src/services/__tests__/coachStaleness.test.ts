@@ -88,10 +88,10 @@ test('a Vasa-only weight is not reported while the last session was at Planet Fi
   // Latest session is 2026-10-05 at PF, so the comparison runs on PF sessions
   // and nothing it says can involve a weight that only exists at Vasa.
   const signals = signalsOn(HISTORY, new Date('2026-10-06T12:00:00.000Z'));
-  expect(signals.some(s => s.signalType === 'rep_drop')).toBe(false);
   expect(signals.some(s => s.message.includes('16.25') || s.message.includes('Vasa'))).toBe(false);
-  // The top-set drop at PF itself (25 lbs on Sep 17 to 15 on Oct 5) is real
-  // and stays — it is same-gym, three weeks apart, and actionable.
+  // The PF top set really did fall, 25 lbs on Sep 17 to 15 on Oct 5, with the
+  // work down too — so it is still reported, at the gym it happened at. One
+  // dismissal silences it for eight weeks if the lighter load was the plan.
   expect(signals.map(s => s.signalType)).toEqual(['strength_decline']);
   expect(signals[0]!.message).toContain('at Planet Fitness');
 });
@@ -130,4 +130,27 @@ test('one gym only: no gym name, because there is nothing to disambiguate', () =
   const repDrop = signalsOn(pfOnly, new Date('2026-10-05T12:00:00.000Z')).find(s => s.signalType === 'rep_drop');
   expect(repDrop?.locationLabel).toBeUndefined();
   expect(repDrop?.message).toBe('Cable Lateral Raise: fewer reps at 15 lbs vs 10 days ago');
+});
+
+describe('a rep-range change is not a decline', () => {
+  test('load down a third with the reps up and the work holding says nothing', () => {
+    const repRangeChange: Session[] = [
+      { day: '2026-10-04', locationId: 'gym', weight: 15, reps: [14, 14, 14] },
+      { day: '2026-10-01', locationId: 'gym', weight: 15, reps: [14, 14, 14] },
+      { day: '2026-09-27', locationId: 'gym', weight: 25, reps: [6, 6, 6] },
+      { day: '2026-09-24', locationId: 'gym', weight: 25, reps: [6, 6, 6] },
+    ];
+    expect(signalsOn(repRangeChange, new Date('2026-10-05T12:00:00.000Z'))).toEqual([]);
+  });
+
+  test('the same load drop with the reps flat is still a decline', () => {
+    const realDecline: Session[] = [
+      { day: '2026-10-04', locationId: 'gym', weight: 15, reps: [6, 6, 6] },
+      { day: '2026-10-01', locationId: 'gym', weight: 15, reps: [6, 6, 6] },
+      { day: '2026-09-27', locationId: 'gym', weight: 25, reps: [6, 6, 6] },
+      { day: '2026-09-24', locationId: 'gym', weight: 25, reps: [6, 6, 6] },
+    ];
+    const signals = signalsOn(realDecline, new Date('2026-10-05T12:00:00.000Z'));
+    expect(signals.map(s => s.signalType)).toContain('strength_decline');
+  });
 });

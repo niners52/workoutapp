@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { addDays, format, parseISO, startOfWeek } from 'date-fns';
+import { addDays, format, parseISO, startOfWeek, subWeeks } from 'date-fns';
 import { colors, typography, spacing, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
@@ -89,6 +89,8 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 /** Home re-reads Apple Health at most this often; pull-to-refresh always does. */
 const FOCUS_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+/** A lift has to have been trained this recently to count as where you stand. */
+const STRENGTH_ACTIVE_WEEKS = 12;
 /** Room kept under the scroll content for the pinned Start Workout button. */
 const START_BUTTON_HEIGHT = 80;
 
@@ -181,7 +183,10 @@ export function HealthDashboardScreen() {
       // level earned since then can be called out.
       if (bodyWeightLbs) {
         const cutoff = getStartSnapshotCutoff(workouts);
-        const levelsNow = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs);
+        // Lifts still in the rotation only: a deadlift last pulled in 2025 has
+        // a level, but it is not where Tyler stands today.
+        const activeSince = subWeeks(now, STRENGTH_ACTIVE_WEEKS);
+        const levelsNow = calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs, { activeSince });
         const levelsAtStart = cutoff
           ? calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeightLbs, { beforeDate: cutoff })
           : null;

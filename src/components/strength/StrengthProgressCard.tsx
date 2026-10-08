@@ -31,8 +31,14 @@ export function StrengthProgressCard({ items, onPress }: StrengthProgressCardPro
             </View>
             {item.poundsToNext !== null && item.nextLevelLabel ? (
               <View style={styles.next}>
-                <Text style={styles.nextValue}>{item.poundsToNext} lb</Text>
-                <Text style={styles.nextLabel}>to {item.nextLevelLabel}</Text>
+                {item.atThreshold ? (
+                  <Text style={styles.nextValue}>on the edge</Text>
+                ) : (
+                  <Text style={styles.nextValue}>{item.poundsToNext} lb</Text>
+                )}
+                <Text style={styles.nextLabel}>
+                  {item.atThreshold ? `of ${item.nextLevelLabel}` : `to ${item.nextLevelLabel}`}
+                </Text>
               </View>
             ) : (
               <Ionicons name="trophy-outline" size={18} color={STRENGTH_LEVEL_COLORS.elite} />

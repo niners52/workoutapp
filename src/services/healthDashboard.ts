@@ -353,10 +353,75 @@ export const DAY_RULE_LABELS: Record<DayRule, string> = {
   calcium: 'Calcium band',
 };
 
+/** A rule that missed, and by how much. */
+export interface DayMiss {
+  rule: DayRule;
+  label: string;
+  /** What was logged. Null when the build could not read it. */
+  value: number | null;
+  /** The bound that was missed, in the same unit. */
+  bound: number | null;
+  /** Distance from that bound, always positive. */
+  delta: number | null;
+  direction: 'under' | 'over' | 'unreadable';
+  /** Within a twentieth of the bound: a miss, but not a different day. */
+  near: boolean;
+  unit: string;
+}
+
 export type DayVerdict =
   | { kind: 'partial'; headline: string; detail: string }
   | { kind: 'incomplete'; headline: string; detail: string }
-  | { kind: 'verdict'; tone: 'good' | 'warning'; passed: DayRule[]; failed: DayRule[]; unknown: DayRule[]; headline: string; detail: string };
+  | {
+      kind: 'verdict';
+      tone: 'good' | 'warning';
+      passed: DayRule[];
+      failed: DayRule[];
+      unknown: DayRule[];
+      /** One per failed or unreadable rule, in rule order. */
+      misses: DayMiss[];
+      headline: string;
+      detail: string;
+    };
+
+/** A miss inside this fraction of its bound reads as "just short", not as a different day. */
+const NEAR_MISS_FRACTION = 0.05;
+
+const DAY_RULE_UNITS: Record<DayRule, string> = {
+  calories: 'kcal',
+  protein: 'g',
+  fat: 'g',
+  sodium: 'mg',
+  calcium: 'mg',
+};
+
+function describeMiss(rule: DayRule, value: number | null, low: number | null, high: number | null): DayMiss {
+  const unit = DAY_RULE_UNITS[rule];
+  const label = DAY_RULE_LABELS[rule];
+  if (value === null) {
+    return { rule, label, value: null, bound: null, delta: null, direction: 'unreadable', near: false, unit };
+  }
+  const under = low !== null && value < low;
+  const bound = under ? low : high;
+  const delta = bound === null ? null : Math.abs(round1(value - bound));
+  return {
+    rule,
+    label,
+    value: round1(value),
+    bound,
+    delta,
+    direction: under ? 'under' : 'over',
+    near: delta !== null && bound !== null && bound > 0 && delta / bound <= NEAR_MISS_FRACTION,
+    unit,
+  };
+}
+
+/** "37.5 g, 22.5 under 60" — the number, then the distance. */
+export function formatMiss(miss: DayMiss): string {
+  if (miss.direction === 'unreadable') return `${miss.label} (unreadable)`;
+  const n = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  return `${miss.label.toLowerCase()} ${n(miss.value!)} ${miss.unit} (${n(miss.delta!)} ${miss.direction} ${n(miss.bound!)})`;
+}
 
 /**
  * Green only when every rule passes. A failure names the rules that missed
@@ -371,36 +436,53 @@ export function dayVerdict(row: NutritionDaySnapshot | null, t: HealthTargets, t
   if (!isLogged(row)) return { kind: 'incomplete', headline: 'Not logged', detail: 'An unlogged day is incomplete, not compliant' };
 
   const band = calorieBand(t);
-  const checks: Array<{ rule: DayRule; value: number | null; pass: (v: number) => boolean }> = [
-    { rule: 'calories', value: row.calories, pass: v => v >= band.lowKcal && v <= band.highKcal },
-    { rule: 'protein', value: row.protein_g, pass: v => v >= t.proteinFloorG },
-    { rule: 'fat', value: row.fat_g, pass: v => v >= t.fatFloorG },
-    { rule: 'sodium', value: row.sodium_mg, pass: v => v <= t.sodiumBudgetMg },
-    { rule: 'calcium', value: row.calcium_mg, pass: v => v >= t.calciumBandLowMg && v <= t.calciumBandHighMg },
+  // low/high are the bounds a value must sit between; null means that side is open.
+  const checks: Array<{ rule: DayRule; value: number | null; low: number | null; high: number | null }> = [
+    { rule: 'calories', value: row.calories, low: band.lowKcal, high: band.highKcal },
+    { rule: 'protein', value: row.protein_g, low: t.proteinFloorG, high: null },
+    { rule: 'fat', value: row.fat_g, low: t.fatFloorG, high: null },
+    { rule: 'sodium', value: row.sodium_mg, low: null, high: t.sodiumBudgetMg },
+    { rule: 'calcium', value: row.calcium_mg, low: t.calciumBandLowMg, high: t.calciumBandHighMg },
   ];
 
   const passed: DayRule[] = [];
   const failed: DayRule[] = [];
   const unknown: DayRule[] = [];
+  const misses: DayMiss[] = [];
   for (const c of checks) {
-    if (c.value === null) unknown.push(c.rule);
-    else if (c.pass(Math.round(c.value * 10) / 10)) passed.push(c.rule);
-    else failed.push(c.rule);
+    if (c.value === null) {
+      unknown.push(c.rule);
+      misses.push(describeMiss(c.rule, null, c.low, c.high));
+      continue;
+    }
+    const v = round1(c.value);
+    if ((c.low === null || v >= c.low) && (c.high === null || v <= c.high)) passed.push(c.rule);
+    else {
+      failed.push(c.rule);
+      misses.push(describeMiss(c.rule, v, c.low, c.high));
+    }
   }
 
   if (failed.length === 0 && unknown.length === 0) {
-    return { kind: 'verdict', tone: 'good', passed, failed, unknown, headline: 'All five rules met', detail: 'Calories, protein, fat, sodium, calcium' };
+    return { kind: 'verdict', tone: 'good', passed, failed, unknown, misses, headline: 'All five rules met', detail: 'Calories, protein, fat, sodium, calcium' };
   }
-  const missed = [...failed, ...unknown].map(r => DAY_RULE_LABELS[r]);
-  return {
-    kind: 'verdict',
-    tone: 'warning',
-    passed,
-    failed,
-    unknown,
-    headline: failed.length > 0 ? `${failed.length} of 5 rules missed` : 'Verdict incomplete',
-    detail: unknown.length > 0 && failed.length === 0 ? `Unreadable: ${missed.join(', ')}` : `Missed: ${missed.join(', ')}`,
-  };
+
+  // A floor is still a floor — a near miss fails — but a day that was 2 g short
+  // should not read like one that was 25 g short.
+  const realMisses = misses.filter(m => m.direction !== 'unreadable');
+  const allNear = realMisses.length > 0 && realMisses.every(m => m.near);
+  const headline =
+    failed.length === 0
+      ? 'Verdict incomplete'
+      : allNear
+        ? `${failed.length} of 5 just short`
+        : `${failed.length} of 5 rules missed`;
+  const detail =
+    failed.length === 0
+      ? `Unreadable: ${misses.map(m => m.label).join(', ')}`
+      : `Missed: ${misses.map(formatMiss).join(' · ')}`;
+
+  return { kind: 'verdict', tone: 'warning', passed, failed, unknown, misses, headline, detail };
 }
 
 // ─── Tier 1: logging completeness ───────────────────────────────────────────

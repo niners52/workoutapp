@@ -39,6 +39,12 @@ export interface CoachSuggestion {
   message: string;
   detail?: string;
   muscleGroup?: string;
+  /**
+   * How long dismissing this one should silence it. A decline on a lift whose
+   * load the user dropped on purpose is not news tomorrow either, so those
+   * stay gone for weeks rather than a day.
+   */
+  dismissForHours?: number;
 }
 
 interface DismissedSuggestion {
@@ -403,7 +409,8 @@ function generateFatigueSuggestions(
       priority: Math.min(90, 75 + Math.max(0, signal.declinePercent - sensitivity)),
       icon: 'trending-down-outline',
       message: signal.message,
-      detail: signal.detail,
+      detail: `${signal.detail} Dismiss if the lighter load was the plan.`,
+      dismissForHours: 8 * 7 * 24,
     });
   }
 
