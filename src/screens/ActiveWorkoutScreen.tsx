@@ -1997,12 +1997,19 @@ function ExerciseCard({
         </View>
       )}
 
-      {/* Fatigue Warning Banner */}
+      {/* Fatigue Warning / Progress Banner */}
       {fatigueWarning && !showPR && (
-        <View style={styles.fatigueBanner}>
-          <Ionicons name="trending-down-outline" size={14} color={colors.warning} />
-          <Text style={styles.fatigueBannerText}>{fatigueWarning.message}</Text>
-        </View>
+        fatigueWarning.tone === 'progress' ? (
+          <View style={[styles.fatigueBanner, styles.progressBanner]}>
+            <Ionicons name="trending-up-outline" size={14} color={colors.success} />
+            <Text style={[styles.fatigueBannerText, styles.progressBannerText]}>{fatigueWarning.message}</Text>
+          </View>
+        ) : (
+          <View style={styles.fatigueBanner}>
+            <Ionicons name="trending-down-outline" size={14} color={colors.warning} />
+            <Text style={styles.fatigueBannerText}>{fatigueWarning.message}</Text>
+          </View>
+        )
       )}
 
       {/* PR Celebration Banner */}
@@ -2363,6 +2370,12 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.warning,
     flex: 1,
+  },
+  progressBanner: {
+    backgroundColor: 'rgba(255, 197, 47, 0.1)',
+  },
+  progressBannerText: {
+    color: colors.success,
   },
   variantRow: {
     flexDirection: 'row' as const,

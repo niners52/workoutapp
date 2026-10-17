@@ -21,6 +21,7 @@ import { MuscleDetailModal } from './MuscleDetailModal';
 import {
   calculateAllMuscleStrengthLevels,
   getStartSnapshotCutoff,
+  strengthActiveSince,
   MuscleStrengthResult,
   STRENGTH_LEVEL_COLORS,
   STRENGTH_LEVEL_LABELS,
@@ -63,10 +64,13 @@ export function StrengthMapCard() {
     setShowWeightEdit(false);
   }, [manualWeightInput, userSettings.units, addBodyMeasurement]);
 
-  // Calculate current strength levels
+  // Current strength levels, from lifts still in the rotation: one dropped
+  // months ago (an injury, a swap) is not where you stand today.
   const currentLevels = useMemo(() => {
     if (!bodyWeight || bodyWeight <= 0) return new Map<PrimaryMuscleGroup, MuscleStrengthResult>();
-    return calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeight);
+    return calculateAllMuscleStrengthLevels(exercises, sets, workouts, bodyWeight, {
+      activeSince: strengthActiveSince(),
+    });
   }, [exercises, sets, workouts, bodyWeight]);
 
   // Calculate start snapshot levels

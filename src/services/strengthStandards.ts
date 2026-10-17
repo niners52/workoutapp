@@ -473,6 +473,16 @@ export function calculateAllMuscleStrengthLevels(
   return results;
 }
 
+/** A lift has to have been trained this recently to count as where you stand. */
+export const STRENGTH_ACTIVE_WEEKS = 12;
+
+/** The `activeSince` cutoff for "where you stand now" level reads. */
+export function strengthActiveSince(now: Date = new Date()): Date {
+  const since = new Date(now);
+  since.setDate(since.getDate() - STRENGTH_ACTIVE_WEEKS * 7);
+  return since;
+}
+
 /** Get the cutoff date for the "start" snapshot (first 4 weeks of data) */
 export function getStartSnapshotCutoff(workouts: Workout[]): Date | null {
   const completed = workouts

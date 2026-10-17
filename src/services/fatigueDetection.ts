@@ -14,8 +14,11 @@ import { buildLocationResolver } from './locationMatch';
 export interface ExerciseFatigueSignal {
   exerciseId: string;
   exerciseName: string;
-  signalType: 'strength_decline' | 'rep_drop';
+  signalType: 'strength_decline' | 'rep_drop' | 'strength_gain' | 'rep_gain';
+  /** Decline signals warn; progress signals are the coach saying it went well. */
+  tone: 'decline' | 'progress';
   severity: number;
+  /** Size of the change in percent: a drop for a decline, a gain for progress. */
   declinePercent: number;
   message: string;
   detail: string;
@@ -32,6 +35,8 @@ export interface OverallFatigueSignal {
 
 export interface FatigueAnalysis {
   exerciseSignals: ExerciseFatigueSignal[];
+  /** The same comparisons read the other way: lifts that went up. */
+  progressSignals: ExerciseFatigueSignal[];
   overallSignals: OverallFatigueSignal[];
   deloadSuggested: boolean;
 }
@@ -249,6 +254,7 @@ function analyzeExerciseStrengthTrend(
     exerciseId,
     exerciseName,
     signalType: 'strength_decline',
+    tone: 'decline',
     severity: Math.min(95, 60 + rounded),
     declinePercent: rounded,
     locationLabel,
@@ -332,11 +338,96 @@ function analyzeExerciseRepTrend(
     exerciseId,
     exerciseName,
     signalType: 'rep_drop',
+    tone: 'decline',
     severity: Math.min(90, 55 + rounded),
     declinePercent: rounded,
     locationLabel,
     message: `${exerciseName}: fewer reps at ${workingWeight} lbs${at} ${ago}`,
     detail: `Avg ${baselineReps.toFixed(1)} → ${recentReps.toFixed(1)} reps at ${workingWeight} lbs${at}. Focus on form and recovery.`,
+  };
+}
+
+// ─── 2b. Exercise Progress ───────────────────────────────────────────────────
+
+/**
+ * A lift that went up — the decline checks read the other way. Without this the
+ * coach only ever spoke about an exercise when it went down.
+ *
+ * Same windows, same gym, same staleness bounds as the declines, so a gain is
+ * as current as a drop would be. The bars are lower than the decline
+ * sensitivity because loads climb in small plates: 50 → 52.5 lbs is real.
+ * Heavier top sets win; failing that, more reps at the same working weight.
+ */
+const STRENGTH_GAIN_PERCENT = 3;
+const REP_GAIN_PERCENT = 8;
+
+function analyzeExerciseProgress(
+  exerciseName: string,
+  exerciseId: string,
+  sessions: ExerciseSession[],
+  locationLabel?: string,
+  now: Date = new Date()
+): ExerciseFatigueSignal | null {
+  if (sessions.length < 3) return null;
+
+  const recent = sessions.slice(0, 2);
+  const baseline = sessions.slice(2, 6);
+  if (!comparisonIsCurrent(sessions, baseline[baseline.length - 1]!.date, now)) return null;
+
+  const at = locationLabel ? ` at ${locationLabel}` : '';
+  const ago = agoLabel(sessions[0]!.date, baseline[baseline.length - 1]!.date);
+
+  // Heavier: avg top set up, without the reps on it collapsing (a single grinder
+  // at +5 lbs after a set of 10 is a test, not progress).
+  const recentTop = avg(recent.map(s => s.topWeight));
+  const baselineTop = avg(baseline.map(s => s.topWeight));
+  if (baselineTop > 0) {
+    const gain = ((recentTop - baselineTop) / baselineTop) * 100;
+    const repsHeld = avg(recent.map(s => s.topSetReps)) >= avg(baseline.map(s => s.topSetReps)) * 0.75;
+    if (gain >= STRENGTH_GAIN_PERCENT && repsHeld) {
+      const rounded = Math.round(gain);
+      return {
+        exerciseId,
+        exerciseName,
+        signalType: 'strength_gain',
+        tone: 'progress',
+        severity: Math.min(90, 60 + rounded),
+        declinePercent: rounded,
+        locationLabel,
+        message: `${exerciseName} up ${rounded}%${at} ${ago}`,
+        detail: `Avg top set${at}: ${Math.round(baselineTop)} → ${Math.round(recentTop)} lbs. Keep it there until the reps come back up.`,
+      };
+    }
+  }
+
+  // More reps at the weight both windows share. A lighter top set with more reps
+  // is a different prescription, not progress, so the load has to have held.
+  if (Math.max(...recent.map(s => s.topWeight)) < Math.max(...baseline.map(s => s.topWeight))) return null;
+  const weightsIn = (slice: ExerciseSession[]) =>
+    new Set(slice.flatMap(s => s.sets.map(set => set.weight)).filter(w => w > 0));
+  const recentWeights = weightsIn(recent);
+  const shared = [...weightsIn(baseline)].filter(w => recentWeights.has(w));
+  if (shared.length === 0) return null;
+  const workingWeight = Math.max(...shared);
+  const repsAt = (slice: ExerciseSession[]) =>
+    avg(slice.flatMap(s => s.sets.filter(set => set.weight === workingWeight).map(set => set.reps)));
+  const recentReps = repsAt(recent);
+  const baselineReps = repsAt(baseline);
+  if (baselineReps <= 0) return null;
+  const repGain = ((recentReps - baselineReps) / baselineReps) * 100;
+  if (repGain < REP_GAIN_PERCENT) return null;
+
+  const rounded = Math.round(repGain);
+  return {
+    exerciseId,
+    exerciseName,
+    signalType: 'rep_gain',
+    tone: 'progress',
+    severity: Math.min(85, 55 + rounded),
+    declinePercent: rounded,
+    locationLabel,
+    message: `${exerciseName}: more reps at ${workingWeight} lbs${at} ${ago}`,
+    detail: `Avg ${baselineReps.toFixed(1)} → ${recentReps.toFixed(1)} reps at ${workingWeight} lbs${at}. Time to try the next weight up.`,
   };
 }
 
@@ -515,6 +606,7 @@ export function analyzeFatigue(
 
   // Per-exercise analysis — trends compared within a single location only
   const exerciseSignals: ExerciseFatigueSignal[] = [];
+  const progressSignals: ExerciseFatigueSignal[] = [];
   for (const exerciseId of recentExerciseIds) {
     const exercise = exerciseMap.get(exerciseId);
     if (!exercise) continue;
@@ -533,10 +625,17 @@ export function analyzeFatigue(
       exercise.name, exerciseId, sessions, sensitivity, locationLabel
     );
     if (repSignal) exerciseSignals.push(repSignal);
+
+    // An exercise that is also flagged as down is not called a win as well.
+    if (!strengthSignal && !repSignal) {
+      const progress = analyzeExerciseProgress(exercise.name, exerciseId, sessions, locationLabel);
+      if (progress) progressSignals.push(progress);
+    }
   }
 
   // Sort by severity descending
   exerciseSignals.sort((a, b) => b.severity - a.severity);
+  progressSignals.sort((a, b) => b.severity - a.severity);
 
   // Overall analysis
   const overallSignals: OverallFatigueSignal[] = [];
@@ -557,9 +656,13 @@ export function analyzeFatigue(
     exerciseSignals.length >= 2 ||
     overallSignals.some(s => s.severity >= 70);
 
-  return { exerciseSignals, overallSignals, deloadSuggested };
+  return { exerciseSignals, progressSignals, overallSignals, deloadSuggested };
 }
 
+/**
+ * One note per exercise for the active-workout card: the strongest decline, or,
+ * when nothing went down, a lift that went up (check `tone`).
+ */
 export function getExerciseFatigueWarnings(
   exerciseIds: string[],
   workouts: Workout[],
@@ -604,6 +707,9 @@ export function getExerciseFatigueWarnings(
     if (signals.length > 0) {
       signals.sort((a, b) => b.severity - a.severity);
       result.set(exerciseId, signals[0]);
+    } else {
+      const progress = analyzeExerciseProgress(exercise.name, exerciseId, sessions, locationLabel);
+      if (progress) result.set(exerciseId, progress);
     }
   }
 

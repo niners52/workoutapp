@@ -783,6 +783,35 @@ function generatePositiveInsights(
   return suggestions;
 }
 
+// ─── 7. Exercise Progress ──────────────────────────────────────────────────
+
+/**
+ * The per-exercise wins: the same session comparisons that report a lift going
+ * down, read the other way. Before this the coach named an exercise only to
+ * say it dropped. Kept out of the return grace period like the declines, since
+ * both compare against pre-break sessions.
+ */
+function generateExerciseProgressSuggestions(
+  workouts: Workout[],
+  sets: WorkoutSet[],
+  exercises: Exercise[],
+  settings: UserSettings,
+  locations: WorkoutLocation[] | undefined,
+  context: CoachContext
+): CoachSuggestion[] {
+  if (context.inReturnGracePeriod || settings.isOnDeload) return [];
+  const analysis = analyzeFatigue(workouts, sets, exercises, settings, locations);
+  return analysis.progressSignals.slice(0, 2).map(signal => ({
+    id: `positive:exercise_gain:${signal.exerciseId}`,
+    type: 'insight' as CoachSuggestionType,
+    priority: Math.min(80, 66 + signal.declinePercent),
+    icon: 'arrow-up-circle-outline',
+    message: signal.message,
+    detail: signal.detail,
+    dismissForHours: 7 * 24,
+  }));
+}
+
 // â”€â”€â”€ Main Entry Point â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CoachSuggestionsInput {
@@ -827,7 +856,10 @@ export async function getTopSuggestions(
         ...(settings.isOnDeload || suppressDeclines ? [] : generateMissedMuscleGroupSuggestions(workouts, sets, exercises, settings)),
         ...(settings.isOnDeload || suppressDeclines ? [] : generateMuscleImbalanceSuggestions(workouts, sets, exercises, settings)),
       ];
-  const positive: CoachSuggestion[] = generatePositiveInsights(workouts, sets, exercises, context);
+  const positive: CoachSuggestion[] = [
+    ...generatePositiveInsights(workouts, sets, exercises, context),
+    ...generateExerciseProgressSuggestions(workouts, sets, exercises, settings, locations, context),
+  ];
 
   // Sort each pool by priority descending
   negative.sort((a, b) => b.priority - a.priority);

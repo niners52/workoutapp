@@ -9,7 +9,7 @@ import {
   Switch,
   Alert,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, StackActions } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Crypto from 'expo-crypto';
 
@@ -18,6 +18,7 @@ const generateId = () => Crypto.randomUUID();
 import { colors, typography, spacing, borderRadius, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useData } from '../contexts/DataContext';
+import { useWorkout } from '../contexts/WorkoutContext';
 import {
   Exercise,
   Equipment,
@@ -57,6 +58,7 @@ export function AddExerciseScreen() {
   const navigation = useNavigation();
   const route = useRoute<EditExerciseRouteProp>();
   const { addExercise, updateExercise, exercises, locations } = useData();
+  const { activeWorkout, addExerciseToWorkout, setCurrentExercise } = useWorkout();
 
   // Check if we're in edit mode
   const exerciseId = route.params?.exerciseId;
@@ -155,7 +157,26 @@ export function AddExerciseScreen() {
       });
     } else {
       addExercise(tempExercise).then(() => {
-        navigation.goBack();
+        if (!activeWorkout) {
+          navigation.goBack();
+          return;
+        }
+        // An exercise created mid-workout is usually about to be done. Offer to
+        // put it straight in, and skip the picker this was opened from so the
+        // workout is the next screen rather than a list to find it in again.
+        const routes = navigation.getState()?.routes ?? [];
+        const fromPicker = routes[routes.length - 2]?.name === 'ExercisePicker';
+        Alert.alert('Add to workout?', `Add ${tempExercise.name} to the workout in progress?`, [
+          { text: 'Not now', style: 'cancel', onPress: () => navigation.goBack() },
+          {
+            text: 'Add',
+            onPress: () => {
+              addExerciseToWorkout(tempExercise.id);
+              setCurrentExercise(tempExercise.id);
+              navigation.dispatch(StackActions.pop(fromPicker ? 2 : 1));
+            },
+          },
+        ]);
       });
     }
   };
