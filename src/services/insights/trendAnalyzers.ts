@@ -10,6 +10,7 @@ import { subDays, subWeeks, differenceInWeeks, format, startOfWeek, endOfWeek } 
 import { PrimaryMuscleGroup, MUSCLE_GROUP_DISPLAY_NAMES } from '../../types';
 import {
   calculateAllMuscleStrengthLevels,
+  strengthActiveSince,
   STRENGTH_LEVEL_LABELS,
   STRENGTH_LEVELS,
   StrengthLevel,
@@ -203,8 +204,12 @@ export function analyzeTrendPredictions(input: InsightsInput): Insight[] {
   const nonDeloadSets = getNonDeloadSets(sets, deloadIds);
   const nonDeloadWorkouts = getNonDeloadWorkouts(workouts);
 
-  // Strength prediction — look at percentToNext for the most advanced exercise
-  const currentLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs);
+  // Strength prediction — look at percentToNext for the most advanced exercise.
+  // Only lifts still in the rotation: "push bench to Advanced" is no use for a
+  // bench you stopped doing months ago.
+  const currentLevels = calculateAllMuscleStrengthLevels(exercises, nonDeloadSets, nonDeloadWorkouts, bodyWeightLbs, {
+    activeSince: strengthActiveSince(),
+  });
 
   // Find muscles closest to leveling up
   for (const [mg, result] of currentLevels) {
