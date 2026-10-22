@@ -181,6 +181,15 @@ describe('Flex', () => {
     expect(scheduled.map(p => p.dayLabel)).toEqual(['Thursday', 'Friday']);
   });
 
+  test('a skipped exercise done later in the week reads as missed on the day it was skipped', () => {
+    // Leg press on Monday's and Thursday's plans; skipped Monday, done Thursday by hand.
+    const twice: Template[] = TEMPLATES.map(x => (x.id === 'fb4' ? { ...x, exerciseIds: ['incline', 'row', 'leg-press'] } : x));
+    const thu = [...WORKOUTS, w('thu', d(22, 15), null)];
+    const thuSets = [...SETS, ...sets('leg-press', 3, 'thu', d(22, 15)), ...sets('incline', 3, 'thu', d(22, 15)), ...sets('row', 3, 'thu', d(22, 15))];
+    const items = plan({ templates: twice, workouts: thu, sets: thuSets, volume: volume(thuSets, thu), locationId: 'gym' });
+    expect(items.filter(i => i.exerciseId === 'leg-press').map(i => i.dayLabel)).toEqual(['Monday']);
+  });
+
   test('a muscle already at target drops its Flex items', () => {
     const doneGlutes = [...SETS, ...sets('glute-push', 12, 'wed', d(21))];
     const items = plan({ sets: doneGlutes, volume: volume(doneGlutes) });

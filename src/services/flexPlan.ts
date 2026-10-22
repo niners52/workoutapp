@@ -105,7 +105,7 @@ export function flexPlan({
   const stillOwed = new Set(volume.filter(mg => mg.target > 0 && mg.sets < mg.target).map(mg => mg.muscleGroup as string));
   const recent = recentUse(sets, byId, now);
 
-  const candidates: Array<{ exerciseId: string; reason: FlexItem['reason']; dayLabel?: string }> = [];
+  const candidates: Array<{ exerciseId: string; reason: FlexItem['reason']; dayLabel?: string; dayKey?: string }> = [];
 
   // 1. Missed: scheduled on a day that has passed and not done anywhere this
   //    week. Today counts only once today's session has finished, because
@@ -114,7 +114,7 @@ export function flexPlan({
   // Fly done where the plan said Incline Press is the plan, followed. Each
   // exercise the session did that the plan did not name stands in for one
   // skipped planned exercise sharing a primary muscle.
-  const swapCredit = new Map<string, number>();
+  const swapCredit = new Set<string>(); // `${exerciseId}|${dayKey}`
 
   if (routine) {
     const today = startOfDay(now);
@@ -142,13 +142,13 @@ export function flexPlan({
           );
           if (stand) {
             used.add(stand);
-            swapCredit.set(skippedId, (swapCredit.get(skippedId) ?? 0) + 1);
+            swapCredit.add(`${skippedId}|${isoDate(date)}`);
           }
         }
       }
 
       for (const exerciseId of plannedIds) {
-        candidates.push({ exerciseId, reason: 'missed', dayLabel: DAY_NAMES[date.getDay()] });
+        candidates.push({ exerciseId, reason: 'missed', dayLabel: DAY_NAMES[date.getDay()], dayKey: isoDate(date) });
       }
     }
   }
@@ -158,25 +158,51 @@ export function flexPlan({
     candidates.push({ exerciseId, reason: 'day6' });
   }
 
+  // An exercise scheduled on two days needs two sessions. A session pays off
+  // the slot on its own day first (or a swap done that day does); sessions on
+  // other days then pay off the oldest open slots. So a leg press skipped
+  // Monday and done Thursday reads "missed Monday", not "missed Thursday".
+  const sessionDays = new Map<string, string[]>();
+  for (const [exerciseId, workoutIds] of sessionsDone) {
+    sessionDays.set(
+      exerciseId,
+      [...workoutIds].map(id => workouts.find(w => w.id === id)).filter((w): w is Workout => !!w).map(w => isoDate(new Date(w.startedAt))),
+    );
+  }
+  const paid = new Set<number>();
+  const spare = new Map<string, number>();
+  for (const [exerciseId, days] of sessionDays) {
+    const open = [...days];
+    candidates.forEach((c, i) => {
+      if (c.reason !== 'missed' || c.exerciseId !== exerciseId || !c.dayKey) return;
+      const at = open.indexOf(c.dayKey);
+      if (at >= 0) {
+        open.splice(at, 1);
+        paid.add(i);
+      }
+    });
+    spare.set(exerciseId, open.length);
+  }
+  candidates.forEach((c, i) => {
+    if (c.reason === 'missed' && c.dayKey && !paid.has(i) && swapCredit.has(`${c.exerciseId}|${c.dayKey}`)) paid.add(i);
+  });
+  candidates.forEach((c, i) => {
+    if (c.reason !== 'missed' || paid.has(i)) return;
+    const left = spare.get(c.exerciseId) ?? 0;
+    if (left > 0) {
+      spare.set(c.exerciseId, left - 1);
+      paid.add(i);
+    }
+  });
+
   const out: FlexItem[] = [];
   const taken = new Set<string>();
-  // An exercise scheduled on two days needs two sessions: each session done
-  // this week pays off one scheduled day, oldest first.
-  const matched = new Map<string, number>();
 
-  for (const c of candidates) {
+  for (const [index, c] of candidates.entries()) {
     const planned = byId.get(c.exerciseId);
     if (!planned || planned.defaultWarmup || removed.has(c.exerciseId)) continue;
-    const done = (sessionsDone.get(c.exerciseId)?.size ?? 0) + (c.reason === 'missed' ? swapCredit.get(c.exerciseId) ?? 0 : 0);
-    if (c.reason === 'missed') {
-      const used = matched.get(c.exerciseId) ?? 0;
-      if (used < done) {
-        matched.set(c.exerciseId, used + 1);
-        continue;
-      }
-    } else if (done > 0) {
-      continue;
-    }
+    if (c.reason === 'missed' && paid.has(index)) continue;
+    if (c.reason === 'day6' && sessionsDone.has(c.exerciseId)) continue;
     const groups = creditedPrimaries(planned.primaryMuscleGroups ?? []) as string[];
     if (groups.length > 0 && !groups.some(g => stillOwed.has(g))) continue;
 
