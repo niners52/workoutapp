@@ -26,6 +26,7 @@ import { getTemplatesForDay } from './analytics';
 import { creditedPrimaries } from './muscleGroups';
 import { isWarmupSet } from './warmupSets';
 import { weekStartFor } from './weekProgress';
+import { dayWasTrained } from './thisWeek';
 
 export interface FlexItem {
   exerciseId: string;
@@ -109,22 +110,45 @@ export function flexPlan({
   // 1. Missed: scheduled on a day that has passed and not done anywhere this
   //    week. Today counts only once today's session has finished, because
   //    until then it may still happen.
+  // A swap inside a session pays off the planned exercise it replaced: Cable
+  // Fly done where the plan said Incline Press is the plan, followed. Each
+  // exercise the session did that the plan did not name stands in for one
+  // skipped planned exercise sharing a primary muscle.
+  const swapCredit = new Map<string, number>();
+
   if (routine) {
     const today = startOfDay(now);
     for (let date = startOfDay(weekStart); date <= today; date = addDays(date, 1)) {
-      const isToday = isSameDay(date, today);
-      const templateIds = getTemplatesForDay(routine, date.getDay());
-      if (isToday) {
-        const finishedToday = workouts.some(
-          w => w.completedAt && isSameDay(new Date(w.startedAt), today) && w.templateId && templateIds.includes(w.templateId),
+      const templateIds = getTemplatesForDay(routine, date.getDay()).filter(id => id !== poolTemplateId);
+      const plannedIds = templateIds.flatMap(id => templateById.get(id)?.exerciseIds ?? []);
+      if (plannedIds.length === 0) continue;
+      const trained = dayWasTrained(date, { templateIds, exerciseIds: new Set(plannedIds) }, workouts, sets);
+      if (isSameDay(date, today) && !trained) continue;
+
+      if (trained) {
+        const sessionIds = new Set(
+          workouts.filter(w => w.completedAt && !w.isDeload && isSameDay(new Date(w.startedAt), date)).map(w => w.id),
         );
-        if (!finishedToday) continue;
-      }
-      for (const templateId of templateIds) {
-        if (templateId === poolTemplateId) continue;
-        for (const exerciseId of templateById.get(templateId)?.exerciseIds ?? []) {
-          candidates.push({ exerciseId, reason: 'missed', dayLabel: DAY_NAMES[date.getDay()] });
+        const doneThatDay = new Set(
+          sets.filter(s => sessionIds.has(s.workoutId) && !isWarmupSet(s, byId.get(s.exerciseId))).map(s => s.exerciseId),
+        );
+        const planned = new Set(plannedIds);
+        const extras = [...doneThatDay].filter(id => !planned.has(id));
+        const used = new Set<string>();
+        for (const skippedId of plannedIds.filter(id => !doneThatDay.has(id))) {
+          const muscles = creditedPrimaries(byId.get(skippedId)?.primaryMuscleGroups ?? []) as string[];
+          const stand = extras.find(
+            id => !used.has(id) && (creditedPrimaries(byId.get(id)?.primaryMuscleGroups ?? []) as string[]).some(g => muscles.includes(g)),
+          );
+          if (stand) {
+            used.add(stand);
+            swapCredit.set(skippedId, (swapCredit.get(skippedId) ?? 0) + 1);
+          }
         }
+      }
+
+      for (const exerciseId of plannedIds) {
+        candidates.push({ exerciseId, reason: 'missed', dayLabel: DAY_NAMES[date.getDay()] });
       }
     }
   }
@@ -143,7 +167,7 @@ export function flexPlan({
   for (const c of candidates) {
     const planned = byId.get(c.exerciseId);
     if (!planned || planned.defaultWarmup || removed.has(c.exerciseId)) continue;
-    const done = sessionsDone.get(c.exerciseId)?.size ?? 0;
+    const done = (sessionsDone.get(c.exerciseId)?.size ?? 0) + (c.reason === 'missed' ? swapCredit.get(c.exerciseId) ?? 0 : 0);
     if (c.reason === 'missed') {
       const used = matched.get(c.exerciseId) ?? 0;
       if (used < done) {
