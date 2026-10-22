@@ -161,6 +161,7 @@ export function HealthDashboardScreen() {
         routine,
         templates,
         workouts,
+        sets,
         weekStartDay: settings.weekStartDay,
         now,
         excludeTemplateIds: [FLEX_POOL_TEMPLATE_ID],

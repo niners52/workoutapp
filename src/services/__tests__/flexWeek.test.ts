@@ -37,6 +37,8 @@ const EXERCISES: Exercise[] = [
   ex('v-squat', ['quads', 'hamstrings', 'glutes'], ['vasa-']), // day 6, Vasa only
   ex('glute-drive', ['glutes'], ['vasa-']), // day 6, Vasa only
   ex('cuff', ['rotator_cuff'], ['gym'], { defaultWarmup: true }),
+  ex('cable-fly', ['chest'], ['gym']),
+  ex('shrug', ['traps'], ['gym']),
 ];
 
 const t = (id: string, exerciseIds: string[], locationId = 'gym'): Template =>
@@ -146,6 +148,37 @@ describe('Flex', () => {
     const squat = items.find(i => i.insteadOf === 'v-squat');
     expect(squat?.exerciseId).not.toBe('v-squat');
     expect(items.every(i => i.exerciseId !== 'glute-drive')).toBe(true);
+  });
+
+  test('a swap inside a session pays off the planned exercise: Cable Fly where Incline was planned', () => {
+    // Monday as it really went: the plan said incline, the gym was busy, cable fly instead.
+    const swappedMonday = SETS.filter(x => !(x.workoutId === 'mon' && x.exerciseId === 'incline')).concat(sets('cable-fly', 3, 'mon', d(19)));
+    const items = plan({ sets: swappedMonday, volume: volume(swappedMonday), locationId: 'gym' });
+    expect(items.some(i => i.exerciseId === 'incline')).toBe(false);
+  });
+
+  test('a different muscle in its place is not a swap', () => {
+    const notASwap = SETS.filter(x => !(x.workoutId === 'mon' && x.exerciseId === 'incline')).concat(sets('shrug', 3, 'mon', d(19)));
+    const items = plan({ sets: notASwap, volume: volume(notASwap), locationId: 'gym' });
+    expect(items.find(i => i.exerciseId === 'incline')).toMatchObject({ reason: 'missed', dayLabel: 'Monday' });
+  });
+
+  test("a workout entered without its template still counts as that day's session", () => {
+    // Thursday logged by hand, no template picked: rows done, incline not.
+    const byHand = [...WORKOUTS, w('thu-hand', d(22, 15), null)];
+    const handSets = [...SETS, ...sets('row', 3, 'thu-hand', d(22, 15))];
+    const items = plan({ workouts: byHand, sets: handSets, volume: volume(handSets, byHand), locationId: 'gym' });
+    expect(items.find(i => i.exerciseId === 'incline')).toMatchObject({ reason: 'missed', dayLabel: 'Thursday' });
+
+    const scheduled = remainingPlan({ routine: ROUTINE, templates: TEMPLATES, workouts: byHand, sets: handSets, weekStartDay: 'monday', now: THURSDAY_EVENING });
+    expect(scheduled.map(p => p.dayLabel)).toEqual(['Friday']);
+  });
+
+  test('an unrelated hand-entered workout does not close out today', () => {
+    const unrelated = [...WORKOUTS, w('thu-other', d(22, 15), null)];
+    const otherSets = [...SETS, ...sets('shrug', 3, 'thu-other', d(22, 15))];
+    const scheduled = remainingPlan({ routine: ROUTINE, templates: TEMPLATES, workouts: unrelated, sets: otherSets, weekStartDay: 'monday', now: THURSDAY_EVENING });
+    expect(scheduled.map(p => p.dayLabel)).toEqual(['Thursday', 'Friday']);
   });
 
   test('a muscle already at target drops its Flex items', () => {

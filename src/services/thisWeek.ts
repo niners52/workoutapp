@@ -20,10 +20,29 @@ import {
   type Template,
   type WeekStartDay,
   type Workout,
+  type WorkoutSet,
 } from '../types';
 import { getTemplatesForDay } from './analytics';
 import { creditedPrimaries } from './muscleGroups';
 import { weekStartFor } from './weekProgress';
+
+/**
+ * Whether a scheduled day has been trained: a finished, non-deload session
+ * that day either ran one of its templates or logged any exercise the plan
+ * names. The second half matters: a workout entered by hand without picking
+ * the template is still that day's session.
+ */
+export function dayWasTrained(
+  date: Date,
+  plan: { templateIds: string[]; exerciseIds: Set<string> },
+  workouts: Workout[],
+  sets: WorkoutSet[] = [],
+): boolean {
+  const sessions = workouts.filter(w => w.completedAt && !w.isDeload && isSameDay(new Date(w.startedAt), date));
+  if (sessions.some(w => w.templateId && plan.templateIds.includes(w.templateId))) return true;
+  const ids = new Set(sessions.map(w => w.id));
+  return sets.some(s => ids.has(s.workoutId) && plan.exerciseIds.has(s.exerciseId));
+}
 
 export interface PlannedDay {
   dayLabel: string;
@@ -55,6 +74,7 @@ export function remainingPlan({
   routine,
   templates,
   workouts,
+  sets = [],
   weekStartDay,
   now = new Date(),
   excludeTemplateIds = [],
@@ -62,6 +82,8 @@ export function remainingPlan({
   routine?: Routine;
   templates: Template[];
   workouts: Workout[];
+  /** Lets a workout entered without its template still count as today's session. */
+  sets?: WorkoutSet[];
   weekStartDay: WeekStartDay;
   now?: Date;
   excludeTemplateIds?: string[];
@@ -76,16 +98,9 @@ export function remainingPlan({
     if (date < today) continue;
     const templateIds = getTemplatesForDay(routine, date.getDay()).filter(id => !excludeTemplateIds.includes(id));
     if (templateIds.length === 0) continue;
-    if (isSameDay(date, today)) {
-      const finished = workouts.some(
-        w => w.completedAt && isSameDay(new Date(w.startedAt), today) && w.templateId && templateIds.includes(w.templateId),
-      );
-      if (finished) continue;
-    }
-    out.push({
-      dayLabel: DAY_NAMES[date.getDay()],
-      exerciseIds: templateIds.flatMap(id => templateById.get(id)?.exerciseIds ?? []),
-    });
+    const exerciseIds = templateIds.flatMap(id => templateById.get(id)?.exerciseIds ?? []);
+    if (isSameDay(date, today) && dayWasTrained(today, { templateIds, exerciseIds: new Set(exerciseIds) }, workouts, sets)) continue;
+    out.push({ dayLabel: DAY_NAMES[date.getDay()], exerciseIds });
   }
   return out;
 }
