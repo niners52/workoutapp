@@ -51,9 +51,8 @@ const PRIMARIES: Record<string, string[]> = {
   'import-leg-raise': ['abs'],
   'incline-bench-press': ['chest'],
   'ae43a483-3e85-46d3-bcb2-33e014dbca97': ['lats'],
-  '083c1c85-f090-4a50-a430-19393c82d080': ['mid_back'],
+  '84b5317c-7dfb-4cf2-8b65-4f5c08e02901': ['mid_back'], // MTS row, replaced the Vasa ISO row 2026-10-22
   'back-extension': ['lower_back'],
-  '558d0521-308c-418d-9f3a-40ef807cd6a9': ['side_delts'],
   'overhead-triceps-extension-rope': ['triceps'],
   'import-cable-fly-high-low': ['chest'],
   'e1bc84b4-90e6-427e-bd1a-fdebf6b821ae': ['glutes'],
@@ -114,7 +113,7 @@ describe('the six full-body days', () => {
     const ids = FULL_BODY_DAYS.flatMap(d => d.items.map(i => i.exerciseId));
     expect(ids.every(id => id in PRIMARIES)).toBe(true);
     expect(FULL_BODY_DAYS.map(d => d.template.name)).toEqual([
-      'Full Body 1', 'Full Body 2', 'Full Body 3', 'Full Body 4', 'Full Body 5', 'Full Body 6',
+      'Full Body 1', 'Full Body 2', 'Full Body 3', 'Full Body 4', 'Full Body 5', 'Flex — day 6',
     ]);
     // Five at Planet Fitness, the sixth at Vasa.
     expect(FULL_BODY_DAYS.map(d => d.template.locationId)).toEqual(['gym', 'gym', 'gym', 'gym', 'gym', 'vasa-']);

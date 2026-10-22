@@ -1,7 +1,7 @@
 /**
  * The already-done note. Tyler trains mornings and some nights, so the same
  * exercise can appear twice in one week's plan: doing it once should mark it
- * done, not nag. What is still owed is counted by muscle group in weekGaps.
+ * done, not nag. What is still owed is counted by muscle group in thisWeek.
  */
 import type { Exercise, Workout, WorkoutSet } from '../../types';
 import { doneThisWeekByExercise } from '../weekProgress';

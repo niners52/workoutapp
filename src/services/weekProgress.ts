@@ -4,7 +4,7 @@
  * Training at night after a short morning session means the same exercise can
  * appear twice in one week's plan. Rather than nag about it, the app says it
  * plainly: an exercise done earlier this week is marked as such on the card.
- * What is still *owed* is counted by muscle group instead — see weekGaps.
+ * What is still *owed* is counted by muscle group instead — see thisWeek and flexPlan.
  */
 import { startOfWeek } from 'date-fns';
 import { DAY_NAMES, type WeekStartDay, type WorkoutSet } from '../types';

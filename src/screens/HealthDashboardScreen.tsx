@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { addDays, format, parseISO, startOfWeek } from 'date-fns';
+import { format, parseISO, startOfWeek } from 'date-fns';
 import { colors, typography, spacing, commonStyles } from '../theme';
 import { Button, Card } from '../components/common';
 import { useWorkoutBarPadding } from '../components/workout';
@@ -27,7 +27,6 @@ import {
   RemindersCard,
   SleepTileView,
   SodiumTileView,
-  WeeklyVolumeCard,
 } from '../components/health';
 import { useData } from '../contexts/DataContext';
 import {
@@ -37,7 +36,6 @@ import {
   carbsTile,
   dayVerdict,
   fatTile,
-  isDeloadWeek,
   loggingTile,
   openReminders,
   proteinTile,
@@ -59,8 +57,12 @@ import {
   getRoutines,
   getSets,
   getTemplates,
+  getFlexEdits,
+  getFlexLocationId,
   getLastUsedLocationId,
   getLocations,
+  saveFlexEdits,
+  setFlexLocationId,
   getUserSettings,
   getWorkouts,
   replaceExerciseInTemplates,
@@ -72,18 +74,18 @@ import { StrengthProgressCard } from '../components/strength';
 import { useBodyWeight } from '../hooks/useBodyWeight';
 import { syncTemplate } from '../services/syncService';
 import { getTrainingWeekStart } from '../services/missedExercises';
-import { weekGaps, type WeekGapsView } from '../services/weekGaps';
 import { routineChanges, type RoutineChange } from '../services/routineChanges';
-import { weekStartFor } from '../services/weekProgress';
-import { getTemplatesForDay } from '../services/analytics';
-import { DAY_NAMES } from '../types';
-import { WhatsLeftCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
+import { FlexCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
+import { ThisWeekCard } from '../components/health/ThisWeekCard';
+import { flexPlan, flexWeekKey, withAdded, withRemoved, type FlexEdits, type FlexPlanInput } from '../services/flexPlan';
+import { remainingPlan, thisWeekRows, type ThisWeekRow } from '../services/thisWeek';
+import { FLEX_POOL_TEMPLATE_ID } from '../data/fullBodyTemplates';
 import { InsightsCard } from '../components/insights/InsightsCard';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
 import { importHealthKitBodyWeights } from '../services/bodyWeightImport';
 import { requestProgressTab } from '../services/calendarFocus';
-import { DEFAULT_HEALTH_TARGETS, type HealthReminder, type MuscleGroupVolume } from '../types';
+import { DEFAULT_HEALTH_TARGETS, TRAVEL_LOCATION_ID, type HealthReminder, type MuscleGroupVolume, type WorkoutLocation } from '../types';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -106,7 +108,13 @@ export function HealthDashboardScreen() {
   const [nutrition, setNutrition] = useState<NutritionLoad | null>(null);
   const [volume, setVolume] = useState<MuscleGroupVolume[] | null>(null);
   const [volumeError, setVolumeError] = useState(false);
-  const [gaps, setGaps] = useState<WeekGapsView | null>(null);
+  const [weekRows, setWeekRows] = useState<ThisWeekRow[] | null>(null);
+  // Flex is recomputed on the phone whenever the gym or an edit changes, so the
+  // week's raw inputs are kept rather than re-read from storage each tap.
+  const [flexInputs, setFlexInputs] = useState<Omit<FlexPlanInput, 'locationId' | 'edits'> | null>(null);
+  const [flexLocations, setFlexLocations] = useState<WorkoutLocation[]>([]);
+  const [flexLocation, setFlexLocation] = useState<string | undefined>(undefined);
+  const [flexEdits, setFlexEdits] = useState<FlexEdits | null>(null);
   const [changes, setChanges] = useState<RoutineChange[] | null>(null);
   const [recurringSwaps, setRecurringSwaps] = useState<RecurringSwap[] | null>(null);
   const [strength, setStrength] = useState<StrengthHighlight[] | null>(null);
@@ -125,50 +133,61 @@ export function HealthDashboardScreen() {
   // after the Apple Health sync, which never changes sets) and shared by both views.
   const loadTraining = useCallback(async () => {
     try {
-      const [sets, workouts, exercises, settings, locationId, routines, templates, swaps, swapDismissals, locations] = await Promise.all([
-        getSets(),
-        getWorkouts(),
-        getExercises(),
-        getUserSettings(),
-        getLastUsedLocationId(),
-        getRoutines(),
-        getTemplates(),
-        getExerciseSwaps(),
-        getDismissedSwapPromotions(),
-        getLocations(),
-      ]);
+      const [sets, workouts, exercises, settings, locationId, routines, templates, swaps, swapDismissals, locations, edits, savedFlexLocation] =
+        await Promise.all([
+          getSets(),
+          getWorkouts(),
+          getExercises(),
+          getUserSettings(),
+          getLastUsedLocationId(),
+          getRoutines(),
+          getTemplates(),
+          getExerciseSwaps(),
+          getDismissedSwapPromotions(),
+          getLocations(),
+          getFlexEdits(),
+          getFlexLocationId(),
+        ]);
       // Same counting rules as the Weekly Volume panel.
       const now = new Date();
       const muscleGroups = computeWeeklyVolume(sets, workouts, exercises, settings, now).muscleGroups;
       setVolume(muscleGroups);
       setVolumeError(false);
 
-      // What the rest of the week already plans to train, so tonight's list is
-      // only the muscles nothing else will cover.
+      // Done, still scheduled, and left for Flex — per muscle, one model.
       const routine = routines.find(r => r.isActive);
-      const templateById = new Map(templates.map(t => [t.id, t]));
-      const weekStart = weekStartFor(settings.weekStartDay, now);
-      const upcoming = routine
-        ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-            .filter(date => date > now)
-            .map(date => ({
-              dayLabel: DAY_NAMES[date.getDay()],
-              exerciseIds: getTemplatesForDay(routine, date.getDay()).flatMap(id => templateById.get(id)?.exerciseIds ?? []),
-            }))
-        : [];
-      setGaps(
-        weekGaps({
+      const healthTargets = settings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
+      const plan = remainingPlan({
+        routine,
+        templates,
+        workouts,
+        weekStartDay: settings.weekStartDay,
+        now,
+        excludeTemplateIds: [FLEX_POOL_TEMPLATE_ID],
+      });
+      setWeekRows(
+        thisWeekRows({
           volume: muscleGroups,
-          upcoming,
+          plan,
           exercises,
-          sets,
-          focusMuscleGroups: (settings.healthTargets ?? DEFAULT_HEALTH_TARGETS).focusGroups.map(f => f.muscleGroup as string),
-          locationId,
-          weekStartDay: settings.weekStartDay,
-          now,
-          deload: isDeloadWeek((settings.healthTargets ?? DEFAULT_HEALTH_TARGETS).deloadWeekStart, now, settings.weekStartDay),
+          focusMuscleGroups: healthTargets.focusGroups.filter(f => !f.exerciseNameIncludes?.trim()).map(f => f.muscleGroup as string),
         }),
       );
+
+      setFlexInputs({
+        routine,
+        templates,
+        workouts,
+        sets,
+        exercises,
+        volume: muscleGroups,
+        poolTemplateId: FLEX_POOL_TEMPLATE_ID,
+        weekStartDay: settings.weekStartDay,
+        now,
+      });
+      setFlexLocations(locations.filter(l => l.id !== TRAVEL_LOCATION_ID));
+      setFlexLocation(prev => prev ?? savedFlexLocation ?? locationId ?? undefined);
+      setFlexEdits(edits);
 
       // A log of what happened to the plan: swapped, or asked for and not done.
       setChanges(
@@ -282,18 +301,48 @@ export function HealthDashboardScreen() {
 
   // One tap: an active workout holding the best exercise for each muscle
   // nothing else this week will cover.
-  const handleStartRemaining = useCallback(async () => {
-    const ids = [...new Set((gaps?.uncovered ?? []).flatMap(g => g.suggestions.slice(0, 1).map(s => s.exerciseId)))];
+  const flexItems = useMemo(
+    () => (flexInputs ? flexPlan({ ...flexInputs, locationId: flexLocation, edits: flexEdits }) : []),
+    [flexInputs, flexLocation, flexEdits],
+  );
+  const flexAddable = useMemo(() => {
+    if (!flexInputs) return [];
+    return flexInputs.exercises
+      .filter(e => !e.defaultWarmup)
+      .filter(e => !flexLocation || !e.locationIds?.length || e.locationIds.includes(flexLocation))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [flexInputs, flexLocation]);
+
+  const handleFlexLocation = useCallback((locationId: string) => {
+    setFlexLocation(locationId);
+    setFlexLocationId(locationId).catch(e => console.error('[HealthDashboard] Save Flex gym error:', e));
+  }, []);
+
+  const handleFlexEdit = useCallback(
+    (exerciseId: string, kind: 'remove' | 'add') => {
+      const week = flexWeekKey(weekStartDay);
+      setFlexEdits(prev => {
+        const next = kind === 'remove' ? withRemoved(prev, week, exerciseId) : withAdded(prev, week, exerciseId);
+        saveFlexEdits(next).catch(e => console.error('[HealthDashboard] Save Flex edit error:', e));
+        return next;
+      });
+    },
+    [weekStartDay],
+  );
+
+  // One tap: a workout holding the Flex list, at the gym picked on the card.
+  const handleStartFlex = useCallback(async () => {
+    const ids = flexItems.map(i => i.exerciseId);
     if (ids.length === 0) return;
     try {
       // Returns null if the user chose to keep an in-progress workout.
-      const workoutId = await startWorkout(undefined, ids);
+      const workoutId = await startWorkout(undefined, ids, flexLocation);
       if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
     } catch (e) {
-      console.error('[HealthDashboard] Start remaining workout error:', e);
+      console.error('[HealthDashboard] Start Flex workout error:', e);
       Alert.alert('Error', 'Could not start the workout.');
     }
-  }, [gaps, startWorkout, navigation]);
+  }, [flexItems, flexLocation, startWorkout, navigation]);
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) navigation.navigate('MainTabs', { screen: 'Train' });
@@ -399,13 +448,26 @@ export function HealthDashboardScreen() {
         <View style={styles.tierHeader}>
           <Text style={styles.tierTitle}>This week</Text>
         </View>
-        {gaps && gaps.all.length > 0 && (
+        {volumeView?.deload && <DeloadBanner />}
+        <ThisWeekCard
+          rows={weekRows}
+          error={volumeError}
+          deload={volumeView?.deload}
+          onRowPress={muscleGroup => navigation.navigate('MuscleGroupDetail', { muscleGroup, weekStart })}
+        />
+        {flexInputs && (
           <View style={styles.catchUp}>
-            <Text style={styles.catchUpTitle}>Left this week — by muscle</Text>
-            <WhatsLeftCard
-              view={gaps}
-              onPressGroup={muscleGroup => navigation.navigate('MuscleGroupDetail', { muscleGroup, weekStart })}
-              onStart={handleStartRemaining}
+            <Text style={styles.catchUpTitle}>Flex</Text>
+            <FlexCard
+              items={flexItems}
+              locations={flexLocations}
+              locationId={flexLocation}
+              addable={flexAddable}
+              onChangeLocation={handleFlexLocation}
+              onRemove={id => handleFlexEdit(id, 'remove')}
+              onAdd={id => handleFlexEdit(id, 'add')}
+              onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
+              onStart={handleStartFlex}
             />
           </View>
         )}
@@ -419,13 +481,6 @@ export function HealthDashboardScreen() {
             />
           </View>
         )}
-        {volumeView?.deload && <DeloadBanner />}
-        <WeeklyVolumeCard
-          view={volumeView}
-          error={volumeError}
-          onOpenAnalytics={openAnalytics}
-          onRowPress={muscleGroup => navigation.navigate('MuscleGroupDetail', { muscleGroup, weekStart })}
-        />
         <View style={styles.tileRow}>
           <BodyWeightTileView state={weight} onPress={openAnalytics} />
           {sleepState ? (
