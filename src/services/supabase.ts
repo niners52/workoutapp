@@ -3,7 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { appleAuth } from '@invertase/react-native-apple-authentication';
 
 const SUPABASE_URL = 'https://irjstbtfhzxhnonfzhrx.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_nMRLmSgGdJ2BejaZlJ49jQ_BisEDZb-'; // TODO: Replace with your anon key starting with eyJ...
+// Publishable key: meant to ship inside the app, safe because every table has
+// row-level security. Rotated 2026-10-21 after the Railway incident; the
+// previous key was deleted and every request with it fails "Unregistered API key".
+const SUPABASE_ANON_KEY = 'sb_publishable_k9SGuuO-ZMr_PXhULI_LUQ_9CTaWq-F';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
