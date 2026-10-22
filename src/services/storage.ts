@@ -37,7 +37,8 @@ import { LATS_WEEKLY_TARGET, remapToLatsPrimary, withLatsFocusGroup } from './la
 import { CABLE_FLY_MERGE, tagSetsForVariantMerge } from './exerciseVariants';
 import { splitUpperBack } from './upperBackSplit';
 import { applyExerciseRecordFix } from './exerciseRecordFixes';
-import { FULL_BODY_DAYS, fullBodyPrescriptions } from '../data/fullBodyTemplates';
+import { FULL_BODY_DAYS, FLEX_POOL_TEMPLATE_ID, fullBodyPrescriptions } from '../data/fullBodyTemplates';
+import type { FlexEdits } from './flexPlan';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -69,7 +70,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 20;
+const CURRENT_MIGRATION_VERSION = 21;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -203,6 +204,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 20) {
     await migrateToV20();
+  }
+
+  if (currentVersion < 21) {
+    await migrateToV21();
   }
 
   // Update migration version
@@ -1054,6 +1059,88 @@ async function migrateToV20(): Promise<void> {
   });
 
   console.log(`Migration to V20 complete - ${changed.length} exercises updated, ${FULL_BODY_DAYS.length} full-body days written`);
+}
+
+/**
+ * V21: five days and Flex.
+ *  - Full Body 4 drops its two Vasa machines for what its Thursdays actually
+ *    used at Planet Fitness: the MTS row and the cable lateral raise.
+ *  - Day 6 stops being a scheduled day. Its template becomes the Flex pool
+ *    ("Flex — day 6"), and the active routine's Saturday is left open with a
+ *    note, so Saturday is Flex at whichever gym it turns out to be.
+ * Only records that exist are touched: these ids are Tyler's, so another
+ * user's phone runs this as a no-op.
+ */
+const FIVE_DAY_ROUTINE_ID = 'routine-1790893246393';
+const FB4_SWAPS: Record<string, string> = {
+  '083c1c85-f090-4a50-a430-19393c82d080': '84b5317c-7dfb-4cf2-8b65-4f5c08e02901', // ISO Lateral Row -> MTS Row
+  '558d0521-308c-418d-9f3a-40ef807cd6a9': 'cable-lateral-raise', // seated machine lateral raise -> cable
+};
+const FB4_TEMPLATE_ID = 'c6698cd8-af6a-4937-90be-fdb17885d8d9';
+
+async function migrateToV21(): Promise<void> {
+  console.log('Running migration to V21 - five days and Flex...');
+
+  const templates = await getItem<Template[]>(STORAGE_KEYS.TEMPLATES, SEED_TEMPLATES);
+  const changedTemplates: string[] = [];
+  const nextTemplates = templates.map(t => {
+    if (t.id === FB4_TEMPLATE_ID) {
+      const exerciseIds = [...new Set(t.exerciseIds.map(id => FB4_SWAPS[id] ?? id))];
+      if (exerciseIds.join() === t.exerciseIds.join()) return t;
+      changedTemplates.push(t.id);
+      return { ...t, exerciseIds };
+    }
+    if (t.id === FLEX_POOL_TEMPLATE_ID && t.name !== 'Flex — day 6') {
+      changedTemplates.push(t.id);
+      return { ...t, name: 'Flex — day 6' };
+    }
+    return t;
+  });
+  if (changedTemplates.length > 0) await setItem(STORAGE_KEYS.TEMPLATES, nextTemplates);
+
+  // The MTS row takes the ISO row's prescription.
+  const exercises = await getItem<Exercise[]>(STORAGE_KEYS.EXERCISES, []);
+  const mts = exercises.find(e => e.id === '84b5317c-7dfb-4cf2-8b65-4f5c08e02901');
+  const changedExercises: string[] = [];
+  if (mts && (mts.targetSets !== 3 || mts.targetReps !== '10-12')) {
+    await snapshotExercises('V21 MTS row prescription', [mts]);
+    await setItem(
+      STORAGE_KEYS.EXERCISES,
+      exercises.map(e => (e.id === mts.id ? { ...e, targetSets: 3, targetReps: '10-12' } : e)),
+    );
+    changedExercises.push(mts.id);
+  }
+
+  const routines = await getItem<Routine[]>(STORAGE_KEYS.ROUTINES, []);
+  const routine = routines.find(r => r.id === FIVE_DAY_ROUTINE_ID);
+  if (routine) {
+    await setItem(
+      STORAGE_KEYS.ROUTINES,
+      routines.map(r =>
+        r.id !== FIVE_DAY_ROUTINE_ID
+          ? r
+          : {
+              ...r,
+              daySchedule: r.daySchedule.map(d =>
+                d.day === 6 ? { ...d, templateIds: [], notes: 'Flex — Planet Fitness or Vasa' } : d,
+              ),
+            },
+      ),
+    );
+  }
+
+  const previous = await getPendingMigrationResync();
+  await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+    exerciseIds: [...new Set([...(previous?.exerciseIds ?? []), ...changedExercises])],
+    workoutIds: previous?.workoutIds ?? [],
+    bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+    syncSettings: previous?.syncSettings,
+    deletedExerciseIds: previous?.deletedExerciseIds ?? [],
+    templateIds: [...new Set([...(previous?.templateIds ?? []), ...changedTemplates])],
+    setIds: previous?.setIds ?? [],
+  });
+
+  console.log(`Migration to V21 complete - ${changedTemplates.length} templates, routine ${routine ? 'updated' : 'not on this phone'}`);
 }
 
 // Reset storage (for debugging/testing)
@@ -2363,6 +2450,29 @@ export async function dismissMissedExercise(exerciseId: string, weekStart: strin
 const SWAP_PROMOTION_KEY = '@workout_tracker/swap_promotions_dismissed';
 
 /** Swap pairs the user told the app to stop offering to make permanent. */
+// ==================== FLEX ====================
+
+const FLEX_EDITS_KEY = '@workout_tracker/flex_edits';
+const FLEX_LOCATION_KEY = '@workout_tracker/flex_location';
+
+/** This week's hand edits to the Flex list; stale weeks are ignored by flexPlan. */
+export async function getFlexEdits(): Promise<FlexEdits | null> {
+  return getItem<FlexEdits | null>(FLEX_EDITS_KEY, null);
+}
+
+export async function saveFlexEdits(edits: FlexEdits): Promise<void> {
+  await setItem(FLEX_EDITS_KEY, edits);
+}
+
+/** The gym last picked on the Flex card. */
+export async function getFlexLocationId(): Promise<string | null> {
+  return getItem<string | null>(FLEX_LOCATION_KEY, null);
+}
+
+export async function setFlexLocationId(locationId: string): Promise<void> {
+  await setItem(FLEX_LOCATION_KEY, locationId);
+}
+
 export async function getDismissedSwapPromotions(): Promise<string[]> {
   return getItem<string[]>(SWAP_PROMOTION_KEY, []);
 }

@@ -10,9 +10,9 @@
  * range covers both: the leg press is 8-10 on day 1 and 10-12 on day 4, so it
  * reads 8-12.
  *
- * Four exercises are not tagged for the location of the day they sit on — see
- * LOCATION_MISMATCHES. They are left as the names say; a template still runs
- * anywhere, and the gap list treats a muscle as covered however it is trained.
+ * Full Body 4 started with two Vasa machines matched by name; on the
+ * Thursdays it actually ran, Tyler did the MTS row and the cable lateral raise
+ * instead, so those are what it holds now.
  */
 import type { Template } from '../types';
 
@@ -97,10 +97,10 @@ const DAYS: FullBodyDay[] = [
     items: [
       { exerciseId: 'incline-bench-press', sets: 3, reps: '8-10' }, // Smith Machine Incline Bench Press
       { exerciseId: 'ae43a483-3e85-46d3-bcb2-33e014dbca97', sets: 3, reps: '12' }, // Cable (Straight Bar) arm pulldown
-      { exerciseId: '083c1c85-f090-4a50-a430-19393c82d080', sets: 3, reps: '10-12' }, // Machine ISO Lateral Row
+      { exerciseId: '84b5317c-7dfb-4cf2-8b65-4f5c08e02901', sets: 3, reps: '10-12' }, // Machine MTS Row
       { exerciseId: '29bcb169-528c-4f61-910f-66d52c1d6fd1', sets: 3, reps: '8-12' }, // Machine Leg press
       { exerciseId: 'back-extension', sets: 3, reps: '12' },
-      { exerciseId: '558d0521-308c-418d-9f3a-40ef807cd6a9', sets: 3, reps: '12' }, // Machine Seated machine lateral raise
+      { exerciseId: 'cable-lateral-raise', sets: 3, reps: '12-15' }, // what Thursdays actually use
       { exerciseId: 'overhead-triceps-extension-rope', sets: 3, reps: '10-12' },
     ],
   },
@@ -126,7 +126,7 @@ const DAYS: FullBodyDay[] = [
   {
     template: {
       id: 'fd7ebc8a-02c7-45ef-bd1d-04a40c427bba',
-      name: 'Full Body 6',
+      name: 'Flex — day 6',
       type: 'full_body',
       locationId: VASA,
       exerciseIds: [],
@@ -150,15 +150,11 @@ export const FULL_BODY_DAYS: FullBodyDay[] = DAYS.map(day => ({
 }));
 
 /**
- * Exercises whose location tags do not include the day they are scheduled on.
- * Both of these really are Vasa-only machines sitting on a Planet Fitness day;
- * the gap list treats the muscle as covered however it gets trained, so the
- * substitute is chosen at the gym rather than written into the template.
+ * The Mon-Fri days are all Planet Fitness. Day 6 is the Flex pool: Vasa
+ * machines by design, swapped for Planet Fitness equivalents by muscle when
+ * Flex is started at Planet Fitness (see flexPlan).
  */
-export const LOCATION_MISMATCHES: Array<{ day: string; exerciseId: string; name: string; taggedFor: string }> = [
-  { day: 'Full Body 4', exerciseId: '083c1c85-f090-4a50-a430-19393c82d080', name: 'Machine ISO Lateral Row', taggedFor: 'Vasa' },
-  { day: 'Full Body 4', exerciseId: '558d0521-308c-418d-9f3a-40ef807cd6a9', name: 'Machine Seated machine lateral raise', taggedFor: 'Vasa' },
-];
+export const FLEX_POOL_TEMPLATE_ID = 'fd7ebc8a-02c7-45ef-bd1d-04a40c427bba';
 
 /** Every prescription, flattened: exercise id -> sets and reps. */
 export function fullBodyPrescriptions(): Map<string, FullBodyItem> {
