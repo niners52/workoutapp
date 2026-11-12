@@ -131,6 +131,8 @@ export async function getWeekStatus(ctx: ToolContext, input: { location?: string
     historySets: planSets,
     historyWorkouts: planWorkouts,
     capMinutes: typeof capRaw === 'number' && capRaw > 0 ? capRaw : DEFAULT_FLEX_MINUTES,
+    weekStart,
+    now,
   });
   const locationName = (id: string | null) => locations.find(l => l.id === id)?.name?.trim() ?? id;
   const dayOf = (id: string) => {

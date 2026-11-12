@@ -181,6 +181,7 @@ export function buildFlex({
     capMinutes: settings.healthTargets?.flexMinutes ?? DEFAULT_FLEX_MINUTES,
     removed,
     added,
+    weekStart: week.weekStart,
   });
 }
 

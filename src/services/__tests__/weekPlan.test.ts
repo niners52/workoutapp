@@ -320,6 +320,37 @@ describe('Flex', () => {
     expect(p.items.find(i => i.exerciseId === 'curl')?.insteadOf).toBeUndefined();
   });
 
+  test('a Flex default exercise done earlier this week is off Flex', () => {
+    const { ws, logged } = doneWeek();
+    const tonight = w('extra', at(13, 19), null);
+    const withCalf = [...logged, ...sets('calf', 3, 'extra', at(13, 19))];
+    const p = plan({ historySets: withCalf, historyWorkouts: [...ws, tonight], weekStart: WEEK_START, now: new Date(at(14, 8)) });
+    expect(p.items.some(i => i.priority === 'b' && i.exerciseId === 'calf')).toBe(false);
+  });
+
+  test('so is a Flex default item whose stand-in at this gym was done this week', () => {
+    // At Planet Fitness the Vasa squat is done as the quad lift logged most
+    // here. Without the week, it is on Flex as that stand-in...
+    const stand = plan().items.find(i => i.insteadOf?.exerciseId === 'vasa-squat');
+    expect(stand).toBeDefined();
+    // ...but that lift was already done this week (Monday's W1), so with the
+    // week known the item is off.
+    const p = plan({ weekStart: WEEK_START, now: new Date(at(14, 8)) });
+    expect(p.items.some(i => i.insteadOf?.exerciseId === 'vasa-squat')).toBe(false);
+  });
+
+  test('done last week does not count', () => {
+    const { ws, logged } = doneWeek();
+    const lastWeek = w('old', '2026-11-05T18:00:00Z', null);
+    const p = plan({
+      historySets: [...logged, ...sets('calf', 3, 'old', '2026-11-05T18:00:00Z')],
+      historyWorkouts: [...ws, lastWeek],
+      weekStart: WEEK_START,
+      now: new Date(at(14, 8)),
+    });
+    expect(p.items.some(i => i.priority === 'b' && i.exerciseId === 'calf')).toBe(true);
+  });
+
   test('removed items stay off; added ones are always on', () => {
     const p = plan({ removed: ['shrug'], added: ['face-pull'] });
     expect(p.items.some(i => i.exerciseId === 'shrug')).toBe(false);
