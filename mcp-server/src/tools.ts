@@ -392,19 +392,27 @@ export async function searchExercises(ctx: ToolContext, input: { query: string; 
   };
 }
 
-export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: number }) {
-  const settings = await ctx.db.getUserSettings();
-  const weekStartDay: WeekStartDay = settings?.week_start_day === 'monday' ? 'monday' : 'sunday';
-  const now = (ctx.now ?? (() => new Date()))();
-  const weekKeys = recentWeekStarts(now, input.weeks_back, ctx.timeZone, weekStartDay);
-  const oldest = weekKeys[0];
-  if (!oldest) throw new ToolError('weeks_back must be at least 1');
-
-  const sets = await ctx.db.listSetsSince(lowerBoundIso(oldest));
-  const [workouts, exercises] = await Promise.all([
-    ctx.db.listWorkoutsByIds(sets.map(s => s.workout_id)),
-    ctx.db.listExercises(),
-  ]);
+/**
+ * Weekly volume, the app's counting rules: primary muscle groups only (each
+ * distinct primary a full set), unilateral sets at half, deload sessions and
+ * warm-up sets left out (and counted), bucketed by logged_at in the zone.
+ * get_weekly_volume and get_week_status both count through this.
+ */
+export function tallyWeeklyVolume({
+  sets,
+  workouts,
+  exercises,
+  weekKeys,
+  timeZone,
+  weekStartDay,
+}: {
+  sets: SetSummaryRow[];
+  workouts: WorkoutRow[];
+  exercises: ExerciseRow[];
+  weekKeys: string[];
+  timeZone: string;
+  weekStartDay: WeekStartDay;
+}) {
   const deload = new Set(workouts.filter(w => w.is_deload).map(w => w.id));
   const exerciseById = new Map(exercises.map(e => [e.id, e]));
 
@@ -418,7 +426,7 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
   // loudly: a silent bucket is how 40 sets a week went missing.
   const unmapped = new Map<string, { exercise_id: string; name: string; stored_primary_muscle_groups: string[]; sets: number }>();
   for (const s of sets) {
-    const key = weekStartKey(new Date(s.logged_at), ctx.timeZone, weekStartDay);
+    const key = weekStartKey(new Date(s.logged_at), timeZone, weekStartDay);
     const totals = weeks.get(key);
     if (!totals) continue; // outside the requested window (e.g. the padding day)
     if (deload.has(s.workout_id)) {
@@ -448,15 +456,38 @@ export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: num
     }
     for (const mg of groups) totals[mg] += credit;
   }
+  return { weeks, skippedDeloadSets, warmupSets, unmapped };
+}
 
-  const rawTargets = settings?.muscle_group_targets ?? {};
+/** Weekly per-muscle targets from settings; groups without a positive target are left out. */
+export function weeklyTargets(settings: UserSettingsRow | null): Partial<Record<PrimaryMuscleGroup, number>> {
+  const raw = settings?.muscle_group_targets ?? {};
   const targets: Partial<Record<PrimaryMuscleGroup, number>> = {};
   for (const mg of CREDITED_MUSCLE_GROUPS) {
-    const t = rawTargets[mg];
+    const t = raw[mg];
     if (typeof t === 'number' && t > 0) targets[mg] = t;
   }
+  return targets;
+}
+
+export async function getWeeklyVolume(ctx: ToolContext, input: { weeks_back: number }) {
+  const settings = await ctx.db.getUserSettings();
+  const weekStartDay: WeekStartDay = settings?.week_start_day === 'monday' ? 'monday' : 'sunday';
+  const now = (ctx.now ?? (() => new Date()))();
+  const weekKeys = recentWeekStarts(now, input.weeks_back, ctx.timeZone, weekStartDay);
+  const oldest = weekKeys[0];
+  if (!oldest) throw new ToolError('weeks_back must be at least 1');
+
+  const sets = await ctx.db.listSetsSince(lowerBoundIso(oldest));
+  const [workouts, exercises] = await Promise.all([
+    ctx.db.listWorkoutsByIds(sets.map(s => s.workout_id)),
+    ctx.db.listExercises(),
+  ]);
+  const tally = tallyWeeklyVolume({ sets, workouts, exercises, weekKeys, timeZone: ctx.timeZone, weekStartDay });
+  const { weeks, skippedDeloadSets, warmupSets } = tally;
+  const targets = weeklyTargets(settings);
   const targetTotal = Object.values(targets).reduce((a, b) => a + (b ?? 0), 0);
-  const unmappedList = [...unmapped.values()].sort((a, b) => b.sets - a.sets);
+  const unmappedList = [...tally.unmapped.values()].sort((a, b) => b.sets - a.sets);
 
   return {
     time_zone: ctx.timeZone,

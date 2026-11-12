@@ -28,6 +28,28 @@ export interface ExerciseRow {
   /** Prep movement: its sets log as warm-ups, which weekly volume leaves out. */
   default_warmup?: boolean | null;
   notes?: string | null;
+  /** Sets the exercise aims for; Flex plans with it. */
+  target_sets?: number | null;
+  /** Target rep range, e.g. "8-12". Default 8-12 when empty. */
+  target_reps?: string | null;
+}
+
+export interface TemplateRow {
+  id: string;
+  user_id: string;
+  name: string;
+  location_id: string | null;
+  exercise_ids: string[] | null;
+}
+
+export interface RoutineRow {
+  id: string;
+  user_id: string;
+  name: string;
+  is_active: boolean | null;
+  day_schedule: Array<{ day: number; templateIds?: string[] | null }> | null;
+  /** { slots, flexTemplateId } — see shared/weekPlan Rotation. Absent before 2026-11-12. */
+  rotation?: { slots?: unknown; flexTemplateId?: string | null } | null;
 }
 
 export interface WorkoutRow {
@@ -386,6 +408,20 @@ export class Db {
     );
   }
 
+  listTemplates(): Promise<TemplateRow[]> {
+    return this.runAll('templates', () => this.scoped<TemplateRow>('templates', '*').order('name'));
+  }
+
+  /** The active routine, if any ('*' so `rotation` comes through once it exists). */
+  async getActiveRoutine(): Promise<RoutineRow | null> {
+    const rows = await this.run('routines', this.scoped<RoutineRow>('routines', '*').eq('is_active', true).limit(1));
+    return rows[0] ?? null;
+  }
+
+  listLocations(): Promise<LocationRow[]> {
+    return this.runAll('workout_locations', () => this.scoped<LocationRow>('workout_locations', 'id,name').order('name'));
+  }
+
   listLocationsByIds(ids: string[]): Promise<LocationRow[]> {
     if (ids.length === 0) return Promise.resolve([]);
     return this.byIds<LocationRow>('workout_locations', 'id,name', 'id', ids);
@@ -429,6 +465,8 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   body_measurements: ['id', 'user_id', 'date', 'weight'],
   user_settings: ['user_id'],
   workout_locations: ['id', 'user_id', 'name'],
+  templates: ['id', 'user_id', 'name', 'exercise_ids'],
+  routines: ['id', 'user_id', 'is_active', 'day_schedule'],
   nutrition_days: [
     'id', 'user_id', 'date', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g',
     'iron_mg', 'vitamin_b12_mcg', 'vitamin_d_iu', 'calcium_mg', 'zinc_mg', 'sodium_mg',

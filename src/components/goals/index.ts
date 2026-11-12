@@ -6,5 +6,6 @@ export { WeeklyGrid } from './WeeklyGrid';
 export { WeeklyTotals } from './WeeklyTotals';
 export { CatchUpCard } from './CatchUpCard';
 export { FlexCard } from './FlexCard';
+export { NextUpCard } from './NextUpCard';
 export { RecurringSwapCard } from './RecurringSwapCard';
 export { RoutineChangesCard } from './RoutineChangesCard';

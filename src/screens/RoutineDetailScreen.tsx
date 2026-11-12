@@ -26,6 +26,8 @@ import {
   RoutineDayType,
 } from '../types';
 import { calculateProjectedVolumeForRoutine, aggregateIntoCategories } from '../services/analytics';
+import { RotationEditor } from '../components/routines/RotationEditor';
+import { rotationOf } from '../services/rotationWeek';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RoutineDetailRouteProp = RouteProp<RootStackParamList, 'RoutineDetail'>;
@@ -42,6 +44,7 @@ export function RoutineDetailScreen() {
     userSettings,
     setActiveRoutine,
     deleteRoutine,
+    updateRoutine,
   } = useData();
 
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
@@ -193,9 +196,19 @@ export function RoutineDetailScreen() {
           />
         )}
 
-        {/* Weekly Schedule */}
+        {/* Rotation: the order workouts are done in, whatever the day. */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Weekly Schedule</Text>
+          <Text style={styles.sectionTitle}>Rotation</Text>
+          <RotationEditor
+            rotation={rotationOf(routine, templates)}
+            templates={templates}
+            onChange={rotation => updateRoutine({ ...routine, rotation })}
+          />
+        </View>
+
+        {/* Usual days: kept as labels; the rotation decides what is next. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Usual days</Text>
           <Card padding="none">
             {DAY_NAMES.map((dayName, dayIndex) => {
               const dayTemplates = getTemplatesForDay(dayIndex);

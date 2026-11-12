@@ -4,10 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../common';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import type { Exercise, WorkoutLocation } from '../../types';
-import type { FlexItem } from '../../services/flexPlan';
+import type { FlexItem, FlexPlan } from '../../services/rotationWeek';
 
 interface FlexCardProps {
-  items: FlexItem[];
+  plan: FlexPlan;
   locations: WorkoutLocation[];
   locationId?: string;
   /** Exercises offered by "Add exercise", already filtered to the chosen gym. */
@@ -17,22 +17,29 @@ interface FlexCardProps {
   onAdd: (exerciseId: string) => void;
   onPressExercise: (exerciseId: string) => void;
   onStart: () => void;
+  /** Tiers and Flex length. */
+  onOpenSettings: () => void;
 }
 
+const TIER_LABEL = { build: 'build', maintain: 'maintain', covered: 'covered' } as const;
+const fmtMin = (m: number) => `${Math.round(m)} min`;
+
 function reasonText(item: FlexItem): string {
-  const why = item.reason === 'missed' ? `Missed ${item.dayLabel}` : item.reason === 'day6' ? 'Day 6' : 'Added';
-  if (item.insteadOf) return `${why} · instead of ${item.insteadOf}`;
-  if (item.notHere) return `${why} · not at this gym`;
-  return `${why} · ${item.sets} sets`;
+  const why =
+    item.priority === 'b' ? 'Flex default' : item.priority === 'added' ? 'Added' : `Owed from ${item.slotLabel ?? 'this week'} · ${TIER_LABEL[item.tier]}`;
+  if (item.insteadOf) return `${why} · instead of ${item.insteadOf.name}`;
+  if (item.notAvailableHere) return `${why} · not at this gym`;
+  return why;
 }
 
 /**
- * Flex: what the week did not get to, plus day-6 work, fitted to the gym
- * picked here. Built fresh from the week each time; removing or adding an
- * exercise sticks until the week ends.
+ * Flex: owed build-tier work, then the Flex default template, then owed
+ * maintain-tier work, fitted to the gym picked here and to the time cap.
+ * What does not fit expires when the week resets. Built fresh from the week
+ * each time; removing or adding an exercise sticks until the week ends.
  */
 export function FlexCard({
-  items,
+  plan,
   locations,
   locationId,
   addable,
@@ -41,7 +48,10 @@ export function FlexCard({
   onAdd,
   onPressExercise,
   onStart,
+  onOpenSettings,
 }: FlexCardProps) {
+  const items = plan.items;
+  const [showExpired, setShowExpired] = useState(false);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -67,8 +77,17 @@ export function FlexCard({
         ))}
       </View>
 
+      <View style={styles.summary}>
+        <Text style={styles.summaryText} testID="flex-minutes">
+          {fmtMin(plan.totalMinutes)} of {fmtMin(plan.capMinutes)}
+        </Text>
+        <TouchableOpacity onPress={onOpenSettings} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Flex settings">
+          <Ionicons name="settings-outline" size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
       {items.length === 0 ? (
-        <Text style={styles.empty}>Nothing missed and day 6 is covered. Add anything you like below.</Text>
+        <Text style={styles.empty}>Nothing owed, and the Flex default is covered. Add anything you like below.</Text>
       ) : (
         items.map(item => (
           <TouchableOpacity
@@ -79,15 +98,18 @@ export function FlexCard({
             testID={`flex-item-${item.exerciseId}`}
           >
             <Ionicons
-              name={item.reason === 'missed' ? 'time-outline' : item.reason === 'added' ? 'add-circle-outline' : 'barbell-outline'}
+              name={item.priority === 'b' ? 'barbell-outline' : item.priority === 'added' ? 'add-circle-outline' : 'time-outline'}
               size={18}
-              color={item.reason === 'missed' ? colors.warning : colors.textSecondary}
+              color={item.priority === 'a' ? colors.warning : colors.textSecondary}
               style={styles.icon}
             />
             <View style={styles.info}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.detail}>{reasonText(item)}</Text>
             </View>
+            <Text style={styles.minutes}>
+              {item.sets}× · {fmtMin(item.minutes)}
+            </Text>
             <TouchableOpacity
               onPress={() => onRemove(item.exerciseId)}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -97,6 +119,20 @@ export function FlexCard({
             </TouchableOpacity>
           </TouchableOpacity>
         ))
+      )}
+
+      {plan.expiresSunday.length > 0 && (
+        <TouchableOpacity style={styles.expired} onPress={() => setShowExpired(v => !v)} activeOpacity={0.7} testID="flex-expires">
+          <Text style={styles.expiredTitle}>
+            {plan.expiresSunday.length} didn't fit · expires Sunday {showExpired ? '▾' : '▸'}
+          </Text>
+          {showExpired &&
+            plan.expiresSunday.map(item => (
+              <Text key={item.exerciseId} style={styles.detail}>
+                {item.name} — {reasonText(item)} · {fmtMin(item.minutes)}
+              </Text>
+            ))}
+        </TouchableOpacity>
       )}
 
       <View style={styles.actions}>
@@ -177,6 +213,34 @@ const styles = StyleSheet.create({
   chipTextOn: {
     color: colors.textOnPrimary,
     fontWeight: typography.weight.semibold,
+  },
+  summary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.base,
+    paddingBottom: spacing.sm,
+  },
+  summaryText: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  minutes: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+    marginHorizontal: spacing.sm,
+  },
+  expired: {
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
+    gap: 2,
+  },
+  expiredTitle: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
   },
   empty: {
     fontSize: typography.size.sm,

@@ -8,43 +8,18 @@
  *
  * "Done" comes from computeWeeklyVolume, so the counting rules are the volume
  * panel's (primary groups, unilateral at half, warm-ups and deload out).
- * "Scheduled" is credited the same way from the remaining days' templates.
+ * "Scheduled" is credited the same way from the rotation workouts not done yet.
  */
-import { addDays, isSameDay, startOfDay } from 'date-fns';
 import {
-  DAY_NAMES,
   MUSCLE_GROUP_DISPLAY_NAMES,
   type Exercise,
   type MuscleGroupVolume,
-  type Routine,
-  type Template,
-  type WeekStartDay,
-  type Workout,
-  type WorkoutSet,
 } from '../types';
-import { getTemplatesForDay } from './analytics';
 import { creditedPrimaries } from './muscleGroups';
-import { weekStartFor } from './weekProgress';
-
-/**
- * Whether a scheduled day has been trained: a finished, non-deload session
- * that day either ran one of its templates or logged any exercise the plan
- * names. The second half matters: a workout entered by hand without picking
- * the template is still that day's session.
- */
-export function dayWasTrained(
-  date: Date,
-  plan: { templateIds: string[]; exerciseIds: Set<string> },
-  workouts: Workout[],
-  sets: WorkoutSet[] = [],
-): boolean {
-  const sessions = workouts.filter(w => w.completedAt && !w.isDeload && isSameDay(new Date(w.startedAt), date));
-  if (sessions.some(w => w.templateId && plan.templateIds.includes(w.templateId))) return true;
-  const ids = new Set(sessions.map(w => w.id));
-  return sets.some(s => ids.has(s.workoutId) && plan.exerciseIds.has(s.exerciseId));
-}
+import type { RotationState } from './rotationWeek';
 
 export interface PlannedDay {
+  /** The rotation workout still to do, e.g. "W3". */
   dayLabel: string;
   exerciseIds: string[];
 }
@@ -55,9 +30,9 @@ export interface ThisWeekRow {
   target: number;
   /** Working sets credited so far this week. */
   done: number;
-  /** Sets the remaining scheduled days will credit, capped at what is still owed. */
+  /** Sets the rotation workouts still to do will credit, capped at what is still owed. */
   scheduled: number;
-  /** Days those scheduled sets fall on, in order. */
+  /** Which of those workouts, in rotation order: ["W3", "W4"]. */
   scheduledDays: string[];
   /** Still owed after done and scheduled: the Flex share. */
   flex: number;
@@ -65,44 +40,14 @@ export interface ThisWeekRow {
 }
 
 /**
- * Scheduled days that have not happened yet. Today counts until a session from
- * today's template has been finished — a morning that ran late still leaves
- * today's plan to do tonight, and once it is finished what was skipped is
- * Flex's job, not today's.
+ * The rotation workouts not done yet this week, in order. These are what is
+ * "scheduled": they will be done on whatever days come, and what they will not
+ * cover is Flex's.
  */
-export function remainingPlan({
-  routine,
-  templates,
-  workouts,
-  sets = [],
-  weekStartDay,
-  now = new Date(),
-  excludeTemplateIds = [],
-}: {
-  routine?: Routine;
-  templates: Template[];
-  workouts: Workout[];
-  /** Lets a workout entered without its template still count as today's session. */
-  sets?: WorkoutSet[];
-  weekStartDay: WeekStartDay;
-  now?: Date;
-  excludeTemplateIds?: string[];
-}): PlannedDay[] {
-  if (!routine) return [];
-  const templateById = new Map(templates.map(t => [t.id, t]));
-  const weekStart = startOfDay(weekStartFor(weekStartDay, now));
-  const today = startOfDay(now);
-  const out: PlannedDay[] = [];
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(weekStart, i);
-    if (date < today) continue;
-    const templateIds = getTemplatesForDay(routine, date.getDay()).filter(id => !excludeTemplateIds.includes(id));
-    if (templateIds.length === 0) continue;
-    const exerciseIds = templateIds.flatMap(id => templateById.get(id)?.exerciseIds ?? []);
-    if (isSameDay(date, today) && dayWasTrained(today, { templateIds, exerciseIds: new Set(exerciseIds) }, workouts, sets)) continue;
-    out.push({ dayLabel: DAY_NAMES[date.getDay()], exerciseIds });
-  }
-  return out;
+export function remainingPlan(state: RotationState): PlannedDay[] {
+  return state.slots
+    .filter(s => !s.performed && s.template)
+    .map(s => ({ dayLabel: s.slot.label, exerciseIds: s.template?.exerciseIds ?? [] }));
 }
 
 export function thisWeekRows({

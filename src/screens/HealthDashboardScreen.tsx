@@ -75,11 +75,12 @@ import { useBodyWeight } from '../hooks/useBodyWeight';
 import { syncTemplate } from '../services/syncService';
 import { getTrainingWeekStart } from '../services/missedExercises';
 import { routineChanges, type RoutineChange } from '../services/routineChanges';
-import { FlexCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
+import { FlexCard, NextUpCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
 import { ThisWeekCard } from '../components/health/ThisWeekCard';
-import { flexPlan, flexWeekKey, withAdded, withRemoved, type FlexEdits, type FlexPlanInput } from '../services/flexPlan';
+import { editsForWeek, flexWeekKey, withAdded, withRemoved, type FlexEdits } from '../services/flexPlan';
+import { buildFlex, buildWeek, type WeekView } from '../services/rotationWeek';
+import type { Exercise, Routine, Template, UserSettings, Workout, WorkoutSet } from '../types';
 import { remainingPlan, thisWeekRows, type ThisWeekRow } from '../services/thisWeek';
-import { FLEX_POOL_TEMPLATE_ID } from '../data/fullBodyTemplates';
 import { InsightsCard } from '../components/insights/InsightsCard';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
@@ -111,7 +112,18 @@ export function HealthDashboardScreen() {
   const [weekRows, setWeekRows] = useState<ThisWeekRow[] | null>(null);
   // Flex is recomputed on the phone whenever the gym or an edit changes, so the
   // week's raw inputs are kept rather than re-read from storage each tap.
-  const [flexInputs, setFlexInputs] = useState<Omit<FlexPlanInput, 'locationId' | 'edits'> | null>(null);
+  // The week's rotation and raw inputs: Flex is recomputed on the phone when
+  // the gym or an edit changes, without re-reading storage.
+  const [week, setWeek] = useState<WeekView | null>(null);
+  const [flexInputs, setFlexInputs] = useState<{
+    routine: Routine;
+    templates: Template[];
+    workouts: Workout[];
+    sets: WorkoutSet[];
+    exercises: Exercise[];
+    volume: MuscleGroupVolume[];
+    settings: UserSettings;
+  } | null>(null);
   const [flexLocations, setFlexLocations] = useState<WorkoutLocation[]>([]);
   const [flexLocation, setFlexLocation] = useState<string | undefined>(undefined);
   const [flexEdits, setFlexEdits] = useState<FlexEdits | null>(null);
@@ -154,46 +166,30 @@ export function HealthDashboardScreen() {
       setVolume(muscleGroups);
       setVolumeError(false);
 
-      // Done, still scheduled, and left for Flex — per muscle, one model.
+      // The rotation: what is done, what is next, what is owed. Done,
+      // scheduled (rotation workouts still to come) and Flex per muscle add up
+      // to the weekly target.
       const routine = routines.find(r => r.isActive);
       const healthTargets = settings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
-      const plan = remainingPlan({
-        routine,
-        templates,
-        workouts,
-        sets,
-        weekStartDay: settings.weekStartDay,
-        now,
-        excludeTemplateIds: [FLEX_POOL_TEMPLATE_ID],
-      });
+      const thisWeek = routine ? buildWeek({ routine, templates, workouts, sets, exercises, settings, now }) : null;
+      setWeek(thisWeek);
       setWeekRows(
         thisWeekRows({
           volume: muscleGroups,
-          plan,
+          plan: thisWeek ? remainingPlan(thisWeek.state) : [],
           exercises,
           focusMuscleGroups: healthTargets.focusGroups.filter(f => !f.exerciseNameIncludes?.trim()).map(f => f.muscleGroup as string),
         }),
       );
-
-      setFlexInputs({
-        routine,
-        templates,
-        workouts,
-        sets,
-        exercises,
-        volume: muscleGroups,
-        poolTemplateId: FLEX_POOL_TEMPLATE_ID,
-        weekStartDay: settings.weekStartDay,
-        now,
-      });
+      setFlexInputs(routine ? { routine, templates, workouts, sets, exercises, volume: muscleGroups, settings } : null);
       setFlexLocations(locations.filter(l => l.id !== TRAVEL_LOCATION_ID));
       setFlexLocation(prev => prev ?? savedFlexLocation ?? locationId ?? undefined);
       setFlexEdits(edits);
 
       // A log of what happened to the plan: swapped, or asked for and not done.
-      setChanges(
-        routineChanges({ workouts, sets, exercises, swaps, templates, weekStartDay: settings.weekStartDay, now, routine, locations }),
-      );
+      // No routine is passed: rotation workouts have no day to miss, and what
+      // a week left undone is the owed list on the Flex card.
+      setChanges(routineChanges({ workouts, sets, exercises, swaps, templates, weekStartDay: settings.weekStartDay, now, locations }));
 
       const ignored = new Set(swapDismissals);
       setRecurringSwaps(
@@ -300,19 +296,29 @@ export function HealthDashboardScreen() {
     await dismissSwapPromotion(swap.key).catch(e => console.error('[HealthDashboard] Dismiss swap error:', e));
   }, []);
 
-  // One tap: an active workout holding the best exercise for each muscle
-  // nothing else this week will cover.
-  const flexItems = useMemo(
-    () => (flexInputs ? flexPlan({ ...flexInputs, locationId: flexLocation, edits: flexEdits }) : []),
-    [flexInputs, flexLocation, flexEdits],
-  );
+  const flex = useMemo(() => {
+    if (!week || !flexInputs) return null;
+    const edits = editsForWeek(flexEdits, flexWeekKey(weekStartDay));
+    return buildFlex({ week, ...flexInputs, locationId: flexLocation, removed: edits.removed, added: edits.added });
+  }, [week, flexInputs, flexLocation, flexEdits, weekStartDay]);
   const flexAddable = useMemo(() => {
     if (!flexInputs) return [];
-    return flexInputs.exercises
-      .filter(e => !e.defaultWarmup)
-      .filter(e => !flexLocation || !e.locationIds?.length || e.locationIds.includes(flexLocation))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [flexInputs, flexLocation]);
+    return flexInputs.exercises.filter(e => !e.defaultWarmup).sort((a, b) => a.name.localeCompare(b.name));
+  }, [flexInputs]);
+
+  // Start a rotation workout: Next up by default, or whichever was tapped.
+  const handleStartSlot = useCallback(
+    async (templateId: string, locationId?: string) => {
+      try {
+        const workoutId = await startWorkout(templateId, undefined, locationId);
+        if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
+      } catch (e) {
+        console.error('[HealthDashboard] Start rotation workout error:', e);
+        Alert.alert('Error', 'Could not start the workout.');
+      }
+    },
+    [startWorkout, navigation],
+  );
 
   const handleFlexLocation = useCallback((locationId: string) => {
     setFlexLocation(locationId);
@@ -333,17 +339,19 @@ export function HealthDashboardScreen() {
 
   // One tap: a workout holding the Flex list, at the gym picked on the card.
   const handleStartFlex = useCallback(async () => {
-    const ids = flexItems.map(i => i.exerciseId);
+    const ids = flex?.items.map(i => i.exerciseId) ?? [];
     if (ids.length === 0) return;
     try {
+      // Run against the Flex template, so the session reads as Flex in the
+      // rotation; the exercise list is the plan, not the template.
       // Returns null if the user chose to keep an in-progress workout.
-      const workoutId = await startWorkout(undefined, ids, flexLocation);
+      const workoutId = await startWorkout(week?.rotation.flexTemplateId ?? undefined, ids, flexLocation);
       if (workoutId) navigation.navigate('MainTabs', { screen: 'Train' });
     } catch (e) {
       console.error('[HealthDashboard] Start Flex workout error:', e);
       Alert.alert('Error', 'Could not start the workout.');
     }
-  }, [flexItems, flexLocation, startWorkout, navigation]);
+  }, [flex, week, flexLocation, startWorkout, navigation]);
 
   const handleStartWorkout = () => {
     if (isWorkoutActive) navigation.navigate('MainTabs', { screen: 'Train' });
@@ -449,6 +457,15 @@ export function HealthDashboardScreen() {
         <View style={styles.tierHeader}>
           <Text style={styles.tierTitle}>This week</Text>
         </View>
+        {week && (
+          <NextUpCard
+            state={week.state}
+            onStart={slot => {
+              const template = flexInputs?.templates.find(t => t.id === slot.slot.templateId);
+              if (template) handleStartSlot(template.id, template.locationId);
+            }}
+          />
+        )}
         {volumeView?.deload && <DeloadBanner />}
         <ThisWeekCard
           rows={weekRows}
@@ -456,11 +473,11 @@ export function HealthDashboardScreen() {
           deload={volumeView?.deload}
           onRowPress={muscleGroup => navigation.navigate('MuscleGroupDetail', { muscleGroup, weekStart })}
         />
-        {flexInputs && (
+        {flex && (
           <View style={styles.catchUp}>
             <Text style={styles.catchUpTitle}>Flex</Text>
             <FlexCard
-              items={flexItems}
+              plan={flex}
               locations={flexLocations}
               locationId={flexLocation}
               addable={flexAddable}
@@ -469,6 +486,7 @@ export function HealthDashboardScreen() {
               onAdd={id => handleFlexEdit(id, 'add')}
               onPressExercise={exerciseId => navigation.navigate('ExerciseHistory', { exerciseId })}
               onStart={handleStartFlex}
+              onOpenSettings={() => navigation.navigate('FlexSettings')}
             />
           </View>
         )}

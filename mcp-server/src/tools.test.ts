@@ -622,7 +622,7 @@ test('MCP: lists all tools as read-only and executes one', async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map(t => t.name).sort(),
-      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_nutrition_log', 'get_prs', 'get_recent_workouts', 'get_sleep_log', 'get_supplement_log', 'get_weekly_volume', 'search_exercises'],
+      ['describe_schema', 'get_body_weight_log', 'get_exercise_history', 'get_favorite_exercises', 'get_nutrition_log', 'get_prs', 'get_recent_workouts', 'get_sleep_log', 'get_supplement_log', 'get_week_status', 'get_weekly_volume', 'search_exercises'],
     );
     assert.ok(tools.every(t => t.annotations?.readOnlyHint === true));
 

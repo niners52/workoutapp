@@ -35,6 +35,12 @@ import { getWeekSwapConflicts, SwapConflict } from '../services/swapConflicts';
 import { defaultVariant, setsForVariant, variantsFor } from '../services/exerciseVariants';
 import { targetSetsFor } from '../services/targetSets';
 import { doneThisWeekByExercise, type DoneThisWeek } from '../services/weekProgress';
+import {
+  applySessionEdits,
+  exerciseProgressionFlag,
+  sessionDiff,
+  sessionRecoveryWarnings,
+} from '../services/rotationWeek';
 import { isWarmupSet } from '../services/warmupSets';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -70,7 +76,7 @@ interface ExerciseHistory {
 
 export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const navigation = useNavigation<NavigationProp>();
-  const { exercises, templates, userSettings, locations, workouts, sets, exerciseSwaps, getActiveRoutine, updateExercise, toggleExerciseFavorite } = useData();
+  const { exercises, templates, userSettings, locations, workouts, sets, exerciseSwaps, getActiveRoutine, updateExercise, toggleExerciseFavorite, updateTemplate } = useData();
   const {
     activeWorkout,
     isWorkoutActive,
@@ -135,6 +141,53 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
 
   // What each exercise already has this week, so a card can say "already done
   // Saturday" instead of the plan silently repeating it.
+  // ── Session edits vs template edits ──────────────────────────────────────
+  // Adding, removing or swapping an exercise changes today's session only.
+  // The template changes when "Make permanent" / "Update template" is tapped.
+  const [sessionSwaps, setSessionSwaps] = useState<Array<{ originalExerciseId: string; currentExerciseId: string }>>([]);
+  const sessionTemplate = useMemo(
+    () => (activeWorkout?.workout.templateId ? templates.find(t => t.id === activeWorkout.workout.templateId) : undefined),
+    [activeWorkout?.workout.templateId, templates],
+  );
+  const templateDiff = useMemo(() => {
+    if (!activeWorkout || !sessionTemplate) return null;
+    const stored = exerciseSwaps.filter(x => x.workoutId === activeWorkout.workout.id);
+    const swaps = [...stored, ...sessionSwaps.filter(x => !stored.some(y => y.originalExerciseId === x.originalExerciseId))];
+    const diff = sessionDiff(sessionTemplate.exerciseIds, activeWorkout.exerciseIds, swaps);
+    return diff.added.length + diff.removed.length + diff.swapped.length > 0 ? diff : null;
+  }, [activeWorkout, sessionTemplate, exerciseSwaps, sessionSwaps]);
+
+  // ── Recovery: a muscle trained in the last 18 hours, warned once per session ──
+  const [recoveryDismissed, setRecoveryDismissed] = useState<string | null>(null);
+  const recoveryAtStart = useMemo(() => {
+    if (!activeWorkout) return [];
+    return sessionRecoveryWarnings(activeWorkout.originalExerciseIds, exercises, sets, activeWorkout.workout.id, new Date(activeWorkout.workout.startedAt));
+    // Computed for the session as it started; later edits do not re-warn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkout?.workout.id, exercises.length]);
+  const recoveryWarnings = useMemo(
+    () =>
+      recoveryDismissed === activeWorkout?.workout.id
+        ? []
+        : recoveryAtStart.filter(w => activeWorkout?.exerciseIds.includes(w.exerciseId) && getSetsForExercise(w.exerciseId).length === 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recoveryAtStart, recoveryDismissed, activeWorkout?.exerciseIds, activeWorkout?.sets.length],
+  );
+
+  // ── Progression: last time, every working set hit the top of the range ────
+  const progressionByExerciseId = useMemo(() => {
+    const out = new Map<string, { topOfRange: number }>();
+    if (!activeWorkout) return out;
+    for (const id of activeWorkout.exerciseIds) {
+      const exercise = exercises.find(e => e.id === id);
+      if (!exercise) continue;
+      const flag = exerciseProgressionFlag(exercise, sets, workouts, activeWorkout.workout.locationId, activeWorkout.workout.id);
+      if (flag) out.set(id, { topOfRange: flag.topOfRange });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkout?.workout.id, activeWorkout?.exerciseIds.length, exercises, workouts.length]);
+
   const doneThisWeekByExerciseId = useMemo(
     () => doneThisWeekByExercise(sets, userSettings?.weekStartDay ?? 'monday', new Date(), activeWorkout?.workout.id),
     [sets, userSettings?.weekStartDay, activeWorkout?.workout.id],
@@ -720,6 +773,38 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
     }
   };
 
+  const nameOf = (id: string) => exercises.find(e => e.id === id)?.name ?? 'Exercise';
+
+  /** Write today's edits into the template: swaps in place, removals out, additions on the end. */
+  const handleMakePermanent = () => {
+    if (!sessionTemplate || !templateDiff) return;
+    const lines = [
+      ...templateDiff.swapped.map(x => `${nameOf(x.from)} → ${nameOf(x.to)}`),
+      ...templateDiff.added.map(id => `+ ${nameOf(id)}`),
+      ...templateDiff.removed.map(id => `− ${nameOf(id)}`),
+    ];
+    showAlert(`Update ${sessionTemplate.name}?`, `From now on:\n${lines.join('\n')}`, [
+      { text: 'Just today', style: 'cancel' },
+      {
+        text: 'Make permanent',
+        onPress: () => {
+          const exerciseIds = applySessionEdits(sessionTemplate.exerciseIds, templateDiff, 'permanent');
+          updateTemplate({ ...sessionTemplate, exerciseIds }).catch(e => {
+            console.error('[ActiveWorkout] Update template error:', e);
+            showAlert('Error', 'Could not update the template.', [{ text: 'OK' }]);
+          });
+        },
+      },
+    ]);
+  };
+
+  /** Take an exercise out of today's session; it stays owed, so Flex picks it up. */
+  const handleDeferToFlex = (exerciseId: string) => {
+    if (getSetsForExercise(exerciseId).length > 0) return;
+    removeExerciseFromWorkout(exerciseId);
+    if (selectedExerciseId === exerciseId) setSelectedExerciseId(null);
+  };
+
   const handleRemoveExercise = (exercise: Exercise) => {
     const currentSets = getSetsForExercise(exercise.id);
     if (currentSets.length > 0) {
@@ -753,6 +838,12 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const handleSwapExercise = async (newExercise: Exercise) => {
     if (!exerciseToSwap) return;
     swapExercise(exerciseToSwap.id, newExercise.id);
+    // Remember what the template had in this slot, through a chain of swaps.
+    setSessionSwaps(prev => {
+      const chained = prev.find(x => x.currentExerciseId === exerciseToSwap.id);
+      if (chained) return prev.map(x => (x === chained ? { ...x, currentExerciseId: newExercise.id } : x));
+      return [...prev, { originalExerciseId: exerciseToSwap.id, currentExerciseId: newExercise.id }];
+    });
     setSwapModalVisible(false);
     setExerciseToSwap(null);
 
@@ -986,8 +1077,54 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
         >
+          {recoveryWarnings.length > 0 && (
+            <View style={styles.noticeCard} testID="recovery-warning">
+              <View style={styles.noticeHeader}>
+                <Ionicons name="time-outline" size={18} color={colors.warning} />
+                <Text style={styles.noticeTitle}>Trained in the last 18 hours</Text>
+                <TouchableOpacity onPress={() => setRecoveryDismissed(activeWorkout.workout.id)} hitSlop={10} accessibilityLabel="Dismiss">
+                  <Ionicons name="close" size={18} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+              {recoveryWarnings.map(w => (
+                <View key={w.exerciseId} style={styles.noticeRow}>
+                  <Text style={styles.noticeText} numberOfLines={2}>
+                    {nameOf(w.exerciseId)} — {(MUSCLE_GROUP_DISPLAY_NAMES as Record<string, string>)[w.muscle] ?? w.muscle},{' '}
+                    {Math.round(w.hoursAgo)} h ago
+                  </Text>
+                  <TouchableOpacity style={styles.noticeButton} onPress={() => handleDeferToFlex(w.exerciseId)} testID={`defer-${w.exerciseId}`}>
+                    <Text style={styles.noticeButtonText}>Defer to Flex</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {templateDiff && sessionTemplate && (
+            <View style={styles.noticeCard} testID="session-edits">
+              <Text style={styles.noticeText}>
+                Today only:{' '}
+                {[
+                  ...templateDiff.swapped.map(x => `${nameOf(x.from)} → ${nameOf(x.to)}`),
+                  ...templateDiff.added.map(id => `+${nameOf(id)}`),
+                  ...templateDiff.removed.map(id => `−${nameOf(id)}`),
+                ].join(', ')}
+              </Text>
+              <TouchableOpacity style={[styles.noticeButton, styles.noticeButtonWide]} onPress={handleMakePermanent} testID="make-permanent">
+                <Text style={styles.noticeButtonText}>Make permanent</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Exercise List */}
-          <Text style={styles.sectionTitle}>Exercises</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={[styles.sectionTitle, styles.sectionTitleFlush]}>Exercises</Text>
+            {sessionTemplate && (
+              <TouchableOpacity onPress={handleMakePermanent} disabled={!templateDiff} testID="update-template">
+                <Text style={[styles.updateTemplate, !templateDiff && styles.updateTemplateOff]}>Update template</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {(() => {
             // Sort exercises: incomplete first (in template order), then completed (in template order)
@@ -1069,6 +1206,7 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     swapConflict={dismissedSwapConflicts.has(exerciseId) ? undefined : swapConflicts.get(exerciseId)}
                     onKeepSwapConflict={() => setDismissedSwapConflicts(prev => new Set(prev).add(exerciseId))}
                     doneThisWeek={doneThisWeekByExerciseId.get(exerciseId)}
+                    progression={progressionByExerciseId.get(exerciseId)}
                     variants={variantsFor(exercise)}
                     selectedVariant={selectedVariants[exerciseId]}
                     onSelectVariant={variant => handleSelectVariant(exerciseId, variant)}
@@ -1828,6 +1966,8 @@ interface ExerciseCardProps {
   onKeepSwapConflict?: () => void;
   /** Set earlier this week in another session, so today's plan repeats it. */
   doneThisWeek?: DoneThisWeek;
+  /** Last session, every working set reached the top of the rep range. */
+  progression?: { topOfRange: number };
   /** Ways this exercise is done (e.g. 'Wide' / 'Narrow'); null when it has none. */
   variants?: readonly string[] | null;
   selectedVariant?: string;
@@ -1869,6 +2009,7 @@ function ExerciseCard({
   swapConflict,
   onKeepSwapConflict,
   doneThisWeek,
+  progression,
   variants,
   selectedVariant,
   onSelectVariant,
@@ -1903,6 +2044,11 @@ function ExerciseCard({
           {doneThisWeek?.inEarlierWorkout && (
             <Text style={styles.doneThisWeek} testID="done-this-week">
               ✓ Already done {doneThisWeek.dayLabel} ({doneThisWeek.sets} set{doneThisWeek.sets === 1 ? '' : 's'} this week)
+            </Text>
+          )}
+          {progression && (
+            <Text style={styles.progression} testID="progression-flag">
+              ↑ Add weight — every set hit {progression.topOfRange} last time
             </Text>
           )}
         </View>
@@ -2405,6 +2551,72 @@ const styles = StyleSheet.create({
     fontSize: typography.size.xs,
     color: colors.healthGood,
     marginTop: 2,
+  },
+  progression: {
+    fontSize: typography.size.xs,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+    marginTop: 2,
+  },
+  noticeCard: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  noticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  noticeTitle: {
+    flex: 1,
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
+  noticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
+  },
+  noticeButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  noticeButtonWide: {
+    alignSelf: 'flex-start',
+  },
+  noticeButtonText: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  sectionTitleFlush: {
+    marginBottom: 0,
+  },
+  updateTemplate: {
+    fontSize: typography.size.sm,
+    color: colors.primary,
+    fontWeight: typography.weight.semibold,
+  },
+  updateTemplateOff: {
+    color: colors.textTertiary,
   },
   warmupToggle: {
     width: 24,
