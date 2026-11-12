@@ -534,6 +534,13 @@ export interface FlexInputs {
   /** Hand edits on the Flex card, this week only. */
   removed?: string[];
   added?: string[];
+  /**
+   * The week so far. With it, a Flex default exercise already done this week
+   * (or the stand-in Flex would use for it here) is left off: doing it on a
+   * spare half hour midweek is doing it.
+   */
+  weekStart?: Date;
+  now?: Date;
 }
 
 /**
@@ -550,6 +557,15 @@ export function flexPlan(input: FlexInputs): FlexPlan {
   const byId = new Map(input.exercises.map(e => [e.id, e]));
   const counts = loggedCounts(input.historySets, input.historyWorkouts);
   const removed = new Set(input.removed ?? []);
+  const doneThisWeek = new Set<string>();
+  if (input.weekStart) {
+    const from = input.weekStart.getTime();
+    const to = (input.now ?? new Date()).getTime();
+    for (const s of input.historySets) {
+      const t = new Date(s.loggedAt).getTime();
+      if (t >= from && t <= to && isWorkingSet(s, byId.get(s.exerciseId))) doneThisWeek.add(s.exerciseId);
+    }
+  }
   const cap = input.capMinutes ?? DEFAULT_FLEX_MINUTES;
   const locationId = input.locationId ?? null;
 
@@ -572,7 +588,7 @@ export function flexPlan(input: FlexInputs): FlexPlan {
   }
   for (const id of input.flexTemplate?.exerciseIds ?? []) {
     const e = byId.get(id);
-    if (!e || e.defaultWarmup || targetMet(e)) continue;
+    if (!e || e.defaultWarmup || targetMet(e) || doneThisWeek.has(id)) continue;
     const lead = leadMuscle(e, input.tiers);
     drafts.push({ exerciseId: id, name: e.name, priority: 'b', primaryMuscle: lead, tier: lead ? tierFor(lead, input.tiers) : 'maintain', sets: plannedSets(e) });
   }
@@ -605,6 +621,8 @@ export function flexPlan(input: FlexInputs): FlexPlan {
       }
     }
     if (taken.has(chosen.id)) continue;
+    // The Flex default item as it would be done here was already done this week.
+    if (d.priority === 'b' && doneThisWeek.has(chosen.id)) continue;
     taken.add(chosen.id);
     const setCount = chosen.id === planned.id ? d.sets : plannedSets(chosen);
     resolved.push({
