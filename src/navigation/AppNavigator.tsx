@@ -57,6 +57,7 @@ import {
   NutritionTodayScreen,
   HealthTargetsScreen,
   HealthRemindersScreen,
+  FlexSettingsScreen,
 } from '../screens';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -611,6 +612,13 @@ export function AppNavigator() {
           component={HealthRemindersScreen}
           options={{
             title: 'Health Reminders',
+          }}
+        />
+        <Stack.Screen
+          name="FlexSettings"
+          component={FlexSettingsScreen}
+          options={{
+            title: 'Flex',
           }}
         />
       </Stack.Navigator>

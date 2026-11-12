@@ -39,6 +39,7 @@ import { splitUpperBack } from './upperBackSplit';
 import { applyExerciseRecordFix } from './exerciseRecordFixes';
 import { FULL_BODY_DAYS, FLEX_POOL_TEMPLATE_ID, fullBodyPrescriptions } from '../data/fullBodyTemplates';
 import type { FlexEdits } from './flexPlan';
+import { DEFAULT_FLEX_MINUTES, DEFAULT_TIERS, rotationFromWeekdays } from '../../mcp-server/src/shared/weekPlan';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -70,7 +71,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 21;
+const CURRENT_MIGRATION_VERSION = 22;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -208,6 +209,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 21) {
     await migrateToV21();
+  }
+
+  if (currentVersion < 22) {
+    await migrateToV22();
   }
 
   // Update migration version
@@ -1141,6 +1146,78 @@ async function migrateToV21(): Promise<void> {
   });
 
   console.log(`Migration to V21 complete - ${changedTemplates.length} templates, routine ${routine ? 'updated' : 'not on this phone'}`);
+}
+
+/**
+ * V22: weekday programs become rotations.
+ *  - Every routine without one gets a rotation built from its weekday
+ *    schedule: Mon..Fri -> W1..W5 in order, Saturday's template -> the Flex
+ *    default (or the known Flex template when Saturday is empty). The weekday
+ *    is kept on each slot as a "usually" label. daySchedule is untouched, so
+ *    old screens and old data keep reading exactly as before.
+ *  - Muscle tiers and the Flex length are seeded into health targets when
+ *    missing, so they show up, editable, in Settings -> Flex.
+ * Nothing is written to workouts or sets: what has been done this week is
+ * derived from the logs, so the week in progress reads correctly at once.
+ * Mirrored in the cloud by 20261112000000_rotation_and_flex_tiers.sql.
+ */
+async function migrateToV22(): Promise<void> {
+  console.log('Running migration to V22 - rotations and Flex tiers...');
+
+  const templates = await getItem<Template[]>(STORAGE_KEYS.TEMPLATES, SEED_TEMPLATES);
+  const fallbackFlex = templates.some(t => t.id === FLEX_POOL_TEMPLATE_ID) ? FLEX_POOL_TEMPLATE_ID : null;
+  const routines = await getItem<Routine[]>(STORAGE_KEYS.ROUTINES, []);
+  const converted: string[] = [];
+  const next = routines.map(r => {
+    if (r.rotation?.slots?.length) return r;
+    converted.push(r.id);
+    return { ...r, rotation: rotationFromWeekdays(r.daySchedule ?? [], fallbackFlex) };
+  });
+  if (converted.length > 0) await setItem(STORAGE_KEYS.ROUTINES, next);
+
+  const settings = await getUserSettings();
+  const healthTargets = settings.healthTargets ?? DEFAULT_HEALTH_TARGETS;
+  const seedSettings = !healthTargets.muscleTiers || !healthTargets.flexMinutes;
+  if (seedSettings) {
+    await updateUserSettings({
+      healthTargets: {
+        ...healthTargets,
+        muscleTiers: { ...DEFAULT_TIERS, ...(healthTargets.muscleTiers ?? {}) },
+        flexMinutes: healthTargets.flexMinutes ?? DEFAULT_FLEX_MINUTES,
+      },
+    });
+  }
+
+  // Routines upload one by one (there is no routine batch in the resync queue).
+  for (const id of converted) {
+    const routine = next.find(r => r.id === id);
+    if (routine) syncRoutineQuietly(routine);
+  }
+  if (seedSettings) {
+    const previous = await getPendingMigrationResync();
+    await setItem<MigrationResync>(STORAGE_KEYS.MIGRATION_RESYNC, {
+      exerciseIds: previous?.exerciseIds ?? [],
+      workoutIds: previous?.workoutIds ?? [],
+      bodyMeasurementIds: previous?.bodyMeasurementIds ?? [],
+      syncSettings: true,
+      deletedExerciseIds: previous?.deletedExerciseIds ?? [],
+      templateIds: previous?.templateIds ?? [],
+      setIds: previous?.setIds ?? [],
+    });
+  }
+
+  console.log(`Migration to V22 complete - ${converted.length} routines given a rotation`);
+}
+
+/**
+ * Upload a routine without importing syncService here (it imports storage).
+ * The cloud migration writes the same rotation, so a failed upload is
+ * harmless; the next routine save sends it again.
+ */
+function syncRoutineQuietly(routine: Routine): void {
+  import('./syncService')
+    .then(m => m.syncRoutine(routine))
+    .catch(e => console.log('V22 routine upload skipped:', e));
 }
 
 // Reset storage (for debugging/testing)

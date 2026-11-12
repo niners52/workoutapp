@@ -22,6 +22,7 @@ import {
   searchExercises,
   type ToolContext,
 } from './tools.js';
+import { getWeekStatus } from './weekStatus.js';
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
@@ -125,6 +126,26 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       annotations: READ_ONLY,
     },
     guarded('get_weekly_volume', input => getWeeklyVolume(ctx, input), ctx),
+  );
+
+  server.registerTool(
+    'get_week_status',
+    {
+      title: 'This week: rotation, owed work and the Flex plan',
+      description:
+        'The training week as a rotation (W1..Wn done in order on any day, plus a Flex day), reset Monday 00:00 in the server time zone. Returns which rotation workouts were performed this week and when, Next up (the lowest-numbered one not done), owed exercises (from workouts skipped or not yet run) with tier and primary muscle, the Flex plan the app would build (owed build-tier first, then the Flex default template minus muscles at target, then owed maintain-tier; substituted for the given location; cut to the Flex time cap with the rest listed as expiring Sunday), and per-muscle sets vs target using get_weekly_volume\'s counting rules.',
+      inputSchema: {
+        location: z
+          .string()
+          .trim()
+          .min(1)
+          .max(80)
+          .optional()
+          .describe('Where Flex will be done, e.g. "Vasa" or "Planet Fitness" (name or id). Defaults to the last session\'s location.'),
+      },
+      annotations: READ_ONLY,
+    },
+    guarded('get_week_status', input => getWeekStatus(ctx, input), ctx),
   );
 
   server.registerTool(

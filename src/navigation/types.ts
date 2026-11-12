@@ -60,6 +60,7 @@ export type RootStackParamList = {
   NutritionToday: { focus?: 'calcium' } | undefined;
   HealthTargets: undefined;
   HealthReminders: undefined;
+  FlexSettings: undefined;
 };
 
 // Bottom Tab Navigator

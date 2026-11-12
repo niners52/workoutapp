@@ -935,11 +935,10 @@ export async function syncRoutine(routine: Routine): Promise<void> {
       name: routine.name,
       day_schedule: routine.daySchedule || [],
       is_active: routine.isActive ?? false,
+      rotation: routine.rotation ?? null,
     };
 
-    const { error } = await supabase
-      .from('routines')
-      .upsert(row, { onConflict: 'id' });
+    const { error } = await upsertTolerant('routines', row, OPTIONAL_COLUMNS_BY_TABLE.routines || []);
 
     if (error) {
       console.log('Routine sync failed, queuing:', error.message);
@@ -1494,6 +1493,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       name: row.name,
       daySchedule: row.day_schedule || [],
       isActive: row.is_active ?? false,
+      ...(row.rotation && Array.isArray(row.rotation.slots) ? { rotation: row.rotation } : {}),
     }));
 
     const locations: WorkoutLocation[] = (locationsResult.data || []).map(row => ({

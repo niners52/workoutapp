@@ -31,6 +31,7 @@ import {
   TRAVEL_LOCATION,
 } from '../types';
 import { getWeeklyVolume, getTemplatesForDay } from '../services/analytics';
+import { buildWeek } from '../services/rotationWeek';
 import { isDeloadByDefault } from '../services/deload';
 import { RootStackParamList } from '../navigation/types';
 
@@ -54,7 +55,7 @@ interface SuggestedExercise {
 
 export function StartWorkoutScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { templates, locations, exercises, getActiveRoutine, userSettings } = useData();
+  const { templates, locations, exercises, getActiveRoutine, userSettings, workouts, sets } = useData();
   const { startWorkout, addExerciseToWorkout, activeWorkout } = useWorkout();
 
   const [step, setStep] = useState<Step>('type');
@@ -103,6 +104,26 @@ export function StartWorkoutScreen() {
 
     return { isRestDay: false, isCardio: false, isActiveRecovery: false, templates: scheduledTemplates, dayName: DAY_NAMES[today], schedule: daySchedule };
   }, [getActiveRoutine, templates]);
+
+  // The rotation: every workout of the week, Next up first. Any of them can be
+  // started; Next up is the default because it is on top.
+  const rotationWeek = useMemo(() => {
+    const routine = getActiveRoutine();
+    if (!routine) return null;
+    try {
+      return buildWeek({ routine, templates, workouts, sets, exercises, settings: userSettings });
+    } catch (e) {
+      console.error('[StartWorkout] Rotation error:', e);
+      return null;
+    }
+  }, [getActiveRoutine, templates, workouts, sets, exercises, userSettings]);
+  const rotationOrder = useMemo(() => {
+    if (!rotationWeek) return [];
+    const next = rotationWeek.state.nextUp;
+    return [...rotationWeek.state.slots].sort(
+      (a, b) => Number(b.slot.id === next?.slot.id) - Number(a.slot.id === next?.slot.id) || Number(a.performed) - Number(b.performed),
+    );
+  }, [rotationWeek]);
 
   // Filter templates based on selections
   const filteredTemplates = useMemo(() => {
@@ -705,42 +726,68 @@ export function StartWorkoutScreen() {
           </Card>
         )}
 
-        {/* Today's Scheduled Workout */}
-        {todaySchedule && !todaySchedule.isRestDay && !todaySchedule.isCardio && !todaySchedule.isActiveRecovery && (
+        {/* This week's rotation: Next up first, any workout can be picked. */}
+        {rotationOrder.length > 0 && (
           <View style={styles.scheduledSection}>
-            <Text style={styles.scheduledTitle}>Scheduled for {todaySchedule.dayName}</Text>
-            {todaySchedule.templates.map(template => {
+            <Text style={styles.scheduledTitle}>This week's rotation</Text>
+            {rotationOrder.map(state => {
+              const template = templates.find(t => t.id === state.slot.templateId);
+              if (!template) return null;
+              const isNext = state.slot.id === rotationWeek?.state.nextUp?.slot.id;
               const location = locations.find(l => l.id === template.locationId);
               const exercisePreview = template.exerciseIds
                 .slice(0, 3)
                 .map(id => exercises.find(e => e.id === id)?.name || 'Unknown')
                 .join(', ');
               const moreCount = template.exerciseIds.length - 3;
-
               return (
                 <TouchableOpacity
-                  key={template.id}
-                  style={styles.scheduledCard}
+                  key={state.slot.id}
+                  style={[styles.scheduledCard, !isNext && styles.rotationCardDim]}
                   onPress={() => handleSelectTemplate(template)}
                   activeOpacity={0.7}
+                  testID={`rotation-start-${state.slot.id}`}
                 >
                   <View style={styles.scheduledCardContent}>
                     <Text style={styles.scheduledTemplateName}>
-                      {template.name}{location ? ` \u2014 ${location.name}` : ''}
+                      {state.slot.label} · {template.name}
+                      {location ? ` \u2014 ${location.name}` : ''}
                     </Text>
                     <Text style={styles.scheduledExercises} numberOfLines={1}>
-                      {exercisePreview}{moreCount > 0 ? `, +${moreCount} more` : ''}
+                      {isNext ? 'Next up · ' : state.performed ? 'Done this week · ' : ''}
+                      {exercisePreview}
+                      {moreCount > 0 ? `, +${moreCount} more` : ''}
                     </Text>
                   </View>
-                  <Ionicons name="play-circle" size={32} color={colors.primary} />
+                  <Ionicons name={state.performed ? 'checkmark-circle' : 'play-circle'} size={32} color={isNext ? colors.primary : colors.textSecondary} />
                 </TouchableOpacity>
               );
             })}
           </View>
         )}
 
+        {/* Weekday schedule, for a routine with no rotation workouts at all. */}
+        {rotationOrder.length === 0 && todaySchedule && !todaySchedule.isRestDay && !todaySchedule.isCardio && !todaySchedule.isActiveRecovery && (
+          <View style={styles.scheduledSection}>
+            <Text style={styles.scheduledTitle}>Scheduled for {todaySchedule.dayName}</Text>
+            {todaySchedule.templates.map(template => (
+              <TouchableOpacity
+                key={template.id}
+                style={styles.scheduledCard}
+                onPress={() => handleSelectTemplate(template)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.scheduledCardContent}>
+                  <Text style={styles.scheduledTemplateName}>{template.name}</Text>
+                </View>
+                <Ionicons name="play-circle" size={32} color={colors.primary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {/* Rest Day Notice */}
-        {todaySchedule?.isRestDay && (
+        {rotationOrder.length === 0 && todaySchedule?.isRestDay && (
           <Card style={styles.restDayCard}>
             <Text style={styles.restDayTitle}>{todaySchedule.dayName} — Rest Day</Text>
             <Text style={styles.restDayText}>
@@ -945,6 +992,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.primary,
+  },
+  rotationCardDim: {
+    opacity: 0.75,
   },
   scheduledCardContent: {
     flex: 1,

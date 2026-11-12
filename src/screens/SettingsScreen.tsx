@@ -942,6 +942,12 @@ export function SettingsScreen() {
               subtitle="Lab and scan rechecks on the Next draws card"
               onPress={() => navigation.navigate('HealthReminders')}
               showChevron
+            />
+            <ListItem
+              title="Flex"
+              subtitle="Muscle tiers (build, maintain, covered) and Flex length"
+              onPress={() => navigation.navigate('FlexSettings')}
+              showChevron
               isLast
             />
           </Card>

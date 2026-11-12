@@ -499,7 +499,17 @@ export interface HealthTargets {
   deloadWeekStart: string | null;  // 'YYYY-MM-DD' of any day in the deload week
   focusGroups: FocusGroup[];       // pinned first in the weekly volume card
   sleepTargetHours: number;
+  /**
+   * How Flex treats each muscle: build (owed work comes first), maintain
+   * (owed work comes last), covered (owed work is left out). Missing muscles
+   * fall back to DEFAULT_TIERS in mcp-server/src/shared/weekPlan.
+   */
+  muscleTiers?: Record<string, MuscleTier>;
+  /** How long a Flex session is allowed to run, in minutes (default 75). */
+  flexMinutes?: number;
 }
+
+export type MuscleTier = 'build' | 'maintain' | 'covered';
 
 export const DEFAULT_HEALTH_TARGETS: HealthTargets = {
   sodiumBudgetMg: 2300,
@@ -804,6 +814,29 @@ export interface Routine {
   isPreset?: boolean;
   // Free-text notes attached to the whole routine (clinical guidance, scaling, etc.)
   notes?: string;
+  /**
+   * The week as an ordered rotation: W1..Wn, done in order on whatever days
+   * happen, plus a Flex day. When present it replaces the weekday schedule
+   * for what is next and what is owed; daySchedule is kept, unchanged, so
+   * older screens and older data still read.
+   */
+  rotation?: RoutineRotation;
+}
+
+export interface RotationSlot {
+  /** Stable within the routine: "w1", "w2"... */
+  id: string;
+  /** "W1", "W2"... */
+  label: string;
+  templateId: string;
+  /** 0 = Sunday .. 6 = Saturday. A label only — nothing is scheduled by it. */
+  usualDay?: number | null;
+}
+
+export interface RoutineRotation {
+  slots: RotationSlot[];
+  /** The Flex day's default template. */
+  flexTemplateId: string | null;
 }
 
 // Map legacy dayType to the new modality. Templates dictate strength vs balance.

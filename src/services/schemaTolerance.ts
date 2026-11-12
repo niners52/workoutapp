@@ -27,6 +27,7 @@ export const OPTIONAL_COLUMNS_BY_TABLE: Record<string, string[]> = {
   user_settings: ['units', 'minimum_sets_per_exercise', 'creatine_supplement_id', 'health_targets'],
   nutrition_days: ['last_sample_at'],
   workout_sets: ['variant', 'is_warmup'],
+  routines: ['rotation'],
 };
 
 /** Columns proven missing this session, as "table.column" — for diagnostics. */

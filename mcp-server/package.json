@@ -12,7 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "tsc -p tsconfig.json && node --test dist/tools.test.js",
+    "test": "tsc -p tsconfig.json && node --test dist/tools.test.js dist/weekStatus.test.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "tsc -p tsconfig.json && node dist/smoke.js"
   },

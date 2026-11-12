@@ -198,6 +198,7 @@ Weights are in pounds, as stored by the app.
 | `get_exercise_history` | `exercise_name`, `limit` 1-200 (30) | Fuzzy-resolved exercise, recent sets, all-time heaviest set, best Epley e1RM (with the app's Brzycki value), other candidate names |
 | `search_exercises` | `query`, `limit` 1-25 (10) | Ranked canonical names with muscle groups, favorite flag, `last_logged_at`. Pass a result's `name` to other tools. |
 | `get_weekly_volume` | `weeks_back` 1-26 (4) | Sets per muscle group per week plus the six-category roll-up and weekly targets. Exercises with no real primary group are listed under `unmapped_exercises` with a `warning` instead of being credited anywhere |
+| `get_week_status` | `location` (optional, name or id; default = last session's gym) | The week as a rotation: which of W1..Wn were performed and when, Next up, the owed list (exercise, the workout it came from, `skipped` / `unperformed`, primary muscle, tier), the Flex plan for that location (priority, substitutions, minutes, what `expires_sunday`), and sets vs target per muscle |
 | `get_prs` | `limit` 1-300 (100) | Per exercise: heaviest set and best Epley e1RM, sorted by e1RM |
 | `get_body_weight_log` | `limit` 1-365 (30) | Body weight entries (lbs) with body-fat % and source, newest first |
 | `get_favorite_exercises` | none | Exercises starred in the app |
@@ -216,6 +217,17 @@ Example calls (as the model would issue them):
 { "name": "get_prs", "arguments": {} }
 { "name": "get_body_weight_log", "arguments": { "limit": 60 } }
 ```
+
+### Rotation, owed work and Flex (`get_week_status`)
+
+The rules live in `src/shared/weekPlan.ts`, which the phone app imports directly, so this tool and the app's home screen read the week the same way.
+
+- **Rotation.** The active routine's `routines.rotation` (`{ slots: [{id, label, templateId, usualDay}], flexTemplateId }`). A routine without one is read as Mon..Fri -> W1..Wn, Saturday's template -> Flex. The weekday is only a "usually" label.
+- **Performed** = a finished session this week ran that slot's template; a session with no template counts against the unperformed slot it shares the most exercises with (at least two). **Next up** = the lowest-numbered slot not performed.
+- **Owed** = exercises from this week's rotation workouts not done: ones a performed workout skipped, and whole workouts not yet run. A same-muscle swap inside a session pays off the planned exercise; an exercise moved to a later session credits the workout it came from. Warm-up exercises are never owed.
+- **Flex plan**, in order: (a) owed build-tier, (b) the Flex default template minus exercises whose muscles have all met their weekly target, (c) owed maintain-tier. Covered-tier owed work is left out. Tiers are `health_targets.muscleTiers` (seeded: build = lats, mid_back, traps, chest, abs; maintain = side_delts, biceps, triceps, quads, hamstrings; covered = the rest). An exercise not available at the location becomes the same-muscle exercise logged there most (available = ever logged there, or tagged for it). Durations are the median gap between your sets of that exercise times the planned sets (2.5 min a set without history), filled in order up to `health_targets.flexMinutes` (75); the rest is `expires_sunday`.
+- **Reset** Monday 00:00 in `TIMEZONE`. A session at 11:30 pm Sunday is last week's. Nothing carries over.
+- Per-muscle sets use the weekly-volume counting below (`tallyWeeklyVolume`). Hand edits on the phone's Flex card are not visible here.
 
 ### Weekly volume rules
 
