@@ -26,15 +26,21 @@ const fmtMin = (m: number) => `${Math.round(m)} min`;
 
 function reasonText(item: FlexItem): string {
   const why =
-    item.priority === 'b' ? 'Flex default' : item.priority === 'added' ? 'Added' : `Owed from ${item.slotLabel ?? 'this week'} · ${TIER_LABEL[item.tier]}`;
+    item.priority === 'b'
+      ? 'Flex default'
+      : item.priority === 'added'
+        ? 'Added'
+        : item.priority === 'skipped'
+          ? `Skipped in ${item.slotLabel ?? 'a workout'} · ${TIER_LABEL[item.tier]}`
+          : `Owed from ${item.slotLabel ?? 'this week'} · ${TIER_LABEL[item.tier]}`;
   if (item.insteadOf) return `${why} · instead of ${item.insteadOf.name}`;
   if (item.notAvailableHere) return `${why} · not at this gym`;
   return why;
 }
 
 /**
- * Flex: owed build-tier work, then the Flex default template, then owed
- * maintain-tier work, fitted to the gym picked here and to the time cap.
+ * Flex: exercises skipped from workouts already done, then owed build-tier
+ * work, then the Flex default template, then owed maintain-tier work, fitted to the gym picked here and to the time cap.
  * What does not fit expires when the week resets. Built fresh from the week
  * each time; removing or adding an exercise sticks until the week ends.
  */
@@ -100,7 +106,7 @@ export function FlexCard({
             <Ionicons
               name={item.priority === 'b' ? 'barbell-outline' : item.priority === 'added' ? 'add-circle-outline' : 'time-outline'}
               size={18}
-              color={item.priority === 'a' ? colors.warning : colors.textSecondary}
+              color={item.priority === 'skipped' || item.priority === 'a' ? colors.warning : colors.textSecondary}
               style={styles.icon}
             />
             <View style={styles.info}>

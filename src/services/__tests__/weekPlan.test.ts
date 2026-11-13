@@ -189,6 +189,22 @@ describe('owed list', () => {
     ]);
   });
 
+  test('a swap done earlier stays a swap when a later workout lists that exercise and skips it', () => {
+    // Monday: leg extension in place of W1's leg press. Thursday's W4 (here
+    // given the leg extension) runs without it. Monday's leg extension pays
+    // W1; W4's leg extension is what is owed, not Monday's leg press.
+    const fb4 = { ...TEMPLATES.find(t => t.id === 'fb4')!, exerciseIds: ['incline', 'row', 'crunch', 'leg-ext'] };
+    const templates = TEMPLATES.map(t => (t.id === 'fb4' ? fb4 : t));
+    const ws = [w('mon', at(9, 6), 'fb1'), w('thu', at(12, 6), 'fb4')];
+    const logged = [
+      ...['incline', 'pulldown', 'lat-raise', 'leg-ext'].flatMap(e => sets(e, 3, 'mon', at(9, 6))),
+      ...['incline', 'row', 'crunch'].flatMap(e => sets(e, 3, 'thu', at(12, 6))),
+    ];
+    const input = { rotation: ROTATION, templates, workouts: ws, sets: logged, exercises: EXERCISES, weekStart: WEEK_START, now: new Date(at(12, 18)) };
+    const owed = owedList({ ...input, state: rotationState(input) });
+    expect(owed.filter(o => o.source === 'skipped').map(o => [o.slotLabel, o.exerciseId])).toEqual([['W4', 'leg-ext']]);
+  });
+
   test('warm-up sets do not count as doing the exercise', () => {
     const warmOnly = logged.map(s => (s.exerciseId === 'pushdown' ? { ...s, isWarmup: true } : s));
     const { owed } = week(workouts, warmOnly);
@@ -264,23 +280,49 @@ describe('Flex', () => {
     });
   };
 
-  test('priority: owed build first, then the Flex template, then owed maintain; covered left out', () => {
+  const RANK = { skipped: 0, a: 1, b: 2, c: 3, added: 4 } as const;
+  // W5's skipped calf raise would sit at the top of Flex and hide the Flex
+  // default's calf raise; the tests about the default item leave it out.
+  const owedButCalf = () => doneWeek().owed.filter(o => o.exerciseId !== 'calf');
+
+  test('priority: skipped work first whatever the tier, then the Flex template', () => {
     const p = plan();
     const seq = p.items.map(i => [i.priority, i.insteadOf?.exerciseId ?? i.exerciseId]);
-    // (a) build tier, skipped, in rotation order: W1's incline, W2's shrug.
-    expect(seq.filter(([pr]) => pr === 'a')).toEqual([['a', 'incline'], ['a', 'shrug']]);
-    // (c) maintain tier: W3's curl.
-    expect(seq.filter(([pr]) => pr === 'c')).toEqual([['c', 'curl']]);
-    // a before b before c, always.
-    const order = p.items.map(i => i.priority);
-    expect(order).toEqual([...order].sort());
-    // W5's calf raise is covered tier: it is not owed work on Flex.
+    // Everything owed was skipped from a workout that ran: build (W1's
+    // incline, W2's shrug), then maintain (W3's curl), then covered (W5's calf).
+    expect(seq.filter(([pr]) => pr === 'skipped')).toEqual([
+      ['skipped', 'incline'],
+      ['skipped', 'shrug'],
+      ['skipped', 'curl'],
+      ['skipped', 'calf'],
+    ]);
+    const order = p.items.map(i => RANK[i.priority]);
+    expect(order).toEqual([...order].sort((x, y) => x - y));
+  });
+
+  test('work from workouts not run yet: build before the Flex template, maintain after, covered left out', () => {
+    // Only W1 and W2 ran, in full. W3..W5 are still to come.
+    const ws = [w('w1', at(9, 6), 'fb1'), w('w2', at(10, 6), 'fb2')];
+    const logged = [
+      ...['incline', 'pulldown', 'leg-press', 'lat-raise'].flatMap(e => sets(e, 3, 'w1', at(9, 6))),
+      ...['row', 'leg-ext', 'pushdown', 'shrug'].flatMap(e => sets(e, 3, 'w2', at(10, 6))),
+    ];
+    const { owed } = week(ws, logged, new Date(at(10, 18)));
+    const p = plan({ owed, historySets: logged, historyWorkouts: ws });
+    const seq = p.items.map(i => [i.priority, i.insteadOf?.exerciseId ?? i.exerciseId]);
+    expect(seq.filter(([pr]) => pr === 'skipped')).toEqual([]);
+    expect(seq.filter(([pr]) => pr === 'a').map(([, id]) => id)).toEqual(['pec-fly', 'pullup', 'incline', 'row', 'crunch', 'cable-fly']);
+    expect(seq.filter(([pr]) => pr === 'c').map(([, id]) => id)).toEqual(['leg-curl', 'curl']); // W5's leg curl is the same lift: listed once
+    // W3's face pull (rear delts) and W5's calf raise are covered tier.
+    expect(p.items.some(i => i.exerciseId === 'face-pull')).toBe(false);
     expect(p.items.some(i => i.exerciseId === 'calf' && i.priority !== 'b')).toBe(false);
+    const order = p.items.map(i => RANK[i.priority]);
+    expect(order).toEqual([...order].sort((x, y) => x - y));
   });
 
   test('the Flex template skips anything whose muscles have met their weekly target', () => {
     // mid_back is at 6 of 6, so the Vasa row drops out of priority (b).
-    const p = plan();
+    const p = plan({ owed: owedButCalf() });
     expect(p.items.some(i => i.priority === 'b' && (i.insteadOf?.exerciseId ?? i.exerciseId) === 'vasa-row')).toBe(false);
     // Calves: 0 of 3, so the calf raise stays.
     expect(p.items.some(i => i.priority === 'b' && i.exerciseId === 'calf')).toBe(true);
@@ -291,8 +333,7 @@ describe('Flex', () => {
     expect(p.totalMinutes).toBeLessThanOrEqual(16);
     expect(p.expiresSunday.length).toBeGreaterThan(0);
     // Order is still priority order within each list.
-    const order = { a: 0, b: 1, c: 2, added: 3 } as const;
-    const seq = p.items.map(i => order[i.priority]);
+    const seq = p.items.map(i => RANK[i.priority]);
     expect(seq).toEqual([...seq].sort((x, y) => x - y));
   });
 
@@ -324,7 +365,7 @@ describe('Flex', () => {
     const { ws, logged } = doneWeek();
     const tonight = w('extra', at(13, 19), null);
     const withCalf = [...logged, ...sets('calf', 3, 'extra', at(13, 19))];
-    const p = plan({ historySets: withCalf, historyWorkouts: [...ws, tonight], weekStart: WEEK_START, now: new Date(at(14, 8)) });
+    const p = plan({ owed: owedButCalf(), historySets: withCalf, historyWorkouts: [...ws, tonight], weekStart: WEEK_START, now: new Date(at(14, 8)) });
     expect(p.items.some(i => i.priority === 'b' && i.exerciseId === 'calf')).toBe(false);
   });
 
@@ -343,6 +384,7 @@ describe('Flex', () => {
     const { ws, logged } = doneWeek();
     const lastWeek = w('old', '2026-11-05T18:00:00Z', null);
     const p = plan({
+      owed: owedButCalf(),
       historySets: [...logged, ...sets('calf', 3, 'old', '2026-11-05T18:00:00Z')],
       historyWorkouts: [...ws, lastWeek],
       weekStart: WEEK_START,
