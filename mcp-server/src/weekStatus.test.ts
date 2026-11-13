@@ -132,8 +132,11 @@ test('week status: Flex at Vasa substitutes and fills in priority order under th
   assert.equal(r.flex_plan.location, 'Vasa');
   assert.equal(r.flex_plan.cap_minutes, 60);
   const items = r.flex_plan.items.map(i => [i.priority, i.exercise, i.instead_of ?? null]);
-  // a) owed build: Shrug (no Vasa history, no Vasa trap exercise: kept, flagged), Incline (same).
-  assert.deepEqual(items.filter(([p]) => p === 'a').map(([, e]) => e), ['Shrug', 'Incline Press']);
+  // Skipped from a workout that ran: Shrug (no Vasa history, no Vasa trap exercise: kept, flagged).
+  assert.deepEqual(items.filter(([p]) => p === 'skipped').map(([, e]) => e), ['Shrug']);
+  // a) owed build from a workout not run yet: Incline (same).
+  assert.deepEqual(items.filter(([p]) => p === 'a').map(([, e]) => e), ['Incline Press']);
+  assert.equal(items[0]?.[0], 'skipped');
   // b) Flex default: Vasa ISO Row (mid back 1 of 6) and Calf Raise (calves 0 of 3).
   assert.deepEqual(items.filter(([p]) => p === 'b').map(([, e]) => e), ['Vasa ISO Row', 'Calf Raise']);
   assert.ok(r.flex_plan.total_minutes <= 60);

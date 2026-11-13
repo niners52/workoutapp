@@ -1,8 +1,9 @@
 /**
  * Settings -> Flex: what each muscle is for this block (build / maintain /
  * covered) and how long a Flex session may run. Flex fills in this order:
- * owed build-tier work, then the Flex default template, then owed
- * maintain-tier work; covered muscles' owed work is left out.
+ * exercises skipped from workouts already done (any tier), then owed
+ * build-tier work, then the Flex default template, then owed maintain-tier
+ * work; covered muscles' work from workouts not done yet is left out.
  */
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
@@ -48,8 +49,9 @@ export function FlexSettingsScreen() {
 
       <Text style={styles.section}>Muscle tiers</Text>
       <Text style={[styles.hint, styles.padded]}>
-        Build: owed work goes on Flex first. Maintain: owed work goes on last. Covered: owed work is left off — the
-        Flex default template still fills it if it is under target.
+        Anything you skip in a workout goes on Flex first, whatever its tier. For workouts you have not done yet —
+        Build: their work goes on Flex next. Maintain: it goes on last. Covered: it is left off, though the Flex
+        default template still fills it if it is under target.
       </Text>
       <Card padding="none">
         {MUSCLES.map((muscle, i) => (

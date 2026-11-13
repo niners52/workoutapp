@@ -359,15 +359,17 @@ export function owedList(input: WeekInputs & { state?: RotationState; tiers?: Pa
     }
   }
 
-  // Exercises another workout that already ran left undone. Doing one of
-  // these elsewhere is moving it (broken machine Monday, done Tuesday), not a
-  // swap. An exercise only named by workouts still to come can be a swap:
-  // Cable Fly done for Incline Monday is the plan followed, even if Friday's
-  // workout also lists Cable Fly.
-  const skippedByRanWorkout = (exceptSlot: SlotState) => {
+  // Exercises a workout that ran earlier left undone. Doing one of these
+  // later is moving it (broken machine Monday, done Tuesday), not a swap. An
+  // exercise only named by workouts that run later can be a swap: Hack Squat
+  // done for Leg Press on Monday is the plan followed, even if Thursday's
+  // workout lists Hack Squat and skips it.
+  const startedAt = new Map(sessions.map(w => [w.id, w.startedAt]));
+  const skippedByEarlierWorkout = (exceptSlot: SlotState, before: string) => {
     const out = new Set<string>();
     for (const s of state.slots) {
       if (s === exceptSlot || !s.performed) continue;
+      if (!s.workoutIds.some(id => (startedAt.get(id) ?? '') < before)) continue;
       const doneThere = new Set(s.workoutIds.flatMap(id => [...(worked.get(id) ?? [])]));
       for (const id of s.template?.exerciseIds ?? []) if (!doneThere.has(id)) out.add(id);
     }
@@ -389,7 +391,7 @@ export function owedList(input: WeekInputs & { state?: RotationState; tiers?: Pa
       }
       // A moved exercise is left for step 2 to credit to the workout it came from.
       const planned = new Set((s.template?.exerciseIds ?? []));
-      const moved = skippedByRanWorkout(s);
+      const moved = skippedByEarlierWorkout(s, startedAt.get(wid) ?? '');
       const extras = [...done].filter(id => !planned.has(id) && !used.has(id) && !moved.has(id));
       for (const o of mine.filter(x => !x.paid)) {
         const muscles = primaries(byId.get(o.exerciseId));
@@ -496,8 +498,12 @@ export function estimateMinutes(exerciseId: string, setCount: number, sets: Plan
 export interface FlexItem {
   exerciseId: string;
   name: string;
-  /** a: owed, build tier. b: the Flex default template. c: owed, maintain tier. */
-  priority: 'a' | 'b' | 'c' | 'added';
+  /**
+   * skipped: left out of a rotation workout that already ran, any tier.
+   * a: owed from a workout not run yet, build tier. b: the Flex default
+   * template. c: owed from a workout not run yet, maintain tier.
+   */
+  priority: 'skipped' | 'a' | 'b' | 'c' | 'added';
   slotLabel?: string;
   primaryMuscle: string | null;
   tier: Tier;
@@ -545,11 +551,14 @@ export interface FlexInputs {
 
 /**
  * Flex, in the order it is filled:
- *   a) owed exercises whose muscle is build tier,
+ *   skipped) exercises left out of a rotation workout that already ran — a
+ *      specific miss, so first and whatever the tier (build, then maintain,
+ *      then covered),
+ *   a) owed from workouts not run yet, build tier,
  *   b) the Flex default template, minus anything whose muscles have all met
  *      their weekly target,
- *   c) owed exercises whose muscle is maintain tier.
- * Covered-tier owed work is left out. Each item is swapped for a same-muscle
+ *   c) owed from workouts not run yet, maintain tier.
+ * Covered-tier work from workouts not run yet is left out. Each item is swapped for a same-muscle
  * exercise at this location if it is not available here, then items are taken
  * in order while they fit the time cap; the rest expire on Sunday.
  */
@@ -569,9 +578,6 @@ export function flexPlan(input: FlexInputs): FlexPlan {
   const cap = input.capMinutes ?? DEFAULT_FLEX_MINUTES;
   const locationId = input.locationId ?? null;
 
-  const owedOrder = (list: OwedItem[]) =>
-    [...list].sort((a, b) => Number(a.source === 'unperformed') - Number(b.source === 'unperformed'));
-
   const targetMet = (e: PlanExercise | undefined) => {
     const groups = primaries(e);
     if (groups.length === 0) return false;
@@ -583,7 +589,12 @@ export function flexPlan(input: FlexInputs): FlexPlan {
 
   type Draft = Omit<FlexItem, 'minutes'>;
   const drafts: Draft[] = [];
-  for (const o of owedOrder(input.owed.filter(o => o.tier === 'build'))) {
+  const skipped = input.owed.filter(o => o.source === 'skipped');
+  const ahead = input.owed.filter(o => o.source === 'unperformed');
+  for (const o of [...skipped].sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier])) {
+    drafts.push({ exerciseId: o.exerciseId, name: o.name, priority: 'skipped', slotLabel: o.slotLabel, primaryMuscle: o.primaryMuscle, tier: o.tier, sets: o.sets });
+  }
+  for (const o of ahead.filter(o => o.tier === 'build')) {
     drafts.push({ exerciseId: o.exerciseId, name: o.name, priority: 'a', slotLabel: o.slotLabel, primaryMuscle: o.primaryMuscle, tier: o.tier, sets: o.sets });
   }
   for (const id of input.flexTemplate?.exerciseIds ?? []) {
@@ -592,7 +603,7 @@ export function flexPlan(input: FlexInputs): FlexPlan {
     const lead = leadMuscle(e, input.tiers);
     drafts.push({ exerciseId: id, name: e.name, priority: 'b', primaryMuscle: lead, tier: lead ? tierFor(lead, input.tiers) : 'maintain', sets: plannedSets(e) });
   }
-  for (const o of owedOrder(input.owed.filter(o => o.tier === 'maintain'))) {
+  for (const o of ahead.filter(o => o.tier === 'maintain')) {
     drafts.push({ exerciseId: o.exerciseId, name: o.name, priority: 'c', slotLabel: o.slotLabel, primaryMuscle: o.primaryMuscle, tier: o.tier, sets: o.sets });
   }
   for (const id of input.added ?? []) {
