@@ -71,7 +71,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 22;
+const CURRENT_MIGRATION_VERSION = 23;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -213,6 +213,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 22) {
     await migrateToV22();
+  }
+
+  if (currentVersion < 23) {
+    await migrateToV23();
   }
 
   // Update migration version
@@ -1218,6 +1222,29 @@ function syncRoutineQuietly(routine: Routine): void {
   import('./syncService')
     .then(m => m.syncRoutine(routine))
     .catch(e => console.log('V22 routine upload skipped:', e));
+}
+
+/**
+ * V23: two Vasa sessions saved under Planet Fitness ('gym').
+ * 2026-07-10 07:28 and 2026-09-01 18:42 were the only Planet Fitness
+ * sessions holding Vasa-only machines (seated lateral raise, single leg knee
+ * curl, barbell incline bench), which made Flex offer them at Planet Fitness.
+ * Only moved if still on 'gym', so a location changed by hand since is kept.
+ * Mirrored in the cloud by 20261114000000_two_vasa_sessions.sql.
+ */
+const VASA_SESSIONS_SAVED_AS_GYM = ['9779e7bb-c7e1-4bd1-be83-1b36116672a6', 'abe63ddb-647d-4303-827c-2b89048865f0'];
+
+async function migrateToV23(): Promise<void> {
+  console.log('Running migration to V23 - two Vasa sessions saved under Planet Fitness...');
+  const workouts = await getItem<Workout[]>(STORAGE_KEYS.WORKOUTS, []);
+  let moved = 0;
+  const next = workouts.map(w => {
+    if (!VASA_SESSIONS_SAVED_AS_GYM.includes(w.id) || w.locationId !== 'gym') return w;
+    moved++;
+    return { ...w, locationId: 'vasa-' };
+  });
+  if (moved > 0) await setItem(STORAGE_KEYS.WORKOUTS, next);
+  console.log(`Migration to V23 complete - ${moved} workouts moved to Vasa`);
 }
 
 // Reset storage (for debugging/testing)
