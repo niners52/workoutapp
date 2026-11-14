@@ -454,13 +454,37 @@ export function loggedCounts(sets: PlanSet[], workouts: PlanWorkout[]): Map<stri
   return out;
 }
 
+/** How many separate sessions each exercise has been logged in, per location. */
+export function loggedSessions(sets: PlanSet[], workouts: PlanWorkout[]): Map<string, Map<string, number>> {
+  const loc = new Map(workouts.map(w => [w.id, w.locationId]));
+  const seen = new Set<string>();
+  const out = new Map<string, Map<string, number>>();
+  for (const s of sets) {
+    const key = `${s.exerciseId}\u0000${s.workoutId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const where = loc.get(s.workoutId) ?? '';
+    const entry = out.get(s.exerciseId) ?? new Map<string, number>();
+    entry.set(where, (entry.get(where) ?? 0) + 1);
+    out.set(s.exerciseId, entry);
+  }
+  return out;
+}
+
 /**
- * An exercise is available at a location if it has ever been logged there,
- * or is tagged for it by hand. Without a location, everything is available.
+ * An exercise is available at a location if it is tagged for it by hand, or
+ * has been logged there. One session there is not enough when the tags name
+ * other gyms only: a workout saved under the wrong gym would otherwise put a
+ * machine at a gym that does not have it, for good. Two sessions there
+ * outweigh the tags, which are often incomplete. Without a location,
+ * everything is available.
  */
-export function isAvailableAt(e: PlanExercise, locationId: string | null | undefined, counts: Map<string, Map<string, number>>): boolean {
+export function isAvailableAt(e: PlanExercise, locationId: string | null | undefined, sessions: Map<string, Map<string, number>>): boolean {
   if (!locationId) return true;
-  return (counts.get(e.id)?.get(locationId) ?? 0) > 0 || (e.locationIds ?? []).includes(locationId);
+  const tags = e.locationIds ?? [];
+  if (tags.includes(locationId)) return true;
+  const here = sessions.get(e.id)?.get(locationId) ?? 0;
+  return here >= (tags.length > 0 ? 2 : 1);
 }
 
 /**
@@ -565,6 +589,7 @@ export interface FlexInputs {
 export function flexPlan(input: FlexInputs): FlexPlan {
   const byId = new Map(input.exercises.map(e => [e.id, e]));
   const counts = loggedCounts(input.historySets, input.historyWorkouts);
+  const sessions = loggedSessions(input.historySets, input.historyWorkouts);
   const removed = new Set(input.removed ?? []);
   const doneThisWeek = new Set<string>();
   if (input.weekStart) {
@@ -622,8 +647,8 @@ export function flexPlan(input: FlexInputs): FlexPlan {
     let chosen = planned;
     let insteadOf: FlexItem['insteadOf'];
     let notAvailableHere = false;
-    if (!isAvailableAt(planned, locationId, counts)) {
-      const stand = substituteFor(planned, d.primaryMuscle, locationId, { byId, counts, exclude: new Set([...taken, ...removed]) });
+    if (!isAvailableAt(planned, locationId, sessions)) {
+      const stand = substituteFor(planned, d.primaryMuscle, locationId, { byId, counts, sessions, exclude: new Set([...taken, ...removed]) });
       if (stand) {
         insteadOf = { exerciseId: planned.id, name: planned.name };
         chosen = stand;
@@ -671,7 +696,7 @@ export function substituteFor(
   planned: PlanExercise,
   muscle: string | null,
   locationId: string | null,
-  ctx: { byId: Map<string, PlanExercise>; counts: Map<string, Map<string, number>>; exclude?: Set<string> },
+  ctx: { byId: Map<string, PlanExercise>; counts: Map<string, Map<string, number>>; sessions: Map<string, Map<string, number>>; exclude?: Set<string> },
 ): PlanExercise | null {
   const groups = muscle ? [muscle] : primaries(planned);
   const here = (e: PlanExercise) => ctx.counts.get(e.id)?.get(locationId ?? '') ?? 0;
@@ -679,7 +704,7 @@ export function substituteFor(
   const options = [...ctx.byId.values()]
     .filter(e => e.id !== planned.id && !e.defaultWarmup && !ctx.exclude?.has(e.id))
     .filter(e => primaries(e).some(g => groups.includes(g)))
-    .filter(e => isAvailableAt(e, locationId, ctx.counts))
+    .filter(e => isAvailableAt(e, locationId, ctx.sessions))
     .sort((a, b) => here(b) - here(a) || overall(b) - overall(a) || a.name.localeCompare(b.name));
   return options[0] ?? null;
 }

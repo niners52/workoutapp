@@ -344,21 +344,41 @@ describe('Flex', () => {
     expect(['leg-press', 'leg-ext', 'leg-curl']).toContain(squat!.exerciseId);
   });
 
-  test('availability comes from history too: logged at Vasa once means available at Vasa', () => {
+  const vasaPlan = (visits: string[]) => {
     const { ws, logged, owed } = doneWeek();
-    const vasaVisit = w('old', '2026-10-01T15:00:00Z', null, 'vasa');
-    const p = flexPlan({
+    return flexPlan({
       owed,
       flexTemplate: TEMPLATES.find(t => t.id === 'flex')!,
       exercises: EXERCISES,
       doneByMuscle: {},
       targets: {},
       locationId: 'vasa',
-      historySets: [...logged, ...sets('curl', 3, 'old', '2026-10-01T15:00:00Z')],
-      historyWorkouts: [...ws, vasaVisit],
+      historySets: [...logged, ...visits.flatMap((d, i) => sets('curl', 3, `old${i}`, d))],
+      historyWorkouts: [...ws, ...visits.map((d, i) => w(`old${i}`, d, null, 'vasa'))],
       capMinutes: 500,
     });
+  };
+
+  test('availability comes from history too: logged at Vasa in two sessions means available at Vasa', () => {
+    const p = vasaPlan(['2026-10-01T15:00:00Z', '2026-10-08T15:00:00Z']);
     expect(p.items.find(i => i.exerciseId === 'curl')?.insteadOf).toBeUndefined();
+    expect(p.items.find(i => i.exerciseId === 'curl')?.notAvailableHere).toBeUndefined();
+  });
+
+  test('one session at a gym the tags do not name is not proof: a workout saved under the wrong gym', () => {
+    // curl is tagged for Planet Fitness only; a single Vasa session with it
+    // does not make it a Vasa exercise.
+    const p = vasaPlan(['2026-10-01T15:00:00Z']);
+    const curl = p.items.find(i => i.exerciseId === 'curl' || i.insteadOf?.exerciseId === 'curl');
+    expect(curl?.insteadOf ?? curl?.notAvailableHere).toBeTruthy();
+  });
+
+  test('an exercise with no tags at all is available wherever it has been logged', () => {
+    const { ws, logged } = doneWeek();
+    const untagged = EXERCISES.map(e => (e.id === 'vasa-squat' ? { ...e, locationIds: [] } : e));
+    const visit = w('old', '2026-10-01T15:00:00Z', null, 'pf');
+    const p = plan({ exercises: untagged, historySets: [...logged, ...sets('vasa-squat', 3, 'old', '2026-10-01T15:00:00Z')], historyWorkouts: [...ws, visit] });
+    expect(p.items.find(i => i.exerciseId === 'vasa-squat')?.insteadOf).toBeUndefined();
   });
 
   test('a Flex default exercise done earlier this week is off Flex', () => {
