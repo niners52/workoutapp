@@ -375,6 +375,7 @@ export function AppNavigator() {
           component={ExerciseHistoryScreen}
           options={{
             title: 'Exercise History',
+            headerShown: false, // the screen draws its own top bar with a Back button
           }}
         />
         <Stack.Screen

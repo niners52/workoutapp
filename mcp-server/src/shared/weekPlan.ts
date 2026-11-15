@@ -340,7 +340,8 @@ export interface OwedItem {
  * swap — the busy-gym case), or when any other session this week did it — so
  * an exercise moved from Monday's W1 to Tuesday's W2 still credits W1. Spare
  * sessions pay performed workouts first, oldest first, then unperformed ones.
- * Prep (warm-up) exercises are never owed.
+ * Anything still spare after that (a Flex stand-in, say) pays an open
+ * exercise with the same lead muscle. Prep (warm-up) exercises are never owed.
  */
 export function owedList(input: WeekInputs & { state?: RotationState; tiers?: Partial<Record<string, Tier>> | null }): OwedItem[] {
   const { sets, exercises } = input;
@@ -418,6 +419,25 @@ export function owedList(input: WeekInputs & { state?: RotationState; tiers?: Pa
     if (left > 0) {
       spare.set(o.exerciseId, left - 1);
       o.paid = true;
+    }
+  }
+
+  // 3. What is still spare pays an open exercise with the same lead muscle:
+  // the stand-in Flex offered at this gym (ISO front pulldown for Wide-Grip
+  // Pulldown at Vasa), or any other same-muscle lift done for it. Lead muscle,
+  // not any shared muscle, so a V squat (quads first) does not pay a glute
+  // pull-through.
+  const lead = (id: string) => leadMuscle(byId.get(id), input.tiers);
+  for (const o of ordered) {
+    if (o.paid) continue;
+    const want = lead(o.exerciseId);
+    if (!want) continue;
+    for (const [id, left] of spare) {
+      if (left > 0 && lead(id) === want) {
+        spare.set(id, left - 1);
+        o.paid = true;
+        break;
+      }
     }
   }
 

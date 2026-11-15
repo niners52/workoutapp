@@ -551,10 +551,27 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
       }
     };
 
-    // Finish means finish. Leaving exercises unfinished is a normal way to
-    // train (a short session now, the rest tonight), so it is not worth a
+    // Finish means finish. Leaving exercises untouched is a normal way to
+    // train (a short session now, the rest tonight), so that is not worth a
     // confirmation — whatever is left shows up on "Left this week" instead.
-    doFinish();
+    // An exercise started but short of its sets is different: that is a
+    // workout in the middle of an exercise, and a stray tap on Finish there
+    // should not end it.
+    const partial = activeWorkout.exerciseIds.flatMap(id => {
+      const exercise = exercises.find(e => e.id === id);
+      if (exercise?.defaultWarmup) return [];
+      const done = activeWorkout.sets.filter(s => s.exerciseId === id && !s.isWarmup).length;
+      const target = targetSetsForExercise(exercise, id);
+      return done > 0 && done < target ? [`${exercise?.name ?? 'An exercise'}: ${done} of ${target} sets`] : [];
+    });
+    if (partial.length === 0) {
+      doFinish();
+      return;
+    }
+    showAlert('Finish workout?', ['Still in progress:', ...partial].join('\n'), [
+      { text: 'Keep going', style: 'cancel' },
+      { text: 'Finish', onPress: () => { doFinish(); } },
+    ]);
   };
 
   const handleCancelWorkout = () => {
