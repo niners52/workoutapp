@@ -61,6 +61,7 @@ const EXERCISES: PlanExercise[] = [
   ex('vasa-row', ['mid_back'], { locationIds: ['vasa'] }),
   ex('vasa-press', ['chest'], { locationIds: ['vasa'] }),
   ex('vasa-squat', ['quads', 'hamstrings', 'glutes'], { locationIds: ['vasa'] }),
+  ex('vasa-pulldown', ['lats'], { locationIds: ['vasa'] }),
 ];
 
 const TEMPLATES: PlanTemplate[] = [
@@ -209,6 +210,26 @@ describe('owed list', () => {
     const warmOnly = logged.map(s => (s.exerciseId === 'pushdown' ? { ...s, isWarmup: true } : s));
     const { owed } = week(workouts, warmOnly);
     expect(owed.some(o => o.exerciseId === 'pushdown' && o.source === 'skipped')).toBe(true);
+  });
+
+  test("Flex's stand-in pays the exercise it stood in for", () => {
+    // Monday skipped the pulldown; Saturday's Flex at Vasa did the Vasa
+    // pulldown in its place.
+    const noPulldown = logged.filter(s => !(s.workoutId === 'mon' && s.exerciseId === 'pulldown'));
+    const before = week(workouts, noPulldown).owed;
+    expect(before.some(o => o.slotLabel === 'W1' && o.exerciseId === 'pulldown')).toBe(true);
+    const flex = w('sat', at(14, 9), 'flex', 'vasa');
+    const { owed } = week([...workouts, flex], [...noPulldown, ...sets('vasa-pulldown', 3, 'sat', at(14, 9))], new Date(at(14, 12)));
+    expect(owed.some(o => o.exerciseId === 'pulldown')).toBe(false);
+  });
+
+  test('a stand-in only pays an exercise with the same lead muscle', () => {
+    // Vasa squat leads with quads: it does not pay W2's skipped shrug or a
+    // hamstring curl, and with no quad lift open it pays nothing.
+    const flex = w('sat', at(14, 9), 'flex', 'vasa');
+    const { owed } = week([...workouts, flex], [...logged, ...sets('vasa-squat', 3, 'sat', at(14, 9))], new Date(at(14, 12)));
+    expect(owed.filter(o => o.source === 'skipped').map(o => o.exerciseId)).toEqual(['shrug']);
+    expect(owed.some(o => o.exerciseId === 'leg-curl')).toBe(true);
   });
 
   test('an exercise on two workouts needs two sessions', () => {

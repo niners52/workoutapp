@@ -5,7 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -75,15 +77,31 @@ export function ExerciseHistoryScreen() {
     loadHistory();
   }, [exerciseId]);
 
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      title: exercise?.name || 'Exercise History',
-    });
-  }, [navigation, exercise]);
+  // Our own top bar instead of the stack header. Opened from a workout, the
+  // stack header's back button read "MainTabs" and did not respond on iOS;
+  // a plain button in the screen always does, and swipe-back still works.
+  const topBar = (
+    <View style={styles.topBar}>
+      <TouchableOpacity
+        onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.popToTop())}
+        style={styles.backButton}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        testID="exercise-history-back"
+      >
+        <Ionicons name="chevron-back" size={24} color={colors.primary} />
+        <Text style={styles.backText}>Back</Text>
+      </TouchableOpacity>
+      <Text style={styles.topBarTitle} numberOfLines={1}>
+        {exercise?.name || 'Exercise History'}
+      </Text>
+      <View style={styles.backButton} />
+    </View>
+  );
 
   if (loading) {
     return (
-      <SafeAreaView style={commonStyles.safeArea}>
+      <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+        {topBar}
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -93,7 +111,8 @@ export function ExerciseHistoryScreen() {
 
   if (!exercise) {
     return (
-      <SafeAreaView style={commonStyles.safeArea}>
+      <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+        {topBar}
         <View style={styles.container}>
           <Text style={styles.emptyText}>Exercise not found</Text>
         </View>
@@ -103,6 +122,7 @@ export function ExerciseHistoryScreen() {
 
   return (
     <SafeAreaView style={commonStyles.safeArea} edges={['top']}>
+      {topBar}
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -185,6 +205,31 @@ export function ExerciseHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
+    backgroundColor: colors.background,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  backText: {
+    fontSize: typography.size.md,
+    color: colors.primary,
+  },
+  topBarTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.text,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
