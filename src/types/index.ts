@@ -846,6 +846,8 @@ export interface RotationSlot {
   /** "W1", "W2"... */
   label: string;
   templateId: string;
+  /** Other templates that do this workout (e.g. the Planet Fitness version). */
+  alternateTemplateIds?: string[];
   /** 0 = Sunday .. 6 = Saturday. A label only — nothing is scheduled by it. */
   usualDay?: number | null;
 }
