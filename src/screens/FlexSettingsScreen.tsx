@@ -49,9 +49,8 @@ export function FlexSettingsScreen() {
 
       <Text style={styles.section}>Muscle tiers</Text>
       <Text style={[styles.hint, styles.padded]}>
-        Anything you skip in a workout goes on Flex first, whatever its tier. For workouts you have not done yet —
-        Build: their work goes on Flex next. Maintain: it goes on last. Covered: it is left off, though the Flex
-        default template still fills it if it is under target.
+        Flex is what you skip in this week's workouts. When it is longer than the time above, Build muscles go first,
+        then Maintain, then Covered; what does not fit expires Sunday.
       </Text>
       <Card padding="none">
         {MUSCLES.map((muscle, i) => (

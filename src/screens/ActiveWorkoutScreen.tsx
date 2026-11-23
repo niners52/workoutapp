@@ -43,6 +43,8 @@ import {
 } from '../services/rotationWeek';
 import { isWarmupSet } from '../services/warmupSets';
 import { painWarningsFor, type PainWarning } from '../services/painLog';
+import { buildFlex, buildWeek } from '../services/rotationWeek';
+import { computeWeeklyVolume } from '../services/analytics';
 import { getPainLog, onPainLogChange } from '../services/painLogStore';
 import type { PainLogEntry } from '../types';
 
@@ -118,6 +120,34 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const prAnimValue = useRef(new Animated.Value(0)).current;
   const [sessionPRs, setSessionPRs] = useState<Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>>(new Map());
   const [fatigueWarnings, setFatigueWarnings] = useState<Map<string, ExerciseFatigueSignal>>(new Map());
+  // Flex: what this week's workouts that ran left undone (substituted for this
+  // gym), minus what is already in this workout. Adding one here and doing it
+  // — or swapping it for another lift for the same muscle — takes it off Flex.
+  const flexItems = useMemo(() => {
+    const routine = getActiveRoutine();
+    if (!routine || !activeWorkout) return [];
+    try {
+      const now = new Date();
+      const week = buildWeek({ routine, templates, workouts, sets, exercises, settings: userSettings, now });
+      const volume = computeWeeklyVolume(sets, workouts, exercises, userSettings, now).muscleGroups;
+      const plan = buildFlex({
+        week,
+        templates,
+        workouts,
+        sets,
+        exercises,
+        volume,
+        settings: userSettings,
+        locationId: activeWorkout.workout.locationId ?? null,
+      });
+      const inWorkout = new Set(activeWorkout.exerciseIds);
+      return [...plan.items, ...plan.expiresSunday].filter(i => !inWorkout.has(i.exerciseId));
+    } catch (e) {
+      console.log('[ActiveWorkout] Flex list failed:', e);
+      return [];
+    }
+  }, [getActiveRoutine, activeWorkout, templates, workouts, sets, exercises, userSettings]);
+
   // Recent pain (score 3+, last 14 days) in an area an exercise works.
   const [painLog, setPainLog] = useState<PainLogEntry[]>([]);
   useEffect(() => {
@@ -1298,6 +1328,32 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
               </Card>
             );
           })()}
+
+          {/* From Flex: skipped work this week, one tap to add */}
+          {flexItems.length > 0 && (
+            <View style={styles.fromFlex} testID="from-flex">
+              <Text style={styles.fromFlexTitle}>From Flex</Text>
+              {flexItems.map(item => (
+                <TouchableOpacity
+                  key={item.exerciseId}
+                  style={styles.fromFlexRow}
+                  onPress={() => addExerciseToWorkout(item.exerciseId)}
+                  activeOpacity={0.7}
+                  testID={`from-flex-${item.exerciseId}`}
+                >
+                  <View style={styles.fromFlexText}>
+                    <Text style={styles.fromFlexName}>{item.name}</Text>
+                    <Text style={styles.fromFlexDetail}>
+                      {item.slotLabel ? `Skipped in ${item.slotLabel}` : 'Flex'}
+                      {item.insteadOf ? ` · instead of ${item.insteadOf.name}` : ''}
+                      {` · ${item.sets} sets`}
+                    </Text>
+                  </View>
+                  <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Add Exercise Button */}
           <TouchableOpacity
@@ -2550,6 +2606,28 @@ const styles = StyleSheet.create({
     fontWeight: typography.weight.bold,
     color: colors.text,
   },
+  fromFlex: {
+    marginTop: spacing.md,
+    marginHorizontal: spacing.base,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  fromFlexTitle: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.semibold,
+    color: colors.textSecondary,
+    textTransform: 'uppercase' as const,
+    marginBottom: spacing.xs,
+  },
+  fromFlexRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingVertical: spacing.xs,
+  },
+  fromFlexText: { flex: 1 },
+  fromFlexName: { fontSize: typography.size.md, color: colors.text },
+  fromFlexDetail: { fontSize: typography.size.xs, color: colors.textSecondary },
   painBanner: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
