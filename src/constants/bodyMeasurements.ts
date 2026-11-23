@@ -16,6 +16,7 @@ export const BODY_MEASUREMENT_TYPES: BodyMeasurementType[] = [
   { key: 'left_forearm', label: 'Left Forearm', icon: '📏', pairWith: 'right_forearm' },
   { key: 'right_forearm', label: 'Right Forearm', icon: '📏', pairWith: 'left_forearm' },
   { key: 'waist', label: 'Waist', icon: '📏' },
+  { key: 'waist_narrow', label: 'Waist (narrowest)', icon: '📏' },
   { key: 'hips', label: 'Hips', icon: '📏' },
   { key: 'left_thigh', label: 'Left Thigh', icon: '🦵', pairWith: 'right_thigh' },
   { key: 'right_thigh', label: 'Right Thigh', icon: '🦵', pairWith: 'left_thigh' },
@@ -32,6 +33,7 @@ export const MEASUREMENT_INSTRUCTIONS: Record<string, string> = {
   left_forearm: 'Measure around the thickest part',
   right_forearm: 'Measure around the thickest part',
   waist: 'Measure at the navel, relaxed',
+  waist_narrow: 'Narrowest point, usually 1–2 in above navel, relaxed exhale.',
   hips: 'Measure around the widest point of your glutes',
   left_thigh: 'Measure around the thickest part of your upper leg',
   right_thigh: 'Measure around the thickest part of your upper leg',
@@ -113,7 +115,7 @@ export function getMeasurementType(key: string): BodyMeasurementType | undefined
 // Check if a measurement is "good" when it increases (muscle growth)
 // Waist is the exception - smaller is usually better
 export function isIncreasePositive(key: string): boolean {
-  return key !== 'waist';
+  return key !== 'waist' && key !== 'waist_narrow';
 }
 
 // Group measurements for display (paired left/right on same row)
@@ -126,7 +128,7 @@ export function getGroupedMeasurements(): MeasurementGroup[] {
   return [
     { label: 'Upper Body', measurements: BODY_MEASUREMENT_TYPES.filter(m => ['neck', 'shoulders', 'chest'].includes(m.key)) },
     { label: 'Arms', measurements: BODY_MEASUREMENT_TYPES.filter(m => ['left_arm', 'right_arm', 'left_forearm', 'right_forearm'].includes(m.key)) },
-    { label: 'Core', measurements: BODY_MEASUREMENT_TYPES.filter(m => ['waist', 'hips'].includes(m.key)) },
+    { label: 'Core', measurements: BODY_MEASUREMENT_TYPES.filter(m => ['waist', 'waist_narrow', 'hips'].includes(m.key)) },
     { label: 'Legs', measurements: BODY_MEASUREMENT_TYPES.filter(m => ['left_thigh', 'right_thigh', 'left_calf', 'right_calf'].includes(m.key)) },
   ];
 }

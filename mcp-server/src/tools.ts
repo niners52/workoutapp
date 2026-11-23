@@ -656,6 +656,85 @@ export async function getBodyWeightLog(ctx: ToolContext, input: { limit: number 
   };
 }
 
+const num = (v: unknown): number | null => (v === null || v === undefined || v === '' ? null : Number(v));
+
+export async function getDailyHealthMetrics(ctx: ToolContext, input: { limit: number }) {
+  const days = await ctx.db.listDailyHealthMetrics(input.limit);
+  const oldest = days[days.length - 1]?.date;
+  // Workouts in the same span, with minutes per heart-rate zone.
+  const zones = oldest ? await ctx.db.listWorkoutHrZones(`${oldest}T00:00:00Z`) : [];
+  return {
+    days: days.map(d => ({
+      date: d.date,
+      vo2_max: num(d.vo2_max),
+      resting_hr: num(d.resting_hr),
+      hrv_sdnn_ms: num(d.hrv_sdnn_ms),
+      steps: num(d.steps),
+      active_energy_kcal: num(d.active_energy_kcal),
+      bp_systolic: num(d.bp_systolic),
+      bp_diastolic: num(d.bp_diastolic),
+    })),
+    workouts: zones.map(z => ({
+      start: z.start_at,
+      end: z.end_at,
+      activity: z.activity_name,
+      app_workout_id: z.workout_id,
+      duration_min: num(z.duration_min),
+      avg_hr: num(z.avg_hr),
+      peak_hr: num(z.peak_hr),
+      max_hr_used: num(z.max_hr_used),
+      zone_minutes: { z1: num(z.z1_min), z2: num(z.z2_min), z3: num(z.z3_min), z4: num(z.z4_min), z5: num(z.z5_min) },
+    })),
+    zones: 'Z1 50-60 %, Z2 60-70 %, Z3 70-80 %, Z4 80-90 %, Z5 90 %+ of max_hr_used',
+  };
+}
+
+export async function getInbodyScans(ctx: ToolContext, input: { limit: number }) {
+  const rows = await ctx.db.listBodyScans(input.limit);
+  return {
+    scans: rows.map(r => ({
+      date: r.date,
+      scan_type: r.scan_type,
+      weight_lbs: num(r.weight),
+      body_fat_percentage: num(r.body_fat_percentage),
+      skeletal_muscle_lbs: num(r.skeletal_muscle_lbs),
+      lean_mass_lbs: num(r.lean_mass_lbs),
+      visceral_fat_area_cm2: num(r.visceral_fat_area),
+      ecw_tbw: num(r.ecw_tbw),
+      phase_angle_deg: num(r.phase_angle),
+    })),
+  };
+}
+
+export async function getGoals(ctx: ToolContext) {
+  const rows = await ctx.db.listGoals();
+  return {
+    goals: rows.map(g => ({
+      label: g.label,
+      type: g.type,
+      metric: g.metric_key,
+      target: num(g.target),
+      ...(g.target_max !== null && g.target_max !== undefined ? { target_max: num(g.target_max) } : {}),
+      ...(g.target_reps !== null && g.target_reps !== undefined ? { target_reps: num(g.target_reps) } : {}),
+      direction: g.direction,
+      target_date: g.target_date ?? null,
+    })),
+    how_progress_is_measured: {
+      weight_band: '7-day average of morning weigh-ins (get_body_weight_log) inside [target, target_max]',
+      measurement: "latest tape measurement of `metric` ('arms' = mean of left_arm and right_arm)",
+      lift: '`metric` is an exercise id; best working set of the last 12 weeks by estimated 1RM against target × target_reps. For a bodyweight lift, target is added weight.',
+    },
+  };
+}
+
+export async function getPainLog(ctx: ToolContext, input: { limit: number }) {
+  const rows = await ctx.db.listPainLog(input.limit);
+  return {
+    entries: rows.map(r => ({ date: r.date, area: r.area, side: r.side, score: num(r.score), note: r.note ?? null })),
+    scale: '0 = none, 10 = worst. The app warns on exercises working an area scored 3+ in the last 14 days.',
+  };
+}
+
 export async function getFavoriteExercises(ctx: ToolContext) {
   const exercises = await ctx.db.listExercises();
   return { favorites: exercises.filter(e => e.is_favorite).map(exerciseSummary) };

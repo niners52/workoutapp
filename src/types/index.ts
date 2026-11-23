@@ -507,6 +507,11 @@ export interface HealthTargets {
   muscleTiers?: Record<string, MuscleTier>;
   /** How long a Flex session is allowed to run, in minutes (default 75). */
   flexMinutes?: number;
+  /**
+   * Max heart rate for workout zones (Z1-Z5 = 50/60/70/80/90 %). Unset: 220
+   * minus age from Apple Health's date of birth.
+   */
+  maxHeartRate?: number;
 }
 
 export type MuscleTier = 'build' | 'maintain' | 'covered';
@@ -866,6 +871,8 @@ export type BodyMeasurementTypeKey =
   | 'left_forearm'
   | 'right_forearm'
   | 'waist'
+  /** Narrowest point, usually 1-2 in above the navel. */
+  | 'waist_narrow'
   | 'hips'
   | 'left_thigh'
   | 'right_thigh'
@@ -893,6 +900,65 @@ export interface BodyMeasurement {
   value?: number; // stored in inches
   source: 'healthkit' | 'manual';
   syncedAt?: string; // ISO datetime when synced from HealthKit
+  // Body composition scan detail (InBody / DEXA), on a weight row.
+  skeletalMuscleLbs?: number;
+  leanMassLbs?: number;
+  /** Visceral fat area, cm². */
+  visceralFatArea?: number;
+  /** Extracellular / total body water, e.g. 0.383. */
+  ecwTbw?: number;
+  /** Degrees. */
+  phaseAngle?: number;
+  scanType?: ScanType;
+}
+
+export type ScanType = 'inbody' | 'dexa' | 'scale';
+
+// ============================================
+// Goals and pain log
+// ============================================
+
+export type GoalType = 'weight_band' | 'measurement' | 'lift';
+
+export interface Goal {
+  id: string;
+  type: GoalType;
+  /** 'weight', a measurement type ('arms' = both arms), or an exercise id. */
+  metricKey: string;
+  label: string;
+  /** Band low, measurement target, or lift weight (lbs; added weight on a bodyweight lift). */
+  target: number;
+  /** Band high. */
+  targetMax?: number;
+  targetReps?: number;
+  direction: 'at_least' | 'at_most' | 'band';
+  targetDate?: string;
+  sortOrder: number;
+}
+
+export type PainArea =
+  | 'neck'
+  | 'shoulder'
+  | 'elbow'
+  | 'wrist'
+  | 'upper_back'
+  | 'lower_back'
+  | 'hip'
+  | 'knee'
+  | 'ankle'
+  | 'chest'
+  | 'other';
+
+export type PainSide = 'left' | 'right' | 'both';
+
+export interface PainLogEntry {
+  id: string;
+  date: string; // 'YYYY-MM-DD'
+  area: PainArea;
+  side: PainSide;
+  /** 0-10. */
+  score: number;
+  note?: string;
 }
 
 export interface BodyMeasurementHistory {

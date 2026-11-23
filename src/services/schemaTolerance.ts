@@ -28,6 +28,7 @@ export const OPTIONAL_COLUMNS_BY_TABLE: Record<string, string[]> = {
   nutrition_days: ['last_sample_at'],
   workout_sets: ['variant', 'is_warmup'],
   routines: ['rotation'],
+  body_measurements: ['skeletal_muscle_lbs', 'lean_mass_lbs', 'visceral_fat_area', 'ecw_tbw', 'phase_angle', 'scan_type'],
 };
 
 /** Columns proven missing this session, as "table.column" — for diagnostics. */

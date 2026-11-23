@@ -9,3 +9,4 @@ export { FlexCard } from './FlexCard';
 export { NextUpCard } from './NextUpCard';
 export { RecurringSwapCard } from './RecurringSwapCard';
 export { RoutineChangesCard } from './RoutineChangesCard';
+export { GoalsCard } from './GoalsCard';

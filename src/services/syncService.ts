@@ -11,6 +11,7 @@ import {
   SupplementIntake,
   Routine,
   BodyMeasurement,
+  PainLogEntry,
   HealthReminder,
 } from '../types';
 import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
@@ -341,6 +342,106 @@ export async function syncSleepNights(rows: SleepNightRow[]): Promise<void> {
       console.log('Sleep sync error, queuing:', error);
       for (const row of batch) await addToPendingQueue({ table: 'sleep_nights', operation: 'upsert', data: row });
     }
+  }
+}
+
+// ==================== DAILY HEALTH METRICS + WORKOUT HR ZONES ====================
+
+/** One local day of Apple Health metrics (healthMetricsSync.ts). */
+export interface DailyHealthMetricRow {
+  id: string; // hk-day-YYYY-MM-DD
+  date: string;
+  vo2_max: number | null;
+  resting_hr: number | null;
+  hrv_sdnn_ms: number | null;
+  steps: number | null;
+  active_energy_kcal: number | null;
+  bp_systolic: number | null;
+  bp_diastolic: number | null;
+  source: string;
+  synced_at: string;
+}
+
+/** Minutes in each heart-rate zone for one Apple Health workout. */
+export interface WorkoutHrZonesRow {
+  id: string; // hk-zones-<HealthKit workout uuid>
+  hk_workout_id: string;
+  workout_id: string | null;
+  activity_name: string | null;
+  start_at: string;
+  end_at: string;
+  duration_min: number;
+  max_hr_used: number;
+  avg_hr: number | null;
+  peak_hr: number | null;
+  z1_min: number;
+  z2_min: number;
+  z3_min: number;
+  z4_min: number;
+  z5_min: number;
+  sample_count: number;
+  synced_at: string;
+}
+
+/** Upsert in batches; whatever fails waits in the pending queue for the next flush. */
+async function upsertOrQueue(table: string, rows: Record<string, unknown>[], onConflict: string): Promise<void> {
+  const userId = await getUserId();
+  if (!userId || rows.length === 0) return;
+  const withUser = rows.map(r => ({ ...r, user_id: userId }));
+  for (const batch of chunkArray(withUser, 50)) {
+    try {
+      const { error } = await supabase.from(table).upsert(batch, { onConflict });
+      if (error) {
+        console.log(`${table} sync failed, queuing:`, error.message);
+        for (const row of batch) await addToPendingQueue({ table, operation: 'upsert', data: row });
+      } else {
+        await updateLastSyncTimestamp();
+      }
+    } catch (error) {
+      console.log(`${table} sync error, queuing:`, error);
+      for (const row of batch) await addToPendingQueue({ table, operation: 'upsert', data: row });
+    }
+  }
+}
+
+export function syncDailyHealthMetrics(rows: DailyHealthMetricRow[]): Promise<void> {
+  return upsertOrQueue('daily_health_metrics', rows as unknown as Record<string, unknown>[], 'user_id,date');
+}
+
+export function syncWorkoutHrZones(rows: WorkoutHrZonesRow[]): Promise<void> {
+  return upsertOrQueue('workout_hr_zones', rows as unknown as Record<string, unknown>[], 'user_id,hk_workout_id');
+}
+
+// ==================== PAIN LOG ====================
+
+export function syncPainLogEntry(entry: PainLogEntry): Promise<void> {
+  return upsertOrQueue(
+    'pain_log',
+    [{ id: entry.id, date: entry.date, area: entry.area, side: entry.side, score: entry.score, note: entry.note ?? null }],
+    'id',
+  );
+}
+
+export async function syncDeletePainLogEntry(id: string): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+  try {
+    const { error } = await supabase.from('pain_log').delete().eq('id', id).eq('user_id', userId);
+    if (error) await addToPendingQueue({ table: 'pain_log', operation: 'delete', data: { id, user_id: userId } });
+  } catch {
+    await addToPendingQueue({ table: 'pain_log', operation: 'delete', data: { id, user_id: userId } });
+  }
+}
+
+/** The cloud's pain log, or null when it cannot be read. */
+export async function fetchPainLogFromCloud(): Promise<any[] | null> {
+  const userId = await getUserId();
+  if (!userId) return null;
+  try {
+    const { data, error } = await supabase.from('pain_log').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(500);
+    return error ? null : data ?? [];
+  } catch {
+    return null;
   }
 }
 
@@ -991,11 +1092,22 @@ export async function syncBodyMeasurement(measurement: BodyMeasurement): Promise
       value: measurement.value ?? null,
       source: measurement.source,
       synced_at: measurement.syncedAt ?? null,
+      // Scan detail columns go only when set, so a plain weigh-in still lands
+      // on a database that predates them.
+      ...(measurement.skeletalMuscleLbs != null ? { skeletal_muscle_lbs: measurement.skeletalMuscleLbs } : {}),
+      ...(measurement.leanMassLbs != null ? { lean_mass_lbs: measurement.leanMassLbs } : {}),
+      ...(measurement.visceralFatArea != null ? { visceral_fat_area: measurement.visceralFatArea } : {}),
+      ...(measurement.ecwTbw != null ? { ecw_tbw: measurement.ecwTbw } : {}),
+      ...(measurement.phaseAngle != null ? { phase_angle: measurement.phaseAngle } : {}),
+      ...(measurement.scanType ? { scan_type: measurement.scanType } : {}),
     };
 
-    const { error } = await supabase
-      .from('body_measurements')
-      .upsert(row, { onConflict: 'id' });
+    const { error } = await upsertTolerant(
+      'body_measurements',
+      [row],
+      OPTIONAL_COLUMNS_BY_TABLE.body_measurements,
+      'id',
+    );
 
     if (error) {
       console.log('Body measurement sync failed, queuing:', error.message);
@@ -1232,9 +1344,11 @@ export async function processPendingSync(
       const conflictKey =
         table === 'user_settings'
           ? 'user_id'
-          : table === 'nutrition_days' || table === 'sleep_nights'
+          : table === 'nutrition_days' || table === 'sleep_nights' || table === 'daily_health_metrics'
             ? 'user_id,date'
-            : 'id';
+            : table === 'workout_hr_zones'
+              ? 'user_id,hk_workout_id'
+              : 'id';
       const batches = chunkArray(ops, 50);
 
       for (const batch of batches) {

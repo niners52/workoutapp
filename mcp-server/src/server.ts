@@ -11,6 +11,10 @@ import {
   ToolError,
   describeSchema,
   getBodyWeightLog,
+  getDailyHealthMetrics,
+  getGoals,
+  getInbodyScans,
+  getPainLog,
   getNutritionLog,
   getSleepLog,
   getSupplementLog,
@@ -169,6 +173,53 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       annotations: READ_ONLY,
     },
     guarded('get_body_weight_log', input => getBodyWeightLog(ctx, input), ctx),
+  );
+
+  server.registerTool(
+    'get_daily_health_metrics',
+    {
+      title: 'Daily health metrics',
+      description:
+        'Apple Health by day, newest first: VO2 max, resting heart rate, HRV (SDNN, daily average, ms), steps, active energy (kcal) and blood pressure when recorded; plus the workouts in that span with minutes in heart-rate zones Z1-Z5.',
+      inputSchema: { limit: z.number().int().min(1).max(365).default(30) },
+      annotations: READ_ONLY,
+    },
+    guarded('get_daily_health_metrics', input => getDailyHealthMetrics(ctx, input), ctx),
+  );
+
+  server.registerTool(
+    'get_inbody_scans',
+    {
+      title: 'InBody / DEXA scans',
+      description:
+        'Body composition scans, newest first: weight, body fat %, skeletal muscle (lbs), lean mass (lbs), visceral fat area (cm²), ECW/TBW and phase angle.',
+      inputSchema: { limit: z.number().int().min(1).max(100).default(10) },
+      annotations: READ_ONLY,
+    },
+    guarded('get_inbody_scans', input => getInbodyScans(ctx, input), ctx),
+  );
+
+  server.registerTool(
+    'get_goals',
+    {
+      title: 'Goals',
+      description:
+        'Active goals: a body-weight band, tape measurements (shoulders, chest, arms, narrowest waist) and lifts (exercise id, weight × reps), with how the app measures progress toward each.',
+      inputSchema: {},
+      annotations: READ_ONLY,
+    },
+    guarded('get_goals', () => getGoals(ctx), ctx),
+  );
+
+  server.registerTool(
+    'get_pain_log',
+    {
+      title: 'Pain log',
+      description: 'Pain entries, newest first: date, area (elbow, shoulder, knee...), side, score 0-10 and note.',
+      inputSchema: { limit: z.number().int().min(1).max(365).default(30) },
+      annotations: READ_ONLY,
+    },
+    guarded('get_pain_log', input => getPainLog(ctx, input), ctx),
   );
 
   server.registerTool(

@@ -201,6 +201,10 @@ Weights are in pounds, as stored by the app.
 | `get_week_status` | `location` (optional, name or id; default = last session's gym) | The week as a rotation: which of W1..Wn were performed and when, Next up, the owed list (exercise, the workout it came from, `skipped` / `unperformed`, primary muscle, tier), the Flex plan for that location (priority, substitutions, minutes, what `expires_sunday`), and sets vs target per muscle |
 | `get_prs` | `limit` 1-300 (100) | Per exercise: heaviest set and best Epley e1RM, sorted by e1RM |
 | `get_body_weight_log` | `limit` 1-365 (30) | Body weight entries (lbs) with body-fat % and source, newest first |
+| `get_daily_health_metrics` | `limit` 1-365 (30) | Apple Health by day, newest first (`daily_health_metrics`): VO2 max, resting HR, HRV SDNN daily average, steps, active energy, blood pressure; plus workouts in that span with minutes in Z1-Z5 (`workout_hr_zones`, 50/60/70/80/90 % of the max HR used) |
+| `get_inbody_scans` | `limit` 1-100 (10) | Body composition scans (`body_measurements` rows with a `scan_type`): weight, body fat %, skeletal muscle, lean mass, visceral fat area, ECW/TBW, phase angle |
+| `get_goals` | none | Active goals (`goals`): weight band, tape measurements, lifts (exercise id, weight x reps), with how the app measures progress |
+| `get_pain_log` | `limit` 1-365 (30) | Pain entries (`pain_log`) newest first: date, area, side, score 0-10, note |
 | `get_favorite_exercises` | none | Exercises starred in the app |
 | `get_nutrition_log` | `days_back` 1-90 (14) | Daily nutrition from Cronometer via Apple Health (kcal, g, mg, mcg, IU), newest first, with averages over complete logged days and `rule_adherence` for the five day rules. Days without samples are omitted; today is `partial` |
 | `get_supplement_log` | `days_back` 1-90 (14) | Supplements with adherence (days taken / days in window, taken today, last taken) and daily check-off history |

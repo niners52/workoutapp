@@ -164,6 +164,80 @@ export interface SleepNightRow {
   synced_at: string | null;
 }
 
+export interface DailyHealthMetricRow {
+  id: string;
+  user_id: string;
+  date: string;
+  vo2_max: number | null;
+  resting_hr: number | null;
+  hrv_sdnn_ms: number | null;
+  steps: number | null;
+  active_energy_kcal: number | null;
+  bp_systolic: number | null;
+  bp_diastolic: number | null;
+  source: string | null;
+  synced_at: string | null;
+}
+
+export interface WorkoutHrZonesRow {
+  id: string;
+  user_id: string;
+  hk_workout_id: string;
+  workout_id: string | null;
+  activity_name: string | null;
+  start_at: string;
+  end_at: string;
+  duration_min: number;
+  max_hr_used: number;
+  avg_hr: number | null;
+  peak_hr: number | null;
+  z1_min: number;
+  z2_min: number;
+  z3_min: number;
+  z4_min: number;
+  z5_min: number;
+}
+
+export interface BodyScanRow {
+  id: string;
+  user_id: string;
+  date: string;
+  weight: number | null;
+  body_fat_percentage: number | null;
+  skeletal_muscle_lbs: number | null;
+  lean_mass_lbs: number | null;
+  visceral_fat_area: number | null;
+  ecw_tbw: number | null;
+  phase_angle: number | null;
+  scan_type: string | null;
+  source: string | null;
+}
+
+export interface GoalRow {
+  id: string;
+  user_id: string;
+  type: 'weight_band' | 'measurement' | 'lift';
+  metric_key: string;
+  label: string;
+  target: number;
+  target_max: number | null;
+  target_reps: number | null;
+  direction: 'at_least' | 'at_most' | 'band';
+  target_date: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface PainLogRow {
+  id: string;
+  user_id: string;
+  date: string;
+  area: string;
+  side: string;
+  score: number;
+  note: string | null;
+}
+
 export interface LocationRow {
   id: string;
   user_id: string;
@@ -395,6 +469,44 @@ export class Db {
     );
   }
 
+  /** The latest `limit` days of Apple Health metrics, newest first. */
+  listDailyHealthMetrics(limit: number): Promise<DailyHealthMetricRow[]> {
+    return this.run(
+      'daily_health_metrics',
+      this.scoped<DailyHealthMetricRow>('daily_health_metrics', '*').order('date', { ascending: false }).limit(limit),
+    );
+  }
+
+  /** Workout heart-rate zones starting on or after `sinceIso`, newest first. */
+  listWorkoutHrZones(sinceIso: string): Promise<WorkoutHrZonesRow[]> {
+    return this.runAll('workout_hr_zones', () =>
+      this.scoped<WorkoutHrZonesRow>('workout_hr_zones', '*')
+        .gte('start_at', sinceIso)
+        .order('start_at', { ascending: false }),
+    );
+  }
+
+  /** Body composition scans (rows with a scan_type), newest first. */
+  listBodyScans(limit: number): Promise<BodyScanRow[]> {
+    return this.run(
+      'body_measurements',
+      this.scoped<BodyScanRow>('body_measurements', '*')
+        .not('scan_type', 'is', null)
+        .order('date', { ascending: false })
+        .limit(limit),
+    );
+  }
+
+  listGoals(): Promise<GoalRow[]> {
+    return this.runAll('goals', () =>
+      this.scoped<GoalRow>('goals', '*').eq('is_active', true).order('sort_order', { ascending: true }),
+    );
+  }
+
+  listPainLog(limit: number): Promise<PainLogRow[]> {
+    return this.run('pain_log', this.scoped<PainLogRow>('pain_log', '*').order('date', { ascending: false }).limit(limit));
+  }
+
   listSupplements(): Promise<SupplementRow[]> {
     return this.runAll('supplements', () => this.scoped<SupplementRow>('supplements', '*').order('name'));
   }
@@ -462,7 +574,7 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   exercises: ['id', 'user_id', 'name', 'primary_muscle_groups', 'equipment'],
   workouts: ['id', 'user_id', 'started_at', 'completed_at'],
   workout_sets: ['id', 'user_id', 'workout_id', 'exercise_id', 'weight', 'reps', 'logged_at'],
-  body_measurements: ['id', 'user_id', 'date', 'weight'],
+  body_measurements: ['id', 'user_id', 'date', 'weight', 'scan_type', 'skeletal_muscle_lbs', 'lean_mass_lbs', 'visceral_fat_area', 'ecw_tbw', 'phase_angle'],
   user_settings: ['user_id'],
   workout_locations: ['id', 'user_id', 'name'],
   templates: ['id', 'user_id', 'name', 'exercise_ids'],
@@ -478,6 +590,16 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
     'deep_min', 'rem_min', 'core_min', 'awake_min', 'sample_count', 'source', 'synced_at',
   ],
   supplement_intakes: ['id', 'user_id', 'supplement_id', 'date', 'taken_at'],
+  daily_health_metrics: [
+    'id', 'user_id', 'date', 'vo2_max', 'resting_hr', 'hrv_sdnn_ms', 'steps', 'active_energy_kcal',
+    'bp_systolic', 'bp_diastolic', 'source', 'synced_at',
+  ],
+  workout_hr_zones: [
+    'id', 'user_id', 'hk_workout_id', 'workout_id', 'start_at', 'end_at', 'duration_min', 'max_hr_used',
+    'avg_hr', 'peak_hr', 'z1_min', 'z2_min', 'z3_min', 'z4_min', 'z5_min',
+  ],
+  goals: ['id', 'user_id', 'type', 'metric_key', 'label', 'target', 'target_max', 'target_reps', 'direction', 'target_date', 'sort_order', 'is_active'],
+  pain_log: ['id', 'user_id', 'date', 'area', 'side', 'score', 'note'],
 };
 
 export function missingColumns(schema: SchemaDescription): string[] {

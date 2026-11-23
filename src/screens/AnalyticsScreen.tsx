@@ -65,7 +65,7 @@ import {
   feetAndInchesToInches,
   inchesToFeetAndInches,
 } from '../services/units';
-import { BodyMeasurementsSection, CaliperTestModal } from '../components/body';
+import { BodyMeasurementsSection, BodyScanCard, CaliperTestModal, RatioCard } from '../components/body';
 import { StrengthMapCard } from '../components/strength';
 import { InsightsCard } from '../components/insights/InsightsCard';
 import { BodyMeasurementTypeKey } from '../types';
@@ -946,6 +946,19 @@ export function AnalyticsScreen({ embedded }: { embedded?: boolean }) {
         {/* Bodybuilding Body Measurements */}
         <BodyMeasurementsSection onNavigateToHistory={handleMeasurementHistoryPress} />
 
+        {/* InBody / DEXA scans, and the tape ratios */}
+        <BodyScanCard />
+        <RatioCard />
+        <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate('PainLog')} testID="open-pain-log">
+          <Card style={styles.painLogLink}>
+            <View style={styles.painLogText}>
+              <Text style={styles.painLogTitle}>Pain log</Text>
+              <Text style={styles.painLogSubtitle}>Log where it hurts; workouts warn on exercises that work that area</Text>
+            </View>
+            <Text style={styles.painLogChevron}>›</Text>
+          </Card>
+        </TouchableOpacity>
+
         {/* Strength Map */}
         <StrengthMapCard />
 
@@ -1335,6 +1348,15 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.lg,
   },
+  painLogLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  painLogText: { flex: 1 },
+  painLogTitle: { fontSize: typography.size.md, fontWeight: typography.weight.semibold, color: colors.text },
+  painLogSubtitle: { fontSize: typography.size.sm, color: colors.textSecondary, marginTop: 2 },
+  painLogChevron: { fontSize: typography.size.xl, color: colors.textSecondary, marginLeft: spacing.sm },
   sectionTitle: {
     fontSize: typography.size.md,
     fontWeight: typography.weight.semibold,

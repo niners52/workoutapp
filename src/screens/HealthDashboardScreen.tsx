@@ -75,7 +75,7 @@ import { useBodyWeight } from '../hooks/useBodyWeight';
 import { syncTemplate } from '../services/syncService';
 import { getTrainingWeekStart } from '../services/missedExercises';
 import { routineChanges, type RoutineChange } from '../services/routineChanges';
-import { FlexCard, NextUpCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
+import { FlexCard, GoalsCard, NextUpCard, RecurringSwapCard, RoutineChangesCard } from '../components/goals';
 import { ThisWeekCard } from '../components/health/ThisWeekCard';
 import { editsForWeek, flexWeekKey, withAdded, withRemoved, type FlexEdits } from '../services/flexPlan';
 import { buildFlex, buildWeek, type WeekView } from '../services/rotationWeek';
@@ -517,6 +517,8 @@ export function HealthDashboardScreen() {
         )}
 
         <InsightsCard />
+
+        <GoalsCard />
 
         {/* Tier 3: medical layer */}
         <View style={styles.tierHeader}>

@@ -38,6 +38,7 @@ import { initializeHealthKit } from '../services/healthKit';
 import { importHealthKitBodyWeights } from '../services/bodyWeightImport';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
+import { syncHealthMetricsFromHealthKit } from '../services/healthMetricsSync';
 import { syncWeeklyPlannerReminder } from '../services/weeklyPlannerReminder';
 import { supabase } from '../services/supabase';
 import {
@@ -352,6 +353,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             // Cronometer -> HealthKit -> nutrition_days (trailing 30 days, throttled)
             syncNutritionFromHealthKit().catch(e => console.log('Nutrition sync failed:', e));
             syncSleepFromHealthKit().catch(e => console.log('Sleep sync failed:', e));
+            // VO2 max, resting HR, HRV, steps, energy, BP + workout HR zones
+            syncHealthMetricsFromHealthKit().catch(e => console.log('Health metrics sync failed:', e));
           } else {
             console.log('HealthKit not available or permission denied');
           }

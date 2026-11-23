@@ -267,6 +267,20 @@ export function HealthTargetsScreen() {
         />
       </Card>
 
+      <Text style={styles.sectionTitle}>Heart rate</Text>
+      <Card padding="none">
+        <NumberRow
+          label="Max heart rate (bpm)"
+          hint={t.maxHeartRate ? 'Workout zones: 50/60/70/80/90 % of this' : 'Not set: 220 − age from Apple Health. Set it to override.'}
+          value={t.maxHeartRate ?? 185}
+          onChange={v => update({ maxHeartRate: v })}
+          min={120}
+          max={230}
+          step={1}
+          last
+        />
+      </Card>
+
       <Text style={styles.sectionTitle}>Deload week</Text>
       <Card padding="none">
         <View style={[styles.row, !deloadDate && styles.rowLast]}>
