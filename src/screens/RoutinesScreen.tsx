@@ -5,7 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
+import { useCloudRefresh } from '../hooks/useCloudRefresh';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +22,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { routines, templates, getActiveRoutine } = useData();
+  const { refreshing, onRefresh } = useCloudRefresh();
 
   const activeRoutine = getActiveRoutine();
 
@@ -64,7 +67,8 @@ export function RoutinesScreen({ embedded }: { embedded?: boolean }) {
   };
 
   const content = (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
       {/* Header */}
       {!embedded && (
         <View style={styles.header}>

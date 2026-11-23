@@ -314,11 +314,15 @@ export function SettingsScreen() {
             try {
               const result = await pushAllToCloud();
               const skipped = result.orphanSets > 0 ? `\n\n${result.orphanSets} set(s) were skipped: the workout or exercise they belong to is missing on this phone too.` : '';
+              const stale =
+                result.skippedStale > 0
+                  ? `\n\n${result.skippedStale} row(s) were not uploaded because the cloud copy changed after this phone last saw it; the cloud version was pulled to this phone instead.`
+                  : '';
               if (result.ok) {
                 await refreshAll();
                 Alert.alert(
                   'Backup Complete',
-                  `Uploaded ${result.counts.exercises} exercises, ${result.counts.workouts} workouts and ${result.counts.sets} sets.${skipped}`,
+                  `Uploaded ${result.counts.exercises} exercises, ${result.counts.workouts} workouts and ${result.counts.sets} sets.${skipped}${stale}`,
                 );
               } else {
                 Alert.alert(

@@ -15,7 +15,9 @@ import {
   HealthReminder,
 } from '../types';
 import { upsertTolerant, OPTIONAL_COLUMNS_BY_TABLE } from './schemaTolerance';
-import { bodyMeasurementFromRow, exerciseFromRow, setFromRow, workoutFromRow } from './cloudMappers';
+import { getStamp, getStamps, setStamps, type StampTable } from './cloudStamps';
+import { applyCloudRow, type ConfigTable } from './configApply';
+import { bodyMeasurementFromRow, exerciseFromRow, locationFromRow, routineFromRow, setFromRow, templateFromRow, workoutFromRow } from './cloudMappers';
 import {
   clearPendingMigrationResync,
   getBodyMeasurementById,
@@ -79,6 +81,77 @@ export async function getUserId(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ==================== STALE-PUSH GUARD ====================
+
+/** user_settings has one row per user; its stamp is kept under this id. */
+export const SETTINGS_STAMP_ID = 'settings';
+/** With no stamp, the local edit time (phone clock) is compared; allow this much skew. */
+const CLOCK_SKEW_MS = 5000;
+/** Tables whose writes read back updated_at, so the phone knows what it last saw. */
+const STAMPED_TABLES = new Set(['exercises', 'templates', 'routines', 'workout_locations', 'body_measurements', 'user_settings']);
+
+type GuardTable = ConfigTable | 'user_settings';
+
+/**
+ * The cloud row, when it changed after this phone last saw it: someone else
+ * (Claude in the database, the MCP server, another device) edited it, so a
+ * push now would overwrite that edit with stale data. Null means push.
+ */
+async function newerCloudRow(table: GuardTable, id: string, localUpdatedAt: string | undefined, userId: string): Promise<any | null> {
+  try {
+    const q = supabase.from(table).select('*').eq('user_id', userId);
+    const { data, error } = await (table === 'user_settings' ? q : q.eq('id', id)).maybeSingle();
+    if (error || !data?.updated_at) return null;
+    const seen = await getStamp(table, table === 'user_settings' ? SETTINGS_STAMP_ID : id);
+    const baseline = seen ?? localUpdatedAt;
+    if (!baseline) return null;
+    const margin = seen ? 0 : CLOCK_SKEW_MS;
+    return new Date(data.updated_at).getTime() > new Date(baseline).getTime() + margin ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Skip the push and take the cloud row instead. True when that happened. */
+async function skippedAsStale(table: GuardTable, id: string, localUpdatedAt: string | undefined, userId: string): Promise<boolean> {
+  const cloud = await newerCloudRow(table, id, localUpdatedAt, userId);
+  if (!cloud) return false;
+  console.log(`[Sync] Skipped stale push for ${table}/${id}`);
+  await applyCloudRow(table, cloud).catch(e => console.log(`[Sync] Applying cloud ${table}/${id} failed:`, e));
+  return true;
+}
+
+/** Remember the updated_at the cloud returned for rows just written. */
+async function stampWritten(table: string, data: any[] | null | undefined): Promise<void> {
+  if (!data || !STAMPED_TABLES.has(table)) return;
+  await setStamps(
+    table as StampTable,
+    data.map(r => ({ id: table === 'user_settings' ? SETTINGS_STAMP_ID : r.id, updatedAt: r.updated_at })),
+  );
+}
+
+/** Ids per table with an upsert waiting in the queue, plus workouts with sets waiting. */
+export async function getPendingUpserts(): Promise<{ byTable: Map<string, Set<string>>; workoutsWithSets: Set<string> }> {
+  const byTable = new Map<string, Set<string>>();
+  const workoutsWithSets = new Set<string>();
+  try {
+    const raw = await AsyncStorage.getItem(SYNC_KEYS.PENDING_OPERATIONS);
+    const ops: PendingSyncOperation[] = raw ? JSON.parse(raw) : [];
+    for (const op of ops) {
+      if (op.operation !== 'upsert') continue;
+      const id = op.table === 'user_settings' ? SETTINGS_STAMP_ID : op.data?.id;
+      if (!id) continue;
+      const set = byTable.get(op.table) ?? new Set<string>();
+      set.add(id);
+      byTable.set(op.table, set);
+      if (op.table === 'workout_sets' && op.data?.workout_id) workoutsWithSets.add(op.data.workout_id);
+    }
+  } catch {
+    // unreadable queue: nothing is treated as pending
+  }
+  return { byTable, workoutsWithSets };
 }
 
 /**
@@ -658,11 +731,13 @@ export async function pushAllToCloud(): Promise<{
   counts: { locations: number; templates: number; exercises: number; workouts: number; sets: number };
   /** Rows left behind because what they point at does not exist on this phone either. */
   orphanSets: number;
+  /** Rows not pushed because the cloud copy changed after this phone last saw it (pulled instead). */
+  skippedStale: number;
   error?: string;
 }> {
   const counts = { locations: 0, templates: 0, exercises: 0, workouts: 0, sets: 0 };
   const userId = await getUserId();
-  if (!userId) return { ok: false, counts, orphanSets: 0, error: 'not signed in' };
+  if (!userId) return { ok: false, counts, orphanSets: 0, skippedStale: 0, error: 'not signed in' };
 
   const [locations, templates, exercises, workouts, sets, settings] = await Promise.all([
     getLocations(),
@@ -681,27 +756,43 @@ export async function pushAllToCloud(): Promise<{
     return null;
   };
 
+  // Rows the cloud changed after this phone last saw them are not overwritten;
+  // the pull at the end brings them down instead.
+  const [staleLocations, staleTemplates, staleExercises] = await Promise.all([
+    staleIds('workout_locations', locations, userId),
+    staleIds('templates', templates, userId),
+    staleIds('exercises', exercises, userId),
+  ]);
+  const staleSettings = (await newerCloudRow('user_settings', SETTINGS_STAMP_ID, settings.updatedAt, userId)) ? 1 : 0;
+  const skippedStale = staleLocations.size + staleTemplates.size + staleExercises.size + staleSettings;
+  for (const id of [...staleLocations].map(i => `workout_locations/${i}`).concat([...staleTemplates].map(i => `templates/${i}`), [...staleExercises].map(i => `exercises/${i}`))) {
+    console.log(`[Sync] Skipped stale push for ${id}`);
+  }
+
   // Parents before children: a workout's gym and template, and a set's workout
   // and exercise, all have to exist in the cloud before the row that names them.
-  for (const location of locations) await syncLocation(location);
-  counts.locations = locations.length;
-  for (const template of templates) await syncTemplate(template);
-  counts.templates = templates.length;
+  const freshLocations = locations.filter(l => !staleLocations.has(l.id));
+  for (const location of freshLocations) await syncLocation(location);
+  counts.locations = freshLocations.length;
+  const freshTemplates = templates.filter(t => !staleTemplates.has(t.id));
+  for (const template of freshTemplates) await syncTemplate(template);
+  counts.templates = freshTemplates.length;
 
+  const freshExercises = exercises.filter(e => !staleExercises.has(e.id));
   const exerciseError = await pushBatches(
-    exercises.map(e => exerciseRow(e, userId)),
+    freshExercises.map(e => exerciseRow(e, userId)),
     'exercises',
     OPTIONAL_COLUMNS_BY_TABLE.exercises || [],
   );
-  if (exerciseError) return { ok: false, counts, orphanSets: 0, error: exerciseError };
-  counts.exercises = exercises.length;
+  if (exerciseError) return { ok: false, counts, orphanSets: 0, skippedStale, error: exerciseError };
+  counts.exercises = freshExercises.length;
 
   const workoutError = await pushBatches(
     workouts.map(w => workoutRow(w, userId)),
     'workouts',
     OPTIONAL_COLUMNS_BY_TABLE.workouts || [],
   );
-  if (workoutError) return { ok: false, counts, orphanSets: 0, error: workoutError };
+  if (workoutError) return { ok: false, counts, orphanSets: 0, skippedStale, error: workoutError };
   counts.workouts = workouts.length;
 
   // A set whose workout or exercise is missing locally would be rejected by the
@@ -718,13 +809,38 @@ export async function pushAllToCloud(): Promise<{
 
   for (const batch of chunkArray(ownedSets, 50)) {
     const { error } = await upsertSets(batch, userId);
-    if (error) return { ok: false, counts, orphanSets, error: error.message };
+    if (error) return { ok: false, counts, orphanSets, skippedStale, error: error.message };
   }
   counts.sets = ownedSets.length;
 
-  await syncUserSettings(settings);
-  console.log(`[Sync] Pushed ${counts.exercises} exercises, ${counts.workouts} workouts, ${counts.sets} sets to the cloud`);
-  return { ok: true, counts, orphanSets };
+  if (!staleSettings) await syncUserSettings(settings);
+  console.log(`[Sync] Pushed ${counts.exercises} exercises, ${counts.workouts} workouts, ${counts.sets} sets to the cloud (${skippedStale} stale skipped)`);
+  if (skippedStale > 0) {
+    // Bring the newer cloud rows down. Dynamic: configPull imports this module.
+    const { pullConfigFromCloud } = await import('./configPull');
+    await pullConfigFromCloud({ force: true }).catch(e => console.log('[Sync] Pull after push-all failed:', e));
+  }
+  return { ok: true, counts, orphanSets, skippedStale };
+}
+
+/**
+ * Ids of local rows whose cloud copy changed after this phone last saw it,
+ * from one paged read of (id, updated_at). Same rule as newerCloudRow.
+ */
+async function staleIds(table: ConfigTable, rows: Array<{ id: string; updatedAt?: string }>, userId: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  const { data, error } = await selectAllRows<{ id: string; updated_at: string | null }>(table, userId, 'id,updated_at');
+  if (error) return out;
+  const cloud = new Map(data.map(r => [r.id, r.updated_at]));
+  const seen = await getStamps(table);
+  for (const row of rows) {
+    const cloudAt = cloud.get(row.id);
+    const baseline = seen[row.id] ?? row.updatedAt;
+    if (!cloudAt || !baseline) continue;
+    const margin = seen[row.id] ? 0 : CLOCK_SKEW_MS;
+    if (new Date(cloudAt).getTime() > new Date(baseline).getTime() + margin) out.add(row.id);
+  }
+  return out;
 }
 
 // ==================== EXERCISE SYNC ====================
@@ -734,18 +850,22 @@ export async function syncExercise(exercise: Exercise): Promise<void> {
   if (!userId) return;
 
   try {
+    if (await skippedAsStale('exercises', exercise.id, exercise.updatedAt, userId)) return;
     const row = exerciseRow(exercise, userId);
 
-    const { error, rows: syncedRow } = await upsertTolerant(
+    const { error, rows: syncedRow, data } = await upsertTolerant(
       'exercises',
       row,
       OPTIONAL_COLUMNS_BY_TABLE.exercises || [],
+      'id',
+      'id,updated_at',
     );
 
     if (error) {
       console.log('Exercise sync failed, queuing:', error.message);
       await addToPendingQueue({ table: 'exercises', operation: 'upsert', data: syncedRow });
     } else {
+      await stampWritten('exercises', data);
       await updateLastSyncTimestamp();
     }
   } catch (error) {
@@ -782,6 +902,7 @@ export async function syncTemplate(template: Template): Promise<void> {
   if (!userId) return;
 
   try {
+    if (await skippedAsStale('templates', template.id, template.updatedAt, userId)) return;
     const row = {
       id: template.id,
       user_id: userId,
@@ -789,16 +910,18 @@ export async function syncTemplate(template: Template): Promise<void> {
       type: template.type || null,
       location_id: template.locationId || null,
       exercise_ids: template.exerciseIds || [],
+      // Only when the phone has it: notes set in the cloud must not be blanked
+      // by a phone that never pulled them.
+      ...(template.notes !== undefined ? { notes: template.notes || null } : {}),
     };
 
-    const { error } = await supabase
-      .from('templates')
-      .upsert(row, { onConflict: 'id' });
+    const { error, data } = await upsertTolerant('templates', row, ['notes'], 'id', 'id,updated_at');
 
     if (error) {
       console.log('Template sync failed, queuing:', error.message);
       await addToPendingQueue({ table: 'templates', operation: 'upsert', data: row });
     } else {
+      await stampWritten('templates', data);
       await updateLastSyncTimestamp();
     }
   } catch (error) {
@@ -1035,6 +1158,7 @@ export async function syncRoutine(routine: Routine): Promise<void> {
   if (!userId) return;
 
   try {
+    if (await skippedAsStale('routines', routine.id, routine.updatedAt, userId)) return;
     const row = {
       id: routine.id,
       user_id: userId,
@@ -1044,12 +1168,13 @@ export async function syncRoutine(routine: Routine): Promise<void> {
       rotation: routine.rotation ?? null,
     };
 
-    const { error } = await upsertTolerant('routines', row, OPTIONAL_COLUMNS_BY_TABLE.routines || []);
+    const { error, data } = await upsertTolerant('routines', row, OPTIONAL_COLUMNS_BY_TABLE.routines || [], 'id', 'id,updated_at');
 
     if (error) {
       console.log('Routine sync failed, queuing:', error.message);
       await addToPendingQueue({ table: 'routines', operation: 'upsert', data: row });
     } else {
+      await stampWritten('routines', data);
       await updateLastSyncTimestamp();
     }
   } catch (error) {
@@ -1107,12 +1232,15 @@ export async function syncBodyMeasurement(measurement: BodyMeasurement): Promise
       ...(measurement.scanType ? { scan_type: measurement.scanType } : {}),
     };
 
-    const { error } = await upsertTolerant(
+    if (await skippedAsStale('body_measurements', measurement.id, measurement.updatedAt, userId)) return;
+    const { error, data } = await upsertTolerant(
       'body_measurements',
       [row],
       OPTIONAL_COLUMNS_BY_TABLE.body_measurements,
       'id',
+      'id,updated_at',
     );
+    if (!error) await stampWritten('body_measurements', data);
 
     if (error) {
       console.log('Body measurement sync failed, queuing:', error.message);
@@ -1167,17 +1295,20 @@ export async function syncUserSettings(settings: UserSettings): Promise<void> {
       health_targets: settings.healthTargets ?? null,
     };
 
-    const { error } = await upsertTolerant(
+    if (await skippedAsStale('user_settings', SETTINGS_STAMP_ID, settings.updatedAt, userId)) return;
+    const { error, data } = await upsertTolerant(
       'user_settings',
       row,
       OPTIONAL_COLUMNS_BY_TABLE.user_settings || [],
       'user_id',
+      'user_id,updated_at',
     );
 
     if (error) {
       console.log('User settings sync failed, queuing:', error.message);
       await addToPendingQueue({ table: 'user_settings', operation: 'upsert', data: row });
     } else {
+      await stampWritten('user_settings', data);
       await updateLastSyncTimestamp();
     }
   } catch (error) {
@@ -1192,6 +1323,7 @@ export async function syncLocation(location: WorkoutLocation): Promise<void> {
   if (!userId) return;
 
   try {
+    if (await skippedAsStale('workout_locations', location.id, location.updatedAt, userId)) return;
     const row = {
       id: location.id,
       user_id: userId,
@@ -1199,14 +1331,13 @@ export async function syncLocation(location: WorkoutLocation): Promise<void> {
       sort_order: location.sortOrder ?? 0,
     };
 
-    const { error } = await supabase
-      .from('workout_locations')
-      .upsert(row, { onConflict: 'id' });
+    const { error, data } = await upsertTolerant('workout_locations', row, [], 'id', 'id,updated_at');
 
     if (error) {
       console.log('Location sync failed, queuing:', error.message);
       await addToPendingQueue({ table: 'workout_locations', operation: 'upsert', data: row });
     } else {
+      await stampWritten('workout_locations', data);
       await updateLastSyncTimestamp();
     }
   } catch (error) {
@@ -1375,12 +1506,14 @@ export async function processPendingSync(
           // Tolerant so a queued row containing a post-launch column (e.g. a
           // workout's location_id) still lands on a database without it,
           // instead of retrying forever until MAX_RETRIES drops the workout.
-          const { error } = await upsertTolerant(
+          const { error, data } = await upsertTolerant(
             table,
             rows,
             OPTIONAL_COLUMNS_BY_TABLE[table] || [],
             conflictKey,
+            STAMPED_TABLES.has(table) ? (table === 'user_settings' ? 'user_id,updated_at' : 'id,updated_at') : undefined,
           );
+          if (!error) await stampWritten(table, data);
 
           if (error) {
             console.log(`[Sync] Batch upsert failed for ${table} (${batch.length} rows):`, error.message);
@@ -1594,13 +1727,7 @@ export async function pullFromCloud(): Promise<CloudData | null> {
     // Map Supabase rows back to local types
     const exercises: Exercise[] = (exercisesResult.data || []).map(exerciseFromRow);
 
-    const templates: Template[] = (templatesResult.data || []).map(row => ({
-      id: row.id,
-      name: row.name,
-      type: row.type,
-      locationId: row.location_id || '',
-      exerciseIds: row.exercise_ids || [],
-    }));
+    const templates: Template[] = (templatesResult.data || []).map(templateFromRow);
 
     const workouts: Workout[] = (workoutsResult.data || []).map(workoutFromRow);
 
@@ -1620,19 +1747,9 @@ export async function pullFromCloud(): Promise<CloudData | null> {
       takenAt: row.taken_at,
     }));
 
-    const routines: Routine[] = (routinesResult.data || []).map(row => ({
-      id: row.id,
-      name: row.name,
-      daySchedule: row.day_schedule || [],
-      isActive: row.is_active ?? false,
-      ...(row.rotation && Array.isArray(row.rotation.slots) ? { rotation: row.rotation } : {}),
-    }));
+    const routines: Routine[] = (routinesResult.data || []).map(routineFromRow);
 
-    const locations: WorkoutLocation[] = (locationsResult.data || []).map(row => ({
-      id: row.id,
-      name: row.name,
-      sortOrder: row.sort_order ?? 0,
-    }));
+    const locations: WorkoutLocation[] = (locationsResult.data || []).map(locationFromRow);
 
     const bodyMeasurements: BodyMeasurement[] = (bodyMeasurementsResult.data || []).map(bodyMeasurementFromRow);
 

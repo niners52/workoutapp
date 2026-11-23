@@ -10,7 +10,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from 'react-native';
+import { useCloudRefresh } from '../hooks/useCloudRefresh';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,6 +48,7 @@ interface ExerciseSection {
 export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { exercises, workouts, deleteExercise, sets, toggleExerciseFavorite } = useData();
+  const { refreshing, onRefresh } = useCloudRefresh();
   const workoutBarPadding = useWorkoutBarPadding();
   const keyboardHeight = useKeyboardHeight();
   const [searchQuery, setSearchQuery] = useState('');
@@ -441,6 +444,7 @@ export function ExercisesScreen({ embedded }: { embedded?: boolean }) {
       {/* Exercise List */}
       <SectionList
         sections={sections}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         keyExtractor={item => item.id}
         renderItem={renderExercise}
         renderSectionHeader={renderSectionHeader}
