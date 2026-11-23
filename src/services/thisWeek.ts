@@ -34,20 +34,27 @@ export interface ThisWeekRow {
   scheduled: number;
   /** Which of those workouts, in rotation order: ["W3", "W4"]. */
   scheduledDays: string[];
-  /** Still owed after done and scheduled: the Flex share. */
+  /** Still owed after done and scheduled: not covered by any workout left this week. */
   flex: number;
   pinned: boolean;
 }
 
 /**
- * The rotation workouts not done yet this week, in order. These are what is
- * "scheduled": they will be done on whatever days come, and what they will not
- * cover is Flex's.
+ * The workouts not done yet this week, in order: the rotation workouts, then
+ * the Flex workout (its template) when no Flex session has run yet. All six
+ * are "scheduled" alike; what none of them covers is short of the plan.
  */
-export function remainingPlan(state: RotationState): PlannedDay[] {
-  return state.slots
+export function remainingPlan(
+  state: RotationState,
+  flex?: { exerciseIds: string[] } | null,
+): PlannedDay[] {
+  const days = state.slots
     .filter(s => !s.performed && s.template)
     .map(s => ({ dayLabel: s.slot.label, exerciseIds: s.template?.exerciseIds ?? [] }));
+  if (flex && flex.exerciseIds.length > 0 && state.flexWorkoutIds.length === 0) {
+    days.push({ dayLabel: 'Flex', exerciseIds: flex.exerciseIds });
+  }
+  return days;
 }
 
 export function thisWeekRows({

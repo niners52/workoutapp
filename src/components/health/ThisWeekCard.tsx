@@ -19,7 +19,7 @@ const pct = (fraction: number): Pct => `${Math.max(0, Math.min(1, fraction)) * 1
  * One bar per muscle, three parts that always mean the same thing:
  *   solid yellow   — done
  *   outlined       — still scheduled this week
- *   empty          — nothing planned: that is Flex work
+ *   empty          — not in any workout left this week (Flex included)
  * Groups already at target fold into one line at the bottom.
  */
 export function ThisWeekCard({ rows, error = false, deload = false, onRowPress }: ThisWeekCardProps) {
@@ -49,12 +49,12 @@ export function ThisWeekCard({ rows, error = false, deload = false, onRowPress }
       <View style={styles.header}>
         <Text style={styles.title}>Sets this week</Text>
         <Text style={styles.subtitle}>
-          {deload ? 'Deload week — targets paused' : flexTotal > 0 ? `${n(flexTotal)} sets need a Flex session` : 'The rest of the week covers it'}
+          {deload ? 'Deload week — targets paused' : flexTotal > 0 ? `${n(flexTotal)} sets not in any workout left` : 'The rest of the week covers it'}
         </Text>
         <View style={styles.legend} testID="this-week-legend">
           <LegendSwatch kind="done" label="Done" />
           <LegendSwatch kind="scheduled" label="Scheduled" />
-          <LegendSwatch kind="flex" label="Flex" />
+          <LegendSwatch kind="flex" label="Not planned" />
         </View>
       </View>
 
@@ -80,7 +80,7 @@ function MuscleRow({ row, onPress }: { row: ThisWeekRow; onPress: () => void }) 
   const scheduledShare = row.scheduled / row.target;
   const parts: string[] = [];
   if (row.scheduled > 0) parts.push(`${n(row.scheduled)} on ${row.scheduledDays.join('/')}`);
-  if (row.flex > 0) parts.push(`${n(row.flex)} for Flex`);
+  if (row.flex > 0) parts.push(`${n(row.flex)} not planned`);
 
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7} testID={`this-week-row-${row.muscleGroup}`}>

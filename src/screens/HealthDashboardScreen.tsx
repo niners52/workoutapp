@@ -176,7 +176,10 @@ export function HealthDashboardScreen() {
       setWeekRows(
         thisWeekRows({
           volume: muscleGroups,
-          plan: thisWeek ? remainingPlan(thisWeek.state) : [],
+          // The Flex workout counts like the other five until a Flex session runs.
+          plan: thisWeek
+            ? remainingPlan(thisWeek.state, templates.find(t => t.id === thisWeek.rotation.flexTemplateId) ?? null)
+            : [],
           exercises,
           focusMuscleGroups: healthTargets.focusGroups.filter(f => !f.exerciseNameIncludes?.trim()).map(f => f.muscleGroup as string),
         }),

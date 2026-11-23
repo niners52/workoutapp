@@ -497,7 +497,8 @@ export async function calculateWeeklyShortfalls(
   if (routine) {
     const [workouts, sets] = await Promise.all([getWorkouts(), getSets()]);
     const week = buildWeek({ routine, templates, workouts, sets, exercises, settings: userSettings, now: today });
-    for (const day of remainingPlan(week.state)) {
+    const flexTemplate = templates.find(t => t.id === week.rotation.flexTemplateId) ?? null;
+    for (const day of remainingPlan(week.state, flexTemplate)) {
       for (const exerciseId of day.exerciseIds) {
         const exercise = exerciseMap.get(exerciseId);
         if (!exercise) continue;
