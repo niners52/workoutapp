@@ -169,7 +169,7 @@ export async function getWeekStatus(ctx: ToolContext, input: { location?: string
       template: flexTemplate?.name ?? null,
       cap_minutes: plan.capMinutes,
       total_minutes: plan.totalMinutes,
-      order: 'skipped) exercises left out of rotation workouts already done, any tier; a) build-tier work from workouts not run yet; b) Flex default minus muscles at target; c) maintain-tier work from workouts not run yet; covered-tier work from workouts not run yet left out',
+      order: 'the exercises left undone by the rotation workouts that ran this week (Flex starts each week empty); build tier first, then maintain, then covered; substituted for the location and cut to the time cap',
       items: plan.items.map(i => ({
         exercise: i.name,
         priority: i.priority,

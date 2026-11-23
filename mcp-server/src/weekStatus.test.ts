@@ -127,18 +127,15 @@ test('week status: a stored rotation wins over the weekday schedule', async () =
   assert.deepEqual(r.rotation.map(s => s.template), ['Full Body 2', 'Full Body 1']);
 });
 
-test('week status: Flex at Vasa substitutes and fills in priority order under the cap', async () => {
+test('week status: Flex is the skipped work, substituted for the gym, under the cap', async () => {
   const r = await getWeekStatus(makeCtx(), { location: 'vasa' });
   assert.equal(r.flex_plan.location, 'Vasa');
   assert.equal(r.flex_plan.cap_minutes, 60);
   const items = r.flex_plan.items.map(i => [i.priority, i.exercise, i.instead_of ?? null]);
   // Skipped from a workout that ran: Shrug (no Vasa history, no Vasa trap exercise: kept, flagged).
-  assert.deepEqual(items.filter(([p]) => p === 'skipped').map(([, e]) => e), ['Shrug']);
-  // a) owed build from a workout not run yet: Incline (same).
-  assert.deepEqual(items.filter(([p]) => p === 'a').map(([, e]) => e), ['Incline Press']);
-  assert.equal(items[0]?.[0], 'skipped');
-  // b) Flex default: Vasa ISO Row (mid back 1 of 6) and Calf Raise (calves 0 of 3).
-  assert.deepEqual(items.filter(([p]) => p === 'b').map(([, e]) => e), ['Vasa ISO Row', 'Calf Raise']);
+  assert.deepEqual(items.map(([p, e]) => [p, e]), [['skipped', 'Shrug']]);
+  // Workouts not run yet and the Flex default template are not Flex's.
+  assert.ok(!items.some(([p]) => p === 'a' || p === 'b' || p === 'c'));
   assert.ok(r.flex_plan.total_minutes <= 60);
 });
 

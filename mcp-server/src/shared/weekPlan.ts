@@ -406,40 +406,52 @@ export function owedList(input: WeekInputs & { state?: RotationState; tiers?: Pa
     }
   }
 
-  // 2. Everything else done this week pays the oldest open occurrence.
+  // 2. Everything else done this week pays an open occurrence: exact match
+  // first, then (3) any same-lead-muscle lift — the stand-in Flex offered at
+  // this gym (ISO front pulldown for Wide-Grip Pulldown at Vasa), or a swap
+  // for an exercise added from Flex (Pec Fly done for the skipped Incline).
+  // Lead muscle, not any shared muscle, so a V squat (quads first) does not
+  // pay a glute pull-through.
+  //
+  // Skipped work (workouts that ran: Flex) is paid before work still to come,
+  // by both rules, so a chest lift done today clears the skipped Incline on
+  // Flex even if a later workout happens to list that same chest lift.
   const spare = new Map<string, number>();
   for (const w of sessions) {
     const used = usedInSession.get(w.id) ?? new Set<string>();
     for (const id of worked.get(w.id) ?? []) if (!used.has(id)) spare.set(id, (spare.get(id) ?? 0) + 1);
   }
-  const ordered = [...occ.filter(o => o.slot.performed), ...occ.filter(o => !o.slot.performed)];
-  for (const o of ordered) {
-    if (o.paid) continue;
-    const left = spare.get(o.exerciseId) ?? 0;
-    if (left > 0) {
-      spare.set(o.exerciseId, left - 1);
-      o.paid = true;
-    }
-  }
-
-  // 3. What is still spare pays an open exercise with the same lead muscle:
-  // the stand-in Flex offered at this gym (ISO front pulldown for Wide-Grip
-  // Pulldown at Vasa), or any other same-muscle lift done for it. Lead muscle,
-  // not any shared muscle, so a V squat (quads first) does not pay a glute
-  // pull-through.
   const lead = (id: string) => leadMuscle(byId.get(id), input.tiers);
-  for (const o of ordered) {
-    if (o.paid) continue;
-    const want = lead(o.exerciseId);
-    if (!want) continue;
-    for (const [id, left] of spare) {
-      if (left > 0 && lead(id) === want) {
-        spare.set(id, left - 1);
+  const payExact = (list: Occ[]) => {
+    for (const o of list) {
+      if (o.paid) continue;
+      const left = spare.get(o.exerciseId) ?? 0;
+      if (left > 0) {
+        spare.set(o.exerciseId, left - 1);
         o.paid = true;
-        break;
       }
     }
-  }
+  };
+  const payByMuscle = (list: Occ[]) => {
+    for (const o of list) {
+      if (o.paid) continue;
+      const want = lead(o.exerciseId);
+      if (!want) continue;
+      for (const [id, left] of spare) {
+        if (left > 0 && lead(id) === want) {
+          spare.set(id, left - 1);
+          o.paid = true;
+          break;
+        }
+      }
+    }
+  };
+  const ranOccurrences = occ.filter(o => o.slot.performed);
+  const aheadOccurrences = occ.filter(o => !o.slot.performed);
+  payExact(ranOccurrences);
+  payByMuscle(ranOccurrences);
+  payExact(aheadOccurrences);
+  payByMuscle(aheadOccurrences);
 
   return occ
     .filter(o => !o.paid)
@@ -591,10 +603,18 @@ export interface FlexInputs {
    */
   weekStart?: Date;
   now?: Date;
+  /**
+   * 'skipped' (default): Flex is only what rotation workouts that already ran
+   * left undone, so it starts every week empty and fills as exercises are
+   * skipped. 'full' also fills from workouts not run yet and the Flex
+   * default template (a/b/c below).
+   */
+  scope?: 'skipped' | 'full';
 }
 
 /**
- * Flex, in the order it is filled:
+ * Flex is the work skipped this week: with the default scope only (skipped)
+ * applies. With scope 'full' it fills, in this order:
  *   skipped) exercises left out of a rotation workout that already ran — a
  *      specific miss, so first and whatever the tier (build, then maintain,
  *      then covered),
@@ -639,16 +659,17 @@ export function flexPlan(input: FlexInputs): FlexPlan {
   for (const o of [...skipped].sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier])) {
     drafts.push({ exerciseId: o.exerciseId, name: o.name, priority: 'skipped', slotLabel: o.slotLabel, primaryMuscle: o.primaryMuscle, tier: o.tier, sets: o.sets });
   }
-  for (const o of ahead.filter(o => o.tier === 'build')) {
+  const full = input.scope === 'full';
+  for (const o of full ? ahead.filter(o => o.tier === 'build') : []) {
     drafts.push({ exerciseId: o.exerciseId, name: o.name, priority: 'a', slotLabel: o.slotLabel, primaryMuscle: o.primaryMuscle, tier: o.tier, sets: o.sets });
   }
-  for (const id of input.flexTemplate?.exerciseIds ?? []) {
+  for (const id of full ? input.flexTemplate?.exerciseIds ?? [] : []) {
     const e = byId.get(id);
     if (!e || e.defaultWarmup || targetMet(e) || doneThisWeek.has(id)) continue;
     const lead = leadMuscle(e, input.tiers);
     drafts.push({ exerciseId: id, name: e.name, priority: 'b', primaryMuscle: lead, tier: lead ? tierFor(lead, input.tiers) : 'maintain', sets: plannedSets(e) });
   }
-  for (const o of ahead.filter(o => o.tier === 'maintain')) {
+  for (const o of full ? ahead.filter(o => o.tier === 'maintain') : []) {
     drafts.push({ exerciseId: o.exerciseId, name: o.name, priority: 'c', slotLabel: o.slotLabel, primaryMuscle: o.primaryMuscle, tier: o.tier, sets: o.sets });
   }
   for (const id of input.added ?? []) {

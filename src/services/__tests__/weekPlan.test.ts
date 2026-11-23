@@ -232,6 +232,22 @@ describe('owed list', () => {
     expect(owed.some(o => o.exerciseId === 'leg-curl')).toBe(true);
   });
 
+  test('an exercise added from Flex and then swapped for another same-muscle lift clears the Flex item', () => {
+    // Monday's W1 skipped the incline (chest): it is on Flex. Friday's W5 adds
+    // it from Flex, then swaps it for the pec fly, which W3 (not run yet) also
+    // lists. The skipped incline is cleared first; W3's pec fly stays owed.
+    const ws = [w('mon', at(9, 6), 'fb1'), w('fri', at(13, 6), 'fb5')];
+    const logged = [
+      ...['pulldown', 'leg-press', 'lat-raise'].flatMap(e => sets(e, 3, 'mon', at(9, 6))),
+      ...['cable-fly', 'leg-curl', 'calf', 'pec-fly'].flatMap(e => sets(e, 3, 'fri', at(13, 6))),
+    ];
+    const before = week([ws[0]!], logged.filter(s => s.workoutId === 'mon')).owed;
+    expect(before.some(o => o.exerciseId === 'incline' && o.source === 'skipped')).toBe(true);
+    const { owed } = week(ws, logged, new Date(at(13, 18)));
+    expect(owed.some(o => o.exerciseId === 'incline' && o.source === 'skipped')).toBe(false);
+    expect(owed.some(o => o.exerciseId === 'pec-fly' && o.slotLabel === 'W3')).toBe(true);
+  });
+
   test('an exercise on two workouts needs two sessions', () => {
     // Incline is on W1 and W4; done once (Monday). W4 has not run.
     const { owed } = week([...workouts, w('thu', at(12, 6), 'fb4')], [...logged, ...sets('row', 3, 'thu', at(12, 6)), ...sets('crunch', 3, 'thu', at(12, 6))]);
@@ -297,11 +313,33 @@ describe('Flex', () => {
       historySets: logged,
       historyWorkouts: ws,
       capMinutes: 200,
+      // These tests cover the fuller planner (defaults, work ahead); the
+      // default, skipped work only, has its own tests below.
+      scope: 'full',
       ...over,
     });
   };
 
   const RANK = { skipped: 0, a: 1, b: 2, c: 3, added: 4 } as const;
+
+  test('by default Flex is only what workouts that ran left undone: empty when nothing was skipped', () => {
+    // Only W1 and W2 ran, in full; W3..W5 and the Flex default template are not Flex's.
+    const ws = [w('w1', at(9, 6), 'fb1'), w('w2', at(10, 6), 'fb2')];
+    const logged = [
+      ...['incline', 'pulldown', 'leg-press', 'lat-raise'].flatMap(e => sets(e, 3, 'w1', at(9, 6))),
+      ...['row', 'leg-ext', 'pushdown', 'shrug'].flatMap(e => sets(e, 3, 'w2', at(10, 6))),
+    ];
+    const { owed } = week(ws, logged, new Date(at(10, 18)));
+    const p = plan({ owed, historySets: logged, historyWorkouts: ws, scope: undefined });
+    expect(p.items).toEqual([]);
+    expect(p.expiresSunday).toEqual([]);
+  });
+
+  test('by default Flex lists each skipped exercise, and nothing else', () => {
+    const p = plan({ scope: undefined });
+    expect(p.items.map(i => i.priority)).toEqual(p.items.map(() => 'skipped'));
+    expect(p.items.map(i => i.insteadOf?.exerciseId ?? i.exerciseId)).toEqual(['incline', 'shrug', 'curl', 'calf']);
+  });
   // W5's skipped calf raise would sit at the top of Flex and hide the Flex
   // default's calf raise; the tests about the default item leave it out.
   const owedButCalf = () => doneWeek().owed.filter(o => o.exerciseId !== 'calf');
@@ -377,6 +415,7 @@ describe('Flex', () => {
       historySets: [...logged, ...visits.flatMap((d, i) => sets('curl', 3, `old${i}`, d))],
       historyWorkouts: [...ws, ...visits.map((d, i) => w(`old${i}`, d, null, 'vasa'))],
       capMinutes: 500,
+      scope: 'full',
     });
   };
 

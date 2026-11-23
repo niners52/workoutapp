@@ -39,8 +39,9 @@ function reasonText(item: FlexItem): string {
 }
 
 /**
- * Flex: exercises skipped from workouts already done, then owed build-tier
- * work, then the Flex default template, then owed maintain-tier work, fitted to the gym picked here and to the time cap.
+ * Flex: the exercises this week's workouts left undone (empty at the start of
+ * the week), fitted to the gym picked here and to the time cap. Each can also
+ * be added to any workout in progress from its "From Flex" list.
  * What does not fit expires when the week resets. Built fresh from the week
  * each time; removing or adding an exercise sticks until the week ends.
  */
@@ -93,7 +94,7 @@ export function FlexCard({
       </View>
 
       {items.length === 0 ? (
-        <Text style={styles.empty}>Nothing owed, and the Flex default is covered. Add anything you like below.</Text>
+        <Text style={styles.empty}>Nothing skipped this week. Anything you skip in a workout shows up here.</Text>
       ) : (
         items.map(item => (
           <TouchableOpacity
