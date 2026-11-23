@@ -26,6 +26,22 @@ export function canonicalMuscleGroup(value: unknown): PrimaryMuscleGroup | null 
  * collapse, legacy names resolve, and the 'miscellaneous' placeholder earns
  * nothing. Empty means the exercise is unmapped.
  */
+/**
+ * Weekly-volume credit one session of a planned exercise is worth: its target
+ * sets (default 3, or 6 for a unilateral exercise logged per side), times 0.5
+ * when unilateral. Prep (warm-up) exercises credit nothing. The Home "This
+ * week" card and the routine's projected volume both use this.
+ */
+export function plannedSetCredit(exercise: {
+  targetSets?: number | null;
+  isUnilateral?: boolean;
+  defaultWarmup?: boolean;
+}): number {
+  if (exercise.defaultWarmup) return 0;
+  const logged = exercise.targetSets ?? (exercise.isUnilateral ? 6 : 3);
+  return logged * (exercise.isUnilateral ? 0.5 : 1);
+}
+
 export function creditedPrimaries(stored: ReadonlyArray<unknown> | null | undefined): PrimaryMuscleGroup[] {
   const out = new Set<PrimaryMuscleGroup>();
   for (const raw of stored ?? []) {
