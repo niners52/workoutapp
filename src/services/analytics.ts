@@ -17,7 +17,7 @@ import {
   MUSCLE_GROUP_DISPLAY_NAMES,
 } from '../types';
 import { getSets, getSetsInDateRange, getExercises, getUserSettings, getWorkouts, getWorkoutsInDateRange } from './storage';
-import { creditedPrimaries } from './muscleGroups';
+import { creditedPrimaries, plannedSetCredit } from './muscleGroups';
 import { countWarmupSets, isWarmupSet } from './warmupSets';
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
 
@@ -359,9 +359,22 @@ export async function getVolumeTrends(): Promise<VolumeTrend[]> {
   });
 }
 
-// Calculate projected weekly volume from a routine's scheduled templates
-// Assumes 3 sets per exercise (standard working sets)
-const SETS_PER_EXERCISE = 3;
+/**
+ * Projected weekly volume from a routine: each rotation workout (W1..Wn) and
+ * the Flex template once, or, for a routine with no rotation, each weekday's
+ * templates. Each exercise credits its own target sets the way weekly volume
+ * counts them (plannedSetCredit) — it used to assume 3 sets for everything,
+ * which put 6-set lateral raises at half and an 8-set rotator cuff at 3.
+ */
+function scheduledTemplateIds(routine: Routine): string[] {
+  const slots = routine.rotation?.slots;
+  if (slots && slots.length > 0) {
+    return [...slots.map(s => s.templateId), ...(routine.rotation?.flexTemplateId ? [routine.rotation.flexTemplateId] : [])].filter(
+      (id): id is string => !!id,
+    );
+  }
+  return routine.daySchedule.flatMap(d => d.templateIds ?? []);
+}
 
 export function calculateProjectedVolumeForRoutine(
   routine: Routine,
@@ -389,46 +402,37 @@ export function calculateProjectedVolumeForRoutine(
     volumeMap.set(mg, { sets: 0, exercises: new Map() });
   });
 
-  // Process each day in the routine
-  routine.daySchedule.forEach(daySchedule => {
-    if (!daySchedule.templateIds || daySchedule.templateIds.length === 0) return; // Rest day
+  scheduledTemplateIds(routine).forEach(templateId => {
+    const template = templateMap.get(templateId);
+    if (!template) return;
 
-    // Process each template for this day (supports multiple workouts per day)
-    daySchedule.templateIds.forEach(templateId => {
-      const template = templateMap.get(templateId);
-      if (!template) return;
+    template.exerciseIds.forEach(exerciseId => {
+      const exercise = exerciseMap.get(exerciseId);
+      if (!exercise) return;
+      const credit = plannedSetCredit(exercise);
+      if (credit <= 0) return;
 
-      // Process each exercise in the template
-      template.exerciseIds.forEach(exerciseId => {
-        const exercise = exerciseMap.get(exerciseId);
-        if (!exercise) return;
+      // Same primaries weekly volume credits (deprecated single field as fallback).
+      const stored = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+        ? exercise.primaryMuscleGroups
+        : exercise.primaryMuscleGroup
+        ? [exercise.primaryMuscleGroup]
+        : [];
 
-        // Get primary muscle groups (support both new array and deprecated single field)
-        const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
-          ? exercise.primaryMuscleGroups
-          : exercise.primaryMuscleGroup
-          ? [exercise.primaryMuscleGroup]
-          : [];
-
-        // Add projected sets to each primary muscle group
-        primaryMuscleGroups.forEach(muscleGroup => {
-          const volume = volumeMap.get(muscleGroup);
-
-          if (volume) {
-            volume.sets += SETS_PER_EXERCISE;
-
-            const existingExercise = volume.exercises.get(exercise.id);
-            if (existingExercise) {
-              existingExercise.sets += SETS_PER_EXERCISE;
-            } else {
-              volume.exercises.set(exercise.id, {
-                exerciseId: exercise.id,
-                exerciseName: exercise.name,
-                sets: SETS_PER_EXERCISE,
-              });
-            }
-          }
-        });
+      creditedPrimaries(stored).forEach(muscleGroup => {
+        const volume = volumeMap.get(muscleGroup);
+        if (!volume) return;
+        volume.sets += credit;
+        const existingExercise = volume.exercises.get(exercise.id);
+        if (existingExercise) {
+          existingExercise.sets += credit;
+        } else {
+          volume.exercises.set(exercise.id, {
+            exerciseId: exercise.id,
+            exerciseName: exercise.name,
+            sets: credit,
+          });
+        }
       });
     });
   });

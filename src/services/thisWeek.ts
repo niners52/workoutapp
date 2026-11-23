@@ -15,7 +15,7 @@ import {
   type Exercise,
   type MuscleGroupVolume,
 } from '../types';
-import { creditedPrimaries } from './muscleGroups';
+import { creditedPrimaries, plannedSetCredit } from './muscleGroups';
 import type { RotationState } from './rotationWeek';
 
 export interface PlannedDay {
@@ -71,8 +71,7 @@ export function thisWeekRows({
     for (const id of day.exerciseIds) {
       const exercise = byId.get(id);
       if (!exercise || exercise.defaultWarmup) continue;
-      const loggedSets = exercise.targetSets ?? (exercise.isUnilateral ? 6 : 3);
-      const credit = loggedSets * (exercise.isUnilateral ? 0.5 : 1);
+      const credit = plannedSetCredit(exercise);
       for (const group of creditedPrimaries(exercise.primaryMuscleGroups ?? [])) {
         const entry = planned.get(group) ?? { sets: 0, days: [] };
         entry.sets += credit;
