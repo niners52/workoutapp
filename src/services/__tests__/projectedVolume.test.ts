@@ -3,7 +3,8 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 import type { Exercise, Routine, Template } from '../../types';
-import { calculateProjectedVolumeForRoutine } from '../analytics';
+import { calculateProjectedVolumeForRoutine, calculateWeeklyShortfalls } from '../analytics';
+import { DEFAULT_USER_SETTINGS } from '../../types';
 
 const ex = (id: string, primary: string[], over: Partial<Exercise> = {}) =>
   ({ id, name: id, primaryMuscleGroups: primary, equipment: 'cable', ...over }) as Exercise;
@@ -60,5 +61,32 @@ describe('projected weekly volume', () => {
       rotator_cuff: 8,
       biceps: 3,
     });
+  });
+});
+
+describe('weekly shortfalls (Training & goals)', () => {
+  test('remaining rotation workouts count each exercise at its own target sets', async () => {
+    const routine = {
+      id: 'r',
+      name: 'r',
+      isActive: true,
+      daySchedule: [],
+      rotation: {
+        slots: [
+          { id: 'w1', label: 'W1', templateId: 'fb1', usualDay: 2 },
+          { id: 'w2', label: 'W2', templateId: 'fb3', usualDay: 3 },
+          { id: 'w3', label: 'W3', templateId: 'fb5', usualDay: 4 },
+        ],
+        flexTemplateId: null,
+      },
+    } as unknown as Routine;
+    const settings = { ...DEFAULT_USER_SETTINGS, muscleGroupTargets: { ...DEFAULT_USER_SETTINGS.muscleGroupTargets, ...targets } };
+    const result = await calculateWeeklyShortfalls(routine, templates, exercises, settings);
+    // Nothing logged yet this week: all three workouts are still to come.
+    // Side delts (3 x 6 = 18) and rotator cuff (8) are covered, so not short.
+    expect(result.map(r => r.muscleGroup)).not.toContain('side_delts');
+    expect(result.map(r => r.muscleGroup)).not.toContain('rotator_cuff');
+    // Biceps: one 3-set curl against 9 is short by 6.
+    expect(result.find(r => r.muscleGroup === 'biceps')).toMatchObject({ projectedSets: 3, shortfall: 6 });
   });
 });

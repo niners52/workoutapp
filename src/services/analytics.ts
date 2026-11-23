@@ -18,6 +18,8 @@ import {
 } from '../types';
 import { getSets, getSetsInDateRange, getExercises, getUserSettings, getWorkouts, getWorkoutsInDateRange } from './storage';
 import { creditedPrimaries, plannedSetCredit } from './muscleGroups';
+import { buildWeek } from './rotationWeek';
+import { remainingPlan } from './thisWeek';
 import { countWarmupSets, isWarmupSet } from './warmupSets';
 import { startOfWeek, endOfWeek, subWeeks, format, addDays } from 'date-fns';
 
@@ -475,7 +477,6 @@ export async function calculateWeeklyShortfalls(
   userSettings: UserSettings
 ): Promise<MuscleGroupShortfall[]> {
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0-6 (Sunday-Saturday)
 
   // Get current week's volume
   const currentWeekVolume = await getWeeklyVolume(today);
@@ -484,58 +485,33 @@ export async function calculateWeeklyShortfalls(
   const exerciseMap = new Map<string, Exercise>(
     exercises.map(e => [e.id, e])
   );
-  const templateMap = new Map<string, Template>(
-    templates.map(t => [t.id, t])
-  );
 
-  // Calculate projected volume from remaining days in the week
+  // Projected: the rotation workouts not done yet this week (the same week
+  // model as the Home "This week" card), each exercise at its own target sets.
+  // This used to walk the weekday schedule from today and give every
+  // exercise 3 sets, so a 6-set lateral raise counted half and a workout
+  // done on another day still counted as still to come.
   const projectedVolumeMap = new Map<PrimaryMuscleGroup, number>();
   ALL_TRACKABLE_MUSCLE_GROUPS.forEach(mg => projectedVolumeMap.set(mg, 0));
 
   if (routine) {
-    // Get remaining days based on week start preference
-    const weekStartsOn = userSettings.weekStartDay === 'sunday' ? 0 : 1;
-
-    // Calculate which days remain in the week (including today)
-    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-      const checkDate = addDays(today, dayOffset);
-      const checkDayOfWeek = checkDate.getDay();
-
-      // Check if we've passed the end of the week
-      if (dayOffset > 0) {
-        // For Monday start: week ends on Sunday (0)
-        // For Sunday start: week ends on Saturday (6)
-        if (checkDayOfWeek === weekStartsOn) break; // New week started
+    const [workouts, sets] = await Promise.all([getWorkouts(), getSets()]);
+    const week = buildWeek({ routine, templates, workouts, sets, exercises, settings: userSettings, now: today });
+    for (const day of remainingPlan(week.state)) {
+      for (const exerciseId of day.exerciseIds) {
+        const exercise = exerciseMap.get(exerciseId);
+        if (!exercise) continue;
+        const credit = plannedSetCredit(exercise);
+        if (credit <= 0) continue;
+        const stored = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
+          ? exercise.primaryMuscleGroups
+          : exercise.primaryMuscleGroup
+          ? [exercise.primaryMuscleGroup]
+          : [];
+        for (const mg of creditedPrimaries(stored)) {
+          projectedVolumeMap.set(mg, (projectedVolumeMap.get(mg) || 0) + credit);
+        }
       }
-
-      // Get templates for this day
-      const daySchedule = routine.daySchedule.find(d => d.day === checkDayOfWeek);
-      if (!daySchedule || daySchedule.templateIds.length === 0) continue;
-
-      // Process each template
-      daySchedule.templateIds.forEach(templateId => {
-        const template = templateMap.get(templateId);
-        if (!template) return;
-
-        // Process each exercise
-        template.exerciseIds.forEach(exerciseId => {
-          const exercise = exerciseMap.get(exerciseId);
-          if (!exercise) return;
-
-          // Get primary muscle groups
-          const primaryMuscleGroups = exercise.primaryMuscleGroups && exercise.primaryMuscleGroups.length > 0
-            ? exercise.primaryMuscleGroups
-            : exercise.primaryMuscleGroup
-            ? [exercise.primaryMuscleGroup]
-            : [];
-
-          // Add projected sets (3 sets per exercise is standard assumption)
-          primaryMuscleGroups.forEach(mg => {
-            const current = projectedVolumeMap.get(mg) || 0;
-            projectedVolumeMap.set(mg, current + 3);
-          });
-        });
-      });
     }
   }
 
