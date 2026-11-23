@@ -623,7 +623,12 @@ export async function reconcileCloud(force: boolean = false): Promise<ReconcileR
   const knownWorkouts = new Set(localWorkouts.map(w => w.id));
   const missingExercises = localExercises.filter(e => !cloudExerciseIds.has(e.id));
   const missingWorkouts = localWorkouts.filter(w => !cloudWorkoutIds.has(w.id));
-  const missingSets = localSets.filter(s => knownWorkouts.has(s.workoutId) && !cloudSetIds.has(s.id));
+  // A set of an exercise deleted on this phone stays here as history; the cloud
+  // deleted it with the exercise and would refuse it (foreign key).
+  const knownExercises = new Set(localExercises.map(e => e.id));
+  const missingSets = localSets.filter(
+    s => knownWorkouts.has(s.workoutId) && knownExercises.has(s.exerciseId) && !cloudSetIds.has(s.id),
+  );
 
   await addManyToPendingQueue([
     ...missingExercises.map(e => ({ table: 'exercises', operation: 'upsert' as const, data: exerciseRow(e, userId) })),
@@ -1302,6 +1307,19 @@ export async function processPendingSync(
       ops = ops.filter(op => (op.retries || 0) < MAX_RETRIES);
 
       ops = deduplicateOperations(ops);
+
+      // Sets whose exercise was deleted: the phone keeps them as history, but
+      // the cloud deleted them with the exercise (ON DELETE CASCADE) and will
+      // refuse them forever (foreign key), so they would sit in the queue.
+      const localExerciseIds = new Set((await getExercises()).map(e => e.id));
+      const orphaned = ops.filter(
+        op => op.table === 'workout_sets' && op.operation === 'upsert' && op.data?.exercise_id && !localExerciseIds.has(op.data.exercise_id),
+      );
+      if (orphaned.length > 0) {
+        console.log(`[Sync] Dropping ${orphaned.length} set(s) of deleted exercises: ${[...new Set(orphaned.map(o => o.data.exercise_id))].join(', ')}`);
+        dropped += orphaned.length;
+        ops = ops.filter(op => !orphaned.includes(op));
+      }
 
       if (ops.length !== originalCount) {
         console.log(`[Sync] Cleaned queue: ${originalCount} → ${ops.length} (stale: ${originalCount - afterStale}, over-retried: ${overRetried.length}, deduped: ${afterStale - overRetried.length - ops.length})`);
