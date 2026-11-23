@@ -65,6 +65,13 @@ const healthKitPermissions = {
       'OxygenSaturation',
       'AppleSleepingWristTemperature',
       'HeartRate',
+      // Daily health metrics (healthMetricsSync.ts)
+      'Vo2Max',
+      'StepCount',
+      'BloodPressureSystolic',
+      'BloodPressureDiastolic',
+      // Age, for the default max heart rate (220 - age)
+      'DateOfBirth',
     ],
     write: [
       'Workout',
@@ -1011,7 +1018,9 @@ export async function getLatestHeight(): Promise<{ value: number; date: string }
 // Get weight history for a date range
 export async function getWeightHistory(
   startDate: Date,
-  endDate: Date = new Date()
+  endDate: Date = new Date(),
+  /** Which reading stands for the day: the morning weigh-in, or the last one. */
+  pick: 'earliest' | 'latest' = 'latest',
 ): Promise<BodyMeasurementHistory[]> {
   if (Platform.OS !== 'ios' || !AppleHealthKit || USE_MOCK_DATA) {
     return [];
@@ -1046,13 +1055,13 @@ export async function getWeightHistory(
           return;
         }
 
-        // Group by date and take the latest value for each day
+        // Group by date and take the earliest or latest value for each day
         const byDate = new Map<string, { value: number; timestamp: number }>();
         results.forEach((sample: any) => {
           const date = format(new Date(sample.startDate), 'yyyy-MM-dd');
           const timestamp = new Date(sample.startDate).getTime();
           const existing = byDate.get(date);
-          if (!existing || timestamp > existing.timestamp) {
+          if (!existing || (pick === 'earliest' ? timestamp < existing.timestamp : timestamp > existing.timestamp)) {
             byDate.set(date, { value: sample.value, timestamp });
           }
         });
@@ -1700,4 +1709,118 @@ export async function getMostRecentHKWorkout(
     const be = b.end ? new Date(b.end).getTime() : 0;
     return be - ae;
   })[0] ?? null;
+}
+
+// ============== DAILY HEALTH METRICS (healthMetricsSync.ts) ==============
+
+/** One reading: when it was taken and its value. */
+export interface TimedSample {
+  start: string; // ISO
+  end: string; // ISO
+  value: number;
+}
+
+export interface BloodPressureReading {
+  start: string;
+  systolic: number;
+  diastolic: number;
+}
+
+/**
+ * Call a react-native-health query and hand back its array, or null when
+ * HealthKit is unavailable, the method is missing, the call errors or it times
+ * out. Callers treat null as "could not read", not "nothing there".
+ */
+async function queryArray(method: string, options: Record<string, unknown>, timeoutMs = 20000): Promise<any[] | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit) return null;
+  const initialized = await initializeHealthKit();
+  if (!initialized || typeof AppleHealthKit[method] !== 'function') return null;
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      console.log(`[HealthKit] ${method} timed out`);
+      resolve(null);
+    }, timeoutMs);
+    try {
+      AppleHealthKit[method](options, (err: unknown, results: unknown) => {
+        clearTimeout(timer);
+        if (err) {
+          console.log(`[HealthKit] ${method} error:`, err);
+          resolve(null);
+          return;
+        }
+        resolve(Array.isArray(results) ? results : []);
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      console.log(`[HealthKit] ${method} exception:`, e);
+      resolve(null);
+    }
+  });
+}
+
+const toTimed = (rows: any[] | null, scale = 1): TimedSample[] | null =>
+  rows === null
+    ? null
+    : rows
+        .filter(r => typeof r?.value === 'number' && r.startDate)
+        .map(r => ({ start: String(r.startDate), end: String(r.endDate ?? r.startDate), value: r.value * scale }));
+
+const range = (start: Date, end: Date) => ({ startDate: start.toISOString(), endDate: end.toISOString(), ascending: true });
+
+/** VO2 max estimates, mL/(kg·min). */
+export async function fetchVo2MaxSamples(start: Date, end: Date): Promise<TimedSample[] | null> {
+  return toTimed(await queryArray('getVo2MaxSamples', range(start, end)));
+}
+
+/** Resting heart rate, bpm (Apple computes about one a day). */
+export async function fetchRestingHeartRateSamples(start: Date, end: Date): Promise<TimedSample[] | null> {
+  return toTimed(await queryArray('getRestingHeartRateSamples', range(start, end)));
+}
+
+/** HRV (SDNN) readings in milliseconds; react-native-health returns seconds. */
+export async function fetchHrvSamples(start: Date, end: Date): Promise<TimedSample[] | null> {
+  return toTimed(await queryArray('getHeartRateVariabilitySamples', range(start, end)), 1000);
+}
+
+/** Step counts in day-long buckets (period in minutes). */
+export async function fetchStepBuckets(start: Date, end: Date): Promise<TimedSample[] | null> {
+  return toTimed(await queryArray('getDailyStepCountSamples', { ...range(start, end), period: 1440 }));
+}
+
+/** Active energy, kcal, in day-long buckets. */
+export async function fetchActiveEnergyBuckets(start: Date, end: Date): Promise<TimedSample[] | null> {
+  return toTimed(await queryArray('getActiveEnergyBurned', { ...range(start, end), period: 1440 }));
+}
+
+export async function fetchBloodPressureReadings(start: Date, end: Date): Promise<BloodPressureReading[] | null> {
+  const rows = await queryArray('getBloodPressureSamples', range(start, end));
+  if (rows === null) return null;
+  return rows
+    .filter(r => typeof r?.bloodPressureSystolicValue === 'number' && typeof r?.bloodPressureDiastolicValue === 'number')
+    .map(r => ({ start: String(r.startDate), systolic: r.bloodPressureSystolicValue, diastolic: r.bloodPressureDiastolicValue }));
+}
+
+/** Heart-rate samples, bpm, in time order. */
+export async function fetchHeartRateSamples(start: Date, end: Date): Promise<TimedSample[] | null> {
+  return toTimed(await queryArray('getHeartRateSamples', range(start, end), 15000));
+}
+
+/** Age in whole years from Apple Health's date of birth, or null. */
+export async function getAgeFromHealthKit(): Promise<number | null> {
+  if (Platform.OS !== 'ios' || !AppleHealthKit) return null;
+  const initialized = await initializeHealthKit();
+  if (!initialized || typeof AppleHealthKit.getDateOfBirth !== 'function') return null;
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), 5000);
+    try {
+      AppleHealthKit.getDateOfBirth({}, (err: unknown, result: any) => {
+        clearTimeout(timer);
+        const age = result?.age;
+        resolve(!err && typeof age === 'number' && age > 0 && age < 120 ? age : null);
+      });
+    } catch {
+      clearTimeout(timer);
+      resolve(null);
+    }
+  });
 }

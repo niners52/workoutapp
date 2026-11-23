@@ -7,6 +7,10 @@
  * The first run on a phone backfills DEFAULT_IMPORT_DAYS. After that each run
  * re-reads only the last RECENT_DAYS, at most every MIN_INTERVAL_MS unless
  * forced, so a weigh-in shows up the same day instead of the next one.
+ *
+ * A day's weight is its first reading (the morning weigh-in), so the goal
+ * card's 7-day average is a morning average; a later reading the same day
+ * does not replace it.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
@@ -50,7 +54,7 @@ export async function importHealthKitBodyWeights(
   const days = backfilled ? RECENT_DAYS : DEFAULT_IMPORT_DAYS;
   const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const [weights, bodyFats] = await Promise.all([
-    getWeightHistory(start, now),
+    getWeightHistory(start, now, 'earliest'),
     getBodyFatHistory(start, now),
   ]);
   const bodyFatByDate = new Map(bodyFats.map(b => [b.date, b.value]));
@@ -63,7 +67,7 @@ export async function importHealthKitBodyWeights(
     const row = weightRows.get(sample.date);
     const bodyFat = bodyFatByDate.get(sample.date);
     if (row && row.source !== 'healthkit') continue; // a manual entry wins
-    // Unchanged day: skip. A re-weigh later the same day replaces the value.
+    // Unchanged day: skip. A different first reading (corrected in Health) replaces it.
     if (row && row.weight === sample.value && (bodyFat === undefined || row.bodyFatPercentage === bodyFat)) continue;
     const measurement: BodyMeasurement = {
       id: row?.id ?? healthKitMeasurementId(sample.date),

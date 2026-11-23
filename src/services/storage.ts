@@ -71,7 +71,7 @@ const STORAGE_KEYS = {
 } as const;
 
 // Current migration version
-const CURRENT_MIGRATION_VERSION = 23;
+const CURRENT_MIGRATION_VERSION = 24;
 
 // Generic storage helpers
 async function getItem<T>(key: string, defaultValue: T): Promise<T> {
@@ -217,6 +217,10 @@ async function runMigrations(): Promise<void> {
 
   if (currentVersion < 23) {
     await migrateToV23();
+  }
+
+  if (currentVersion < 24) {
+    await migrateToV24();
   }
 
   // Update migration version
@@ -1245,6 +1249,36 @@ async function migrateToV23(): Promise<void> {
   });
   if (moved > 0) await setItem(STORAGE_KEYS.WORKOUTS, next);
   console.log(`Migration to V23 complete - ${moved} workouts moved to Vasa`);
+}
+
+/**
+ * V24: the 2026-11-23 InBody scan on Tyler's phone. The row was entered in the
+ * cloud (manual-body-2026-11-23-inbody, updated with the full scan by
+ * 20261123000000_health_metrics_inbody_goals_pain.sql) and never reached the
+ * phone. Only on a phone holding Tyler's workouts (the two V23 session ids), so
+ * nobody else's log gains it. Merges into any weight row already on that day.
+ */
+async function migrateToV24(): Promise<void> {
+  console.log('Running migration to V24 - 2026-11-23 InBody scan...');
+  const workouts = await getItem<Workout[]>(STORAGE_KEYS.WORKOUTS, []);
+  if (!workouts.some(w => VASA_SESSIONS_SAVED_AS_GYM.includes(w.id))) {
+    console.log('Migration to V24 complete - not this phone');
+    return;
+  }
+  await addBodyMeasurement({
+    id: 'manual-body-2026-11-23-inbody',
+    date: '2026-11-23',
+    weight: 181.5,
+    bodyFatPercentage: 9.0,
+    skeletalMuscleLbs: 93.3,
+    leanMassLbs: 165.1,
+    visceralFatArea: 33.5,
+    ecwTbw: 0.383,
+    phaseAngle: 6.5,
+    scanType: 'inbody',
+    source: 'manual',
+  });
+  console.log('Migration to V24 complete - InBody scan added');
 }
 
 // Reset storage (for debugging/testing)

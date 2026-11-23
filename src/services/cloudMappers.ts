@@ -71,5 +71,11 @@ export function bodyMeasurementFromRow(row: any): BodyMeasurement {
     value: row.value ?? undefined,
     source: row.source || 'manual',
     syncedAt: row.synced_at ?? undefined,
+    ...(row.skeletal_muscle_lbs != null ? { skeletalMuscleLbs: Number(row.skeletal_muscle_lbs) } : {}),
+    ...(row.lean_mass_lbs != null ? { leanMassLbs: Number(row.lean_mass_lbs) } : {}),
+    ...(row.visceral_fat_area != null ? { visceralFatArea: Number(row.visceral_fat_area) } : {}),
+    ...(row.ecw_tbw != null ? { ecwTbw: Number(row.ecw_tbw) } : {}),
+    ...(row.phase_angle != null ? { phaseAngle: Number(row.phase_angle) } : {}),
+    ...(row.scan_type ? { scanType: row.scan_type } : {}),
   } as BodyMeasurement;
 }

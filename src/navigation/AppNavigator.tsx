@@ -46,6 +46,7 @@ import {
   HealthKitDataScreen,
   WorkoutSummaryScreen,
   MeasurementHistoryScreen,
+  PainLogScreen,
   AuthScreen,
   MigrationScreen,
   AccountabilityPartnerScreen,
@@ -550,6 +551,13 @@ export function AppNavigator() {
           component={MeasurementHistoryScreen}
           options={{
             title: 'Measurement History',
+          }}
+        />
+        <Stack.Screen
+          name="PainLog"
+          component={PainLogScreen}
+          options={{
+            title: 'Pain Log',
           }}
         />
         <Stack.Screen

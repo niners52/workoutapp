@@ -51,6 +51,7 @@ export type RootStackParamList = {
     }[];
   };
   MeasurementHistory: { measurementType: string };
+  PainLog: undefined;
   AccountabilityPartner: undefined;
   Challenge: { partnershipId: string };
   ProgressPhotos: undefined;

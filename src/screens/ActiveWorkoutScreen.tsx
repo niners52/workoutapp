@@ -42,6 +42,9 @@ import {
   sessionRecoveryWarnings,
 } from '../services/rotationWeek';
 import { isWarmupSet } from '../services/warmupSets';
+import { painWarningsFor, type PainWarning } from '../services/painLog';
+import { getPainLog, onPainLogChange } from '../services/painLogStore';
+import type { PainLogEntry } from '../types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -115,6 +118,17 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
   const prAnimValue = useRef(new Animated.Value(0)).current;
   const [sessionPRs, setSessionPRs] = useState<Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>>(new Map());
   const [fatigueWarnings, setFatigueWarnings] = useState<Map<string, ExerciseFatigueSignal>>(new Map());
+  // Recent pain (score 3+, last 14 days) in an area an exercise works.
+  const [painLog, setPainLog] = useState<PainLogEntry[]>([]);
+  useEffect(() => {
+    let live = true;
+    getPainLog().then(e => live && setPainLog(e));
+    const off = onPainLogChange(e => setPainLog(e));
+    return () => {
+      live = false;
+      off();
+    };
+  }, []);
   // Exercises whose cross-day swap-conflict badge the user has dismissed ("Keep") this session.
   const [dismissedSwapConflicts, setDismissedSwapConflicts] = useState<Set<string>>(new Set());
 
@@ -1214,6 +1228,8 @@ export function ActiveWorkoutScreen({ embedded }: { embedded?: boolean } = {}) {
                     prAnimValue={prAnimValue}
                     sessionPRs={sessionPRs}
                     fatigueWarning={fatigueWarnings.get(exerciseId)}
+                    painWarning={painWarningsFor(exercise, painLog)[0]}
+                    onOpenPainLog={() => navigation.navigate('PainLog')}
                     targetSets={targetSets}
                     isComplete={exerciseComplete}
                     isOnDeload={userSettings?.isOnDeload}
@@ -1973,6 +1989,9 @@ interface ExerciseCardProps {
   prAnimValue: Animated.Value;
   sessionPRs: Map<string, { prResult: PRCheckResult; isMilestone: boolean; milestoneLabel?: string }>;
   fatigueWarning?: ExerciseFatigueSignal;
+  /** Recent pain in an area this exercise works. */
+  painWarning?: PainWarning;
+  onOpenPainLog?: () => void;
   targetSets: number;
   isComplete: boolean;
   isOnDeload?: boolean;
@@ -2017,6 +2036,8 @@ function ExerciseCard({
   prAnimValue,
   sessionPRs,
   fatigueWarning,
+  painWarning,
+  onOpenPainLog,
   targetSets,
   isComplete,
   isOnDeload,
@@ -2158,6 +2179,14 @@ function ExerciseCard({
             </TouchableOpacity>
           </View>
         </View>
+      )}
+
+      {/* Pain warning */}
+      {painWarning && (
+        <TouchableOpacity style={styles.painBanner} onPress={onOpenPainLog} activeOpacity={0.7} testID={`pain-warning-${exercise.id}`}>
+          <Ionicons name="medkit-outline" size={14} color={colors.error} />
+          <Text style={styles.painBannerText}>{painWarning.message}</Text>
+        </TouchableOpacity>
       )}
 
       {/* Fatigue Warning / Progress Banner */}
@@ -2520,6 +2549,19 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     fontWeight: typography.weight.bold,
     color: colors.text,
+  },
+  painBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.base,
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+  },
+  painBannerText: {
+    fontSize: typography.size.xs,
+    color: colors.error,
+    flex: 1,
   },
   fatigueBanner: {
     flexDirection: 'row' as const,

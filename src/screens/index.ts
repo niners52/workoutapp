@@ -43,3 +43,4 @@ export { NutritionTodayScreen } from './NutritionTodayScreen';
 export { HealthTargetsScreen } from './HealthTargetsScreen';
 export { HealthRemindersScreen } from './HealthRemindersScreen';
 export { FlexSettingsScreen } from './FlexSettingsScreen';
+export { PainLogScreen } from './PainLogScreen';
