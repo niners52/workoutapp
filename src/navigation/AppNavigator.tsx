@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 import { WEEKLY_PLANNER_NOTIFICATION_DATA } from '../services/weeklyPlannerReminder';
+import { AppHeader } from './AppHeader';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
@@ -320,6 +321,8 @@ export function AppNavigator() {
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
+          // Drawn in JS: the native iOS 26 back button hung (see AppHeader).
+          header: props => <AppHeader {...props} />,
           headerStyle: {
             backgroundColor: colors.background,
           },
