@@ -39,6 +39,8 @@ import { importHealthKitBodyWeights } from '../services/bodyWeightImport';
 import { syncNutritionFromHealthKit } from '../services/nutritionSync';
 import { syncSleepFromHealthKit } from '../services/sleepSync';
 import { syncHealthMetricsFromHealthKit } from '../services/healthMetricsSync';
+import { pullConfigFromCloud } from '../services/configPull';
+import { onCloudApplied } from '../services/configApply';
 import { syncWeeklyPlannerReminder } from '../services/weeklyPlannerReminder';
 import { supabase } from '../services/supabase';
 import {
@@ -309,7 +311,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             .catch(e => console.log('Migration resync failed:', e))
             // Then queue anything the cloud is missing (once a day)
             .then(() => reconcileCloud())
-            .catch(e => console.log('Cloud reconcile failed:', e));
+            .catch(e => console.log('Cloud reconcile failed:', e))
+            // Upload what is queued, then pull edits made outside the phone:
+            // local edits not yet uploaded must go first so they win.
+            .then(() => syncManager.processQueue())
+            .then(() => pullConfigFromCloud({ force: true }))
+            .catch(e => console.log('Config pull failed:', e));
 
           // Check if we need to pull from cloud (new device or empty local data)
           const lastPull = await getLastCloudPull();
@@ -386,7 +393,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
-        syncManager.onAppResume();
+        // Push first, then pull cloud edits (throttled to every 2 minutes).
+        syncManager
+          .onAppResume()
+          .then(() => pullConfigFromCloud())
+          .catch(e => console.log('Config pull on resume failed:', e));
       }
     };
     const subscription = AppState.addEventListener('change', handleAppState);
@@ -481,6 +492,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refreshExerciseSwaps(),
     ]);
   }, [refreshExercises, refreshTemplates, refreshLocations, refreshWorkouts, refreshSets, refreshUserSettings, refreshSupplements, refreshSupplementIntakes, refreshPTRoutines, refreshPTCompletions, refreshRoutines, refreshBodyMeasurements, refreshExerciseSwaps]);
+
+  // Rows pulled from the cloud (configPull, or a push skipped as stale): reload.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const off = onCloudApplied(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        refreshAll().catch(e => console.log('Refresh after cloud pull failed:', e));
+      }, 300);
+    });
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+    };
+  }, [refreshAll]);
 
   /**
    * Re-download the cloud copy over the local one. This is the repair for a

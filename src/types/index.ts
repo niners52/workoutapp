@@ -40,6 +40,8 @@ export interface WorkoutLocation {
   id: string;
   name: string;
   sortOrder: number;
+  /** When this row last changed on this phone (ISO); filled from the cloud's updated_at on a pull. */
+  updatedAt?: string;
 }
 
 export const DEFAULT_LOCATIONS: WorkoutLocation[] = [
@@ -315,6 +317,8 @@ export const ALL_MACHINE_WEIGHT_TYPES: MachineWeightType[] = ['plate_loaded', 's
 export interface Exercise {
   id: string;
   name: string;
+  /** When this row last changed on this phone (ISO); filled from the cloud's updated_at on a pull. */
+  updatedAt?: string;
   baseName?: string; // Exercise name without equipment prefix (e.g., "Bicep Curl")
   primaryMuscleGroup?: PrimaryMuscleGroup; // Deprecated: use primaryMuscleGroups
   primaryMuscleGroups?: PrimaryMuscleGroup[]; // Can have multiple primary muscles (optional for backward compat)
@@ -361,6 +365,10 @@ export interface Template {
   // What kind of training this template is for. Undefined defaults to 'strength'
   // so all existing weight-training templates work without migration.
   modality?: Modality;
+  /** Free text, synced as templates.notes. */
+  notes?: string;
+  /** When this row last changed on this phone (ISO); filled from the cloud's updated_at on a pull. */
+  updatedAt?: string;
 }
 
 // Workout
@@ -567,6 +575,8 @@ export type BiologicalSex = 'male' | 'female';
 export type NutritionMode = 'recomp' | 'bulk' | 'cut';
 
 export interface UserSettings {
+  /** When a cloud-backed field (targets, goals, units...) last changed on this phone. */
+  updatedAt?: string;
   weekStartDay: WeekStartDay;
   units: UnitSystem;
   proteinGoal: number; // grams - legacy, use dailyGoals.proteinGrams
@@ -812,6 +822,8 @@ export interface RoutineDaySchedule {
 export interface Routine {
   id: string;
   name: string;
+  /** When this row last changed on this phone (ISO); filled from the cloud's updated_at on a pull. */
+  updatedAt?: string;
   daySchedule: RoutineDaySchedule[]; // 7 entries, one per day
   isActive: boolean;
   // Built-in routines shipped with the app (e.g., MS Foundations). User can clone
@@ -900,6 +912,8 @@ export interface BodyMeasurement {
   value?: number; // stored in inches
   source: 'healthkit' | 'manual';
   syncedAt?: string; // ISO datetime when synced from HealthKit
+  /** When this row last changed on this phone (ISO); filled from the cloud's updated_at on a pull. */
+  updatedAt?: string;
   // Body composition scan detail (InBody / DEXA), on a weight row.
   skeletalMuscleLbs?: number;
   leanMassLbs?: number;

@@ -6,7 +6,9 @@ import {
   SectionList,
   TouchableOpacity,
   Alert,
+  RefreshControl,
 } from 'react-native';
+import { useCloudRefresh } from '../hooks/useCloudRefresh';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,6 +29,7 @@ interface TemplateSection {
 export function TemplatesScreen({ embedded }: { embedded?: boolean }) {
   const navigation = useNavigation<NavigationProp>();
   const { templates, exercises, deleteTemplate, locations } = useData();
+  const { refreshing, onRefresh } = useCloudRefresh();
   const workoutBarPadding = useWorkoutBarPadding();
 
   // Group templates by location
@@ -121,6 +124,7 @@ export function TemplatesScreen({ embedded }: { embedded?: boolean }) {
       ) : (
         <SectionList
           sections={templatesByLocation}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           keyExtractor={item => item.id}
           renderItem={renderTemplate}
           renderSectionHeader={renderSectionHeader}

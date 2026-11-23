@@ -1298,9 +1298,12 @@ export async function getExerciseById(id: string): Promise<Exercise | undefined>
   return exercises.find(e => e.id === id);
 }
 
+/** A local create/edit time for a synced row (see cloudStamps.ts for the cloud's). */
+const stamp = <T extends object>(row: T): T => ({ ...row, updatedAt: new Date().toISOString() });
+
 export async function addExercise(exercise: Exercise): Promise<void> {
   const exercises = await getExercises();
-  exercises.push({ ...exercise, isCustom: true });
+  exercises.push(stamp({ ...exercise, isCustom: true }));
   await setItem(STORAGE_KEYS.EXERCISES, exercises);
 }
 
@@ -1308,7 +1311,7 @@ export async function updateExercise(exercise: Exercise): Promise<void> {
   const exercises = await getExercises();
   const index = exercises.findIndex(e => e.id === exercise.id);
   if (index !== -1) {
-    exercises[index] = exercise;
+    exercises[index] = stamp(exercise);
     await setItem(STORAGE_KEYS.EXERCISES, exercises);
   }
 }
@@ -1321,7 +1324,7 @@ export async function toggleExerciseFavorite(id: string): Promise<Exercise | und
   const exercises = await getExercises();
   const index = exercises.findIndex(e => e.id === id);
   if (index === -1) return undefined;
-  const updated = { ...exercises[index], isFavorite: !exercises[index].isFavorite };
+  const updated = stamp({ ...exercises[index], isFavorite: !exercises[index].isFavorite });
   exercises[index] = updated;
   await setItem(STORAGE_KEYS.EXERCISES, exercises);
   return updated;
@@ -1461,7 +1464,7 @@ export async function getTemplateById(id: string): Promise<Template | undefined>
 
 export async function addTemplate(template: Template): Promise<void> {
   const templates = await getTemplates();
-  templates.push(template);
+  templates.push(stamp(template));
   await setItem(STORAGE_KEYS.TEMPLATES, templates);
 }
 
@@ -1469,7 +1472,7 @@ export async function updateTemplate(template: Template): Promise<void> {
   const templates = await getTemplates();
   const index = templates.findIndex(t => t.id === template.id);
   if (index !== -1) {
-    templates[index] = template;
+    templates[index] = stamp(template);
     await setItem(STORAGE_KEYS.TEMPLATES, templates);
   }
 }
@@ -1495,7 +1498,7 @@ export async function addLocation(location: WorkoutLocation): Promise<void> {
   const locations = await getLocations();
   // Set sortOrder to be at the end
   const maxSortOrder = locations.reduce((max, l) => Math.max(max, l.sortOrder), -1);
-  locations.push({ ...location, sortOrder: maxSortOrder + 1 });
+  locations.push(stamp({ ...location, sortOrder: maxSortOrder + 1 }));
   await setItem(STORAGE_KEYS.LOCATIONS, locations);
 }
 
@@ -1503,7 +1506,7 @@ export async function updateLocation(location: WorkoutLocation): Promise<void> {
   const locations = await getLocations();
   const index = locations.findIndex(l => l.id === location.id);
   if (index !== -1) {
-    locations[index] = location;
+    locations[index] = stamp(location);
     await setItem(STORAGE_KEYS.LOCATIONS, locations);
   }
 }
@@ -1520,7 +1523,7 @@ export async function reorderLocations(locationIds: string[]): Promise<void> {
     .map((id, index) => {
       const location = locations.find(l => l.id === id);
       if (location) {
-        return { ...location, sortOrder: index };
+        return location.sortOrder === index ? location : stamp({ ...location, sortOrder: index });
       }
       return null;
     })
@@ -1758,11 +1761,38 @@ export async function getUserSettings(): Promise<UserSettings> {
   }
 }
 
+/** The settings fields that live in user_settings in the cloud. Everything else is phone-only. */
+export const CLOUD_SETTINGS_FIELDS = [
+  'muscleGroupTargets',
+  'weeklyGoals',
+  'dailyGoals',
+  'healthTargets',
+  'units',
+  'weekStartDay',
+  'restTimerSeconds',
+  'minimumSetsPerExercise',
+  'creatineSupplementId',
+] as const;
+
 export async function updateUserSettings(settings: Partial<UserSettings>): Promise<void> {
   const current = await getUserSettings();
-  const updated = { ...current, ...settings };
+  const touchesCloud = CLOUD_SETTINGS_FIELDS.some(f => f in settings);
+  const updated = { ...current, ...settings, ...(touchesCloud ? { updatedAt: new Date().toISOString() } : {}) };
   await setItem(STORAGE_KEYS.USER_SETTINGS, updated);
 }
+
+/**
+ * Raw writes for a cloud pull (configPull.ts): the rows already carry the
+ * cloud's updatedAt, so nothing is stamped and nothing is synced back.
+ */
+export const pulledStore = {
+  exercises: (rows: Exercise[]) => setItem(STORAGE_KEYS.EXERCISES, rows),
+  templates: (rows: Template[]) => setItem(STORAGE_KEYS.TEMPLATES, rows),
+  routines: (rows: Routine[]) => setItem(STORAGE_KEYS.ROUTINES, rows),
+  workout_locations: (rows: WorkoutLocation[]) => setItem(STORAGE_KEYS.LOCATIONS, rows),
+  body_measurements: (rows: BodyMeasurement[]) => setItem(STORAGE_KEYS.BODY_MEASUREMENTS, rows),
+  userSettings: (settings: UserSettings) => setItem(STORAGE_KEYS.USER_SETTINGS, settings),
+};
 
 // ==================== DATA EXPORT ====================
 
@@ -2168,7 +2198,7 @@ export async function getRoutineById(id: string): Promise<Routine | undefined> {
 
 export async function addRoutine(routine: Routine): Promise<void> {
   const routines = await getRoutines();
-  routines.push(routine);
+  routines.push(stamp(routine));
   await setItem(STORAGE_KEYS.ROUTINES, routines);
 }
 
@@ -2176,7 +2206,7 @@ export async function updateRoutine(routine: Routine): Promise<void> {
   const routines = await getRoutines();
   const index = routines.findIndex(r => r.id === routine.id);
   if (index !== -1) {
-    routines[index] = routine;
+    routines[index] = stamp(routine);
     await setItem(STORAGE_KEYS.ROUTINES, routines);
   }
 }
@@ -2189,10 +2219,7 @@ export async function deleteRoutine(id: string): Promise<void> {
 
 export async function setActiveRoutine(routineId: string | null): Promise<void> {
   const routines = await getRoutines();
-  const updated = routines.map(r => ({
-    ...r,
-    isActive: r.id === routineId,
-  }));
+  const updated = routines.map(r => (r.isActive === (r.id === routineId) ? r : stamp({ ...r, isActive: r.id === routineId })));
   await setItem(STORAGE_KEYS.ROUTINES, updated);
 }
 
@@ -2217,8 +2244,9 @@ export async function getBodyMeasurementByDate(date: string): Promise<BodyMeasur
   return measurements.find(m => m.date === date);
 }
 
-export async function addBodyMeasurement(measurement: BodyMeasurement): Promise<void> {
+export async function addBodyMeasurement(input: BodyMeasurement): Promise<void> {
   const measurements = await getBodyMeasurements();
+  const measurement = stamp(input);
 
   // For typed measurements (bodybuilding/skinfold), always add as new entry
   if (measurement.type) {
@@ -2256,7 +2284,7 @@ export async function updateBodyMeasurement(measurement: BodyMeasurement): Promi
   const measurements = await getBodyMeasurements();
   const index = measurements.findIndex(m => m.id === measurement.id);
   if (index !== -1) {
-    measurements[index] = measurement;
+    measurements[index] = stamp(measurement);
     await setItem(STORAGE_KEYS.BODY_MEASUREMENTS, measurements);
   }
 }

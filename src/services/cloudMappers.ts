@@ -6,7 +6,7 @@
  *
  * Pure on purpose, so the mapping is testable without Supabase.
  */
-import type { BodyMeasurement, Exercise, Workout, WorkoutSet } from '../types';
+import type { BodyMeasurement, Exercise, Routine, Template, UserSettings, Workout, WorkoutLocation, WorkoutSet } from '../types';
 
 export function exerciseFromRow(row: any): Exercise {
   return {
@@ -29,8 +29,70 @@ export function exerciseFromRow(row: any): Exercise {
     ...(typeof row.target_reps === 'string' && row.target_reps ? { targetReps: row.target_reps } : {}),
     ...(typeof row.default_warmup === 'boolean' ? { defaultWarmup: row.default_warmup } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
   } as Exercise;
 }
+
+export function templateFromRow(row: any): Template {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    locationId: row.location_id || '',
+    exerciseIds: row.exercise_ids || [],
+    ...(row.notes ? { notes: row.notes } : {}),
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
+  } as Template;
+}
+
+export function routineFromRow(row: any): Routine {
+  return {
+    id: row.id,
+    name: row.name,
+    daySchedule: row.day_schedule || [],
+    isActive: row.is_active ?? false,
+    ...(row.rotation && Array.isArray(row.rotation.slots) ? { rotation: row.rotation } : {}),
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
+  } as Routine;
+}
+
+export function locationFromRow(row: any): WorkoutLocation {
+  return {
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order ?? 0,
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
+  };
+}
+
+/** The cloud-backed part of user_settings, in local field names. */
+export function cloudSettingsFromRow(row: any): Partial<UserSettings> {
+  const out: Partial<UserSettings> = {};
+  if (row.week_start_day) out.weekStartDay = row.week_start_day;
+  if (row.units) out.units = row.units;
+  if (typeof row.rest_timer_seconds === 'number') out.restTimerSeconds = row.rest_timer_seconds;
+  if (typeof row.minimum_sets_per_exercise === 'number') out.minimumSetsPerExercise = row.minimum_sets_per_exercise;
+  if (row.daily_goals && typeof row.daily_goals === 'object') out.dailyGoals = row.daily_goals;
+  if (row.weekly_goals && typeof row.weekly_goals === 'object') out.weeklyGoals = row.weekly_goals;
+  if (row.muscle_group_targets && typeof row.muscle_group_targets === 'object') out.muscleGroupTargets = row.muscle_group_targets;
+  if ('creatine_supplement_id' in row) out.creatineSupplementId = row.creatine_supplement_id ?? undefined;
+  if (row.health_targets && typeof row.health_targets === 'object') out.healthTargets = row.health_targets;
+  if (row.updated_at) out.updatedAt = row.updated_at;
+  return out;
+}
+
+/**
+ * Optional fields each table stores in the cloud. A newer cloud row replaces
+ * them, so a field cleared in the cloud is cleared on the phone too; fields
+ * the cloud does not store stay as they are.
+ */
+export const CLOUD_OPTIONAL_FIELDS: Record<string, string[]> = {
+  exercises: ['baseName', 'cableAccessory', 'machineWeightType', 'isBodyweight', 'isUnilateral', 'targetSets', 'targetReps', 'defaultWarmup', 'notes'],
+  templates: ['type', 'notes'],
+  routines: ['rotation'],
+  workout_locations: [],
+  body_measurements: ['weight', 'bodyFatPercentage', 'heightInches', 'type', 'value', 'syncedAt', 'skeletalMuscleLbs', 'leanMassLbs', 'visceralFatArea', 'ecwTbw', 'phaseAngle', 'scanType'],
+};
 
 export function workoutFromRow(row: any): Workout {
   return {
@@ -77,5 +139,6 @@ export function bodyMeasurementFromRow(row: any): BodyMeasurement {
     ...(row.ecw_tbw != null ? { ecwTbw: Number(row.ecw_tbw) } : {}),
     ...(row.phase_angle != null ? { phaseAngle: Number(row.phase_angle) } : {}),
     ...(row.scan_type ? { scanType: row.scan_type } : {}),
+    ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
   } as BodyMeasurement;
 }

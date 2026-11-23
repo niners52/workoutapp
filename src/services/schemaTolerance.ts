@@ -75,15 +75,21 @@ export async function upsertTolerant<T extends Record<string, any>>(
   rows: T | T[],
   optionalColumns: string[],
   onConflict: string = 'id',
-): Promise<{ error: any; rows: T | T[] }> {
+  /** Columns to read back from the written rows (e.g. 'id,updated_at'). */
+  returning?: string,
+): Promise<{ error: any; rows: T | T[]; data?: any[] | null }> {
   const asArray = Array.isArray(rows);
   const strip = (input: T | T[]): T | T[] =>
     Array.isArray(input)
       ? input.map(r => stripMissingColumns(table, r))
       : stripMissingColumns(table, input);
 
+  const send = (body: T | T[]) => {
+    const q = supabase.from(table).upsert(body as any, { onConflict });
+    return returning ? q.select(returning) : q;
+  };
   let payload = strip(rows);
-  let { error } = await supabase.from(table).upsert(payload as any, { onConflict });
+  let { error, data } = (await send(payload)) as { error: any; data?: any[] | null };
 
   if (error && isMissingColumnError(error)) {
     const sample = (Array.isArray(payload) ? payload[0] : payload) ?? {};
@@ -95,9 +101,9 @@ export async function upsertTolerant<T extends Record<string, any>>(
         `Apply the migration in supabase/migrations to stop discarding this data.`,
       );
       payload = strip(rows);
-      ({ error } = await supabase.from(table).upsert(payload as any, { onConflict }));
+      ({ error, data } = (await send(payload)) as { error: any; data?: any[] | null });
     }
   }
 
-  return { error, rows: asArray ? (payload as T[]) : (payload as T) };
+  return { error, rows: asArray ? (payload as T[]) : (payload as T), data: data ?? null };
 }
