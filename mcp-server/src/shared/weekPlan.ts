@@ -68,6 +68,12 @@ export interface RotationSlot {
   /** "W1", "W2"... */
   label: string;
   templateId: string;
+  /**
+   * Other templates that do this workout (the Planet Fitness version of a Vasa
+   * day, say). A session of any of them performs the slot, and what that
+   * session's template lists is what the slot is judged against.
+   */
+  alternateTemplateIds?: string[];
   /** 0 = Sunday .. 6 = Saturday. A label only; it never schedules anything. */
   usualDay?: number | null;
 }
@@ -287,7 +293,9 @@ export function rotationState(input: WeekInputs): RotationState {
     workoutIds: [],
   }));
   const flexWorkoutIds: string[] = [];
-  const rotationTemplates = new Set(rotation.slots.map(s => s.templateId));
+  const slotTemplates = (s: RotationSlot) => [s.templateId, ...(s.alternateTemplateIds ?? [])];
+  const rotationTemplates = new Set(rotation.slots.flatMap(slotTemplates));
+  const runs = (s: SlotState, templateId: string) => slotTemplates(s.slot).includes(templateId);
 
   for (const w of sessions) {
     if (w.templateId && w.templateId === rotation.flexTemplateId && !rotationTemplates.has(w.templateId)) {
@@ -296,7 +304,13 @@ export function rotationState(input: WeekInputs): RotationState {
     }
     let target: SlotState | undefined;
     if (w.templateId && rotationTemplates.has(w.templateId)) {
-      target = states.find(s => s.slot.templateId === w.templateId && !s.performed) ?? states.find(s => s.slot.templateId === w.templateId);
+      const tid = w.templateId;
+      target = states.find(s => runs(s, tid) && !s.performed) ?? states.find(s => runs(s, tid));
+      // Done as an alternate (the PF version): judge the slot by what that
+      // version lists, not the main template's machines.
+      if (target && !target.performed && tid !== target.slot.templateId) {
+        target.template = templateById.get(tid) ?? target.template;
+      }
     } else {
       const done = worked.get(w.id) ?? new Set<string>();
       let best = 0;

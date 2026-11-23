@@ -142,6 +142,33 @@ describe('rotation state and Next up', () => {
   });
 });
 
+describe('alternate templates for a slot', () => {
+  // W6 is done at Vasa (fb5 here) or as its Planet Fitness version (pf6).
+  const templates = [...TEMPLATES, { id: 'pf6', name: 'Full Body 6 — PF', exerciseIds: ['leg-ext', 'leg-curl'] }];
+  const rotation = { ...ROTATION, slots: ROTATION.slots.map(s => (s.templateId === 'fb5' ? { ...s, alternateTemplateIds: ['pf6'] } : s)) };
+  const run = (ws: PlanWorkout[], logged: PlanSet[]) => {
+    const input = { rotation, templates, workouts: ws, sets: logged, exercises: EXERCISES, weekStart: WEEK_START, now: new Date(at(14, 8)) };
+    const state = rotationState(input);
+    return { state, owed: owedList({ ...input, state }) };
+  };
+
+  test('a session of the alternate performs the slot', () => {
+    const { state } = run([w('sat', at(13, 9), 'pf6')], [...sets('leg-ext', 3, 'sat', at(13, 9)), ...sets('leg-curl', 3, 'sat', at(13, 9))]);
+    expect(state.slots.find(s => s.slot.templateId === 'fb5')?.performed).toBe(true);
+  });
+
+  test("the slot is judged by the alternate's exercises: nothing of the main template is owed", () => {
+    const { owed } = run([w('sat', at(13, 9), 'pf6')], [...sets('leg-ext', 3, 'sat', at(13, 9)), ...sets('leg-curl', 3, 'sat', at(13, 9))]);
+    const w5 = ROTATION.slots.find(s => s.templateId === 'fb5')!.label;
+    expect(owed.filter(o => o.slotLabel === w5)).toEqual([]);
+  });
+
+  test('skipping part of the alternate puts that part on Flex', () => {
+    const { owed } = run([w('sat', at(13, 9), 'pf6')], sets('leg-ext', 3, 'sat', at(13, 9)));
+    expect(owed.filter(o => o.source === 'skipped').map(o => o.exerciseId)).toEqual(['leg-curl']);
+  });
+});
+
 describe('owed list', () => {
   const workouts = [w('mon', at(9, 6), 'fb1'), w('tue', at(10, 6), 'fb2')];
   // Monday: W1 without the leg press (machine broken). Tuesday: W2, plus the
