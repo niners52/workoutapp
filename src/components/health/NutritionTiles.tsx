@@ -104,7 +104,8 @@ function CalciumGauge({ state }: { state: CalciumTile }) {
         )}
       </View>
       <View style={styles.gaugeScale}>
-        <Text style={[styles.gaugeTick, { left: pct(state.lowMg / scaleMax) }]}>
+        {/* Anchored at the band's right end: starting at its left end ran off a half-width tile. */}
+        <Text numberOfLines={1} style={[styles.gaugeTick, { right: pct(1 - state.highMg / scaleMax) }]}>
           {formatInt(state.lowMg)}–{formatInt(state.highMg)}
         </Text>
       </View>
@@ -165,7 +166,8 @@ function BandGauge({ low, high, value, markerColor, dim }: { low: number; high: 
         )}
       </View>
       <View style={styles.gaugeScale}>
-        <Text style={[styles.gaugeTick, { left: pct(low / scaleMax) }]}>
+        {/* Anchored at the band's right end: starting at its left end ran off a half-width tile. */}
+        <Text numberOfLines={1} style={[styles.gaugeTick, { right: pct(1 - high / scaleMax) }]}>
           {formatInt(low)}–{formatInt(high)}
         </Text>
       </View>
