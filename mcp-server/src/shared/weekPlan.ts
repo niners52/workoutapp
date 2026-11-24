@@ -298,6 +298,10 @@ export function rotationState(input: WeekInputs): RotationState {
   const runs = (s: SlotState, templateId: string) => slotTemplates(s.slot).includes(templateId);
 
   for (const w of sessions) {
+    // A session with no working sets (opened by accident, then closed) did
+    // not do the workout: it would otherwise mark the slot done and put its
+    // whole template on Flex as skipped.
+    if ((worked.get(w.id)?.size ?? 0) === 0) continue;
     if (w.templateId && w.templateId === rotation.flexTemplateId && !rotationTemplates.has(w.templateId)) {
       flexWorkoutIds.push(w.id);
       continue;

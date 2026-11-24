@@ -130,9 +130,16 @@ describe('rotation from a weekday schedule', () => {
 
 describe('rotation state and Next up', () => {
   test('Next up is the lowest-numbered workout not done yet, whatever day it is', () => {
-    const { state } = week([w('mon', at(9, 6), 'fb1'), w('wed', at(11, 6), 'fb3')], []);
+    const { state } = week([w('mon', at(9, 6), 'fb1'), w('wed', at(11, 6), 'fb3')], [...sets('incline', 3, 'mon', at(9, 6)), ...sets('pec-fly', 3, 'wed', at(11, 6))]);
     expect(state.slots.filter(s => s.performed).map(s => s.slot.label)).toEqual(['W1', 'W3']);
     expect(state.nextUp?.slot.label).toBe('W2');
+  });
+
+  test('an empty session (opened by accident, no sets) does not do the workout or put it on Flex', () => {
+    const input = { rotation: ROTATION, templates: TEMPLATES, workouts: [w('oops', at(9, 11), 'fb5')], sets: [], exercises: EXERCISES, weekStart: WEEK_START, now: new Date(at(10, 8)) };
+    const state = rotationState(input);
+    expect(state.slots.find(s => s.slot.templateId === 'fb5')?.performed).toBe(false);
+    expect(owedList({ ...input, state }).filter(o => o.source === 'skipped')).toEqual([]);
   });
 
   test('a session entered without its template counts against the workout it overlaps most', () => {
